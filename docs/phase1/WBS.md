@@ -3,6 +3,8 @@
 의존 순서. **각 작업 = 1 PR**, 측정 가능한 완료 기준(DoD). DP1~DP4 확인 후 W0부터 착수.
 방법론은 SDD+WBS+TDD (CLAUDE.md). 각 코드 작업은 실패 테스트 → 구현 → 통과 → `grok_build_verify`.
 
+> 진행: **W0 ✅ (#3)** · **W1 ✅ (#4)** · **W2 ⏳ (렉서·파서)** · W3~W7 대기.
+
 | ID | 작업 | 산출물 | 완료 기준 (측정) | 의존 |
 |----|------|--------|------------------|------|
 | **W0** | DP1~DP4 확인 → `DECISIONS.md` D19~D22 반영 + export 측정 도구 확보 | DECISIONS 갱신, export 덤프 방법(dumpbin 또는 llvm-objdump/PE 리더) | `discount.dll`의 export 목록을 실제로 출력해 첨부 | SPEC 확인 |

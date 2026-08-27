@@ -33,10 +33,17 @@ impl Module {
 
     /// Resolve an exported symbol. `name` must be nul-terminated (e.g. `b"mlx_f\0"`).
     pub fn symbol(&self, name: &[u8]) -> Result<*mut c_void, String> {
-        assert_eq!(name.last(), Some(&0u8), "symbol name must be nul-terminated");
+        assert_eq!(
+            name.last(),
+            Some(&0u8),
+            "symbol name must be nul-terminated"
+        );
         let p = unsafe { GetProcAddress(self.0, name.as_ptr()) };
         if p.is_null() {
-            Err(format!("symbol not found: {}", String::from_utf8_lossy(name)))
+            Err(format!(
+                "symbol not found: {}",
+                String::from_utf8_lossy(name)
+            ))
         } else {
             Ok(p)
         }

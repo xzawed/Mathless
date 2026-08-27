@@ -16,7 +16,10 @@ fn fixture_dll() -> PathBuf {
         .parent()
         .and_then(|p| p.parent())
         .expect("target/<profile> dir");
-    let is_release = profile_dir.file_name().map(|n| n == "release").unwrap_or(false);
+    let is_release = profile_dir
+        .file_name()
+        .map(|n| n == "release")
+        .unwrap_or(false);
 
     // Match the fixture build profile to this test's profile so the path lines up
     // (guards `cargo test --release`; guarantees the fixture exists when run alone).
@@ -41,7 +44,9 @@ fn oracle_loads_fixture_and_calls_discount() {
     let m = Module::load(dll.to_str().unwrap()).expect("load fixture");
 
     // Reserved ABI-version symbol (D18).
-    let ver_p = m.symbol(b"ml_module_abi_version\0").expect("ml_module_abi_version");
+    let ver_p = m
+        .symbol(b"ml_module_abi_version\0")
+        .expect("ml_module_abi_version");
     let ver: extern "C" fn() -> u32 = unsafe { std::mem::transmute(ver_p) };
     assert_eq!(ver(), 1, "abi version");
 

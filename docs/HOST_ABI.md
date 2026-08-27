@@ -1,0 +1,83 @@
+# HOST ABI
+
+## 원칙
+
+밖으로 나가는 유일한 1급 경계는 **C ABI**다.  
+언어별 바인딩은 그 위의 얇은 래퍼다.
+
+## MVP에서 호스트가 하는 일
+
+1. 런타임/로더 초기화
+2. 모듈 파일 로드
+3. export 함수 조회
+4. 호출
+5. (선택) 호스트 함수를 모듈에 등록
+6. 언로드
+
+## 최소 C API 스케치 (초안, 미구현)
+
+이름은 가칭.
+
+```c
+typedef struct MlRuntime MlRuntime;
+typedef struct MlModule MlModule;
+
+MlRuntime* ml_runtime_create(void);
+void       ml_runtime_destroy(MlRuntime*);
+
+MlModule*  ml_module_load(MlRuntime*, const char* path, int* err);
+void       ml_module_unload(MlModule*);
+
+void*      ml_module_get_fn(MlModule*, const char* name);
+
+int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
+```
+
+실제 함수 시그니처 마샬링은 MVP에서 제한한다.
+
+- 인자: 정수, 실수, bool, C 문자열 포인터 정도
+- 구조체는 포인터 + 명시적 레이아웃이 합의된 것만
+- 콜백은 함수 포인터 한 단계만
+
+## 수명 (D16)
+
+소유권을 3층으로 나눈다:
+
+- **인자 포인터** = 호출 기간 동안만 유효(빌림). 호출 반환 후 접근 금지.
+- **반환 데이터** = caller-allocates out-buffer가 기본. MVP는 스칼라 반환을 우선한다. 힙 문자열/구조체 반환 규약은 Q12에서 확정.
+- **모듈 상태** = 명시적 context handle. 생성부터 파괴까지 생존(단일 호출을 넘어감).
+
+규칙:
+
+- 모듈 힙과 호스트 힙은 분리. 서로의 할당을 free하지 않는다(할당자 불일치 = UB).
+- 모듈은 호스트 메모리를 소유하지 않는다.
+- 등록된 호스트 함수 포인터는 호출을 넘어 유효(콜백). 모듈 언로드 후에는 모든 함수 포인터 무효.
+- 호스트 객체를 모듈이 보관하려면 명시적 handle로만.
+
+## 호스트별 우선순위
+
+| 순위 | 호스트 | 방식 |
+|------|--------|------|
+| 1 | C / C++ | 직접 C ABI |
+| 1 | Delphi | `external` / cdecl 래퍼 |
+| 2 | Rust | `extern "C"` |
+| 3 | C# | P/Invoke |
+| 4 | Python | ctypes/cffi |
+
+초기 공식 지원은 **Delphi + C** 두 개만 권장.
+
+## 버전
+
+ABI 버전은 파일 선두 커스텀 헤더가 아니라 **예약 export 심볼**로 노출한다(D18). 표준 DLL/SO는 offset 0에 PE/ELF 매직이 있어야 로더가 인식하므로 선두 헤더는 로드 불가다. 로더는 `ml_module_abi_version`을 `GetProcAddress`/`dlsym`로 조회한다.  
+호스트와 모듈의 major가 다르면 로드 실패.
+
+## 네이밍 규약
+
+- 런타임/예약 심볼: `ml_*` (예: `ml_runtime_create`, `ml_module_abi_version`).
+- 사용자 모듈이 export하는 함수: 별도 접두어(예: `mlx_`) 또는 모듈명 네임스페이스. `ml_`와 충돌 금지(D18).
+
+## 하지 말 것 (MVP)
+
+- RTTI로 호스트 객체 전체를 자동 노출
+- COM/IDispatch를 기본 경로로
+- 예외가 ABI를 가로지르게 두기 (에러 코드 또는 명시적 변환)

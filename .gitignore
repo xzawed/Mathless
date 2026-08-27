@@ -1,0 +1,16 @@
+# OS / editor
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Future build output (no build system yet)
+/build/
+/out/
+*.o
+*.obj
+*.dll
+*.so
+*.dylib

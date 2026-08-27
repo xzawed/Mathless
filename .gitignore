@@ -6,7 +6,11 @@ Desktop.ini
 .vscode/
 .idea/
 
-# Future build output (no build system yet)
+# Rust / cargo build output
+/target/
+**/*.rs.bk
+
+# Future build output (no build system yet for non-Rust parts)
 /build/
 /out/
 *.o

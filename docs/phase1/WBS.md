@@ -3,7 +3,9 @@
 의존 순서. **각 작업 = 1 PR**, 측정 가능한 완료 기준(DoD). DP1~DP4 확인 후 W0부터 착수.
 방법론은 SDD+WBS+TDD (CLAUDE.md). 각 코드 작업은 실패 테스트 → 구현 → 통과 → `grok_build_verify`.
 
-> 진행: **W0 ✅**(#3) · **W1 ✅**(#4) · **W2 ✅**(#5) · **W3 ✅**(타입체크+IR) · **W4 ⏳** · W5~W7 대기.
+> 진행: **W0 ✅**(#3) · **W1 ✅**(#4) · **W2 ✅**(#5) · **W3 ✅**(#6) · **W4+W5 ✅**(codegen + e2e, 수용 A+B 달성) · **W6 ⏳**(보호 측정) · W7 대기.
+>
+> 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll`(107KB) → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 W4 필수 요건대로 "모든 경로 return"을 강제(미충족 시 codegen 에러).
 
 | ID | 작업 | 산출물 | 완료 기준 (측정) | 의존 |
 |----|------|--------|------------------|------|
@@ -21,7 +23,8 @@
 - **BLOCKED (툴체인):** 수용 D(Delphi/C 호스트 실제 로드)는 이 머신에 `dcc64`/`cl`/`gcc`가 없어 실행 불가. W7은 **산출물 생성**까지, 실제 로드 검증은 별도.
   - 해소안(사용자 판단 필요): (a) Delphi/BDS CLI(`dcc64`)를 PATH에 추가, (b) MSVC Build Tools 또는 (c) MinGW/LLVM 설치. 어떤 것을 준비할지 확인 요청 예정.
 - W6 export 측정 도구가 없으면(dumpbin 미설치) llvm-objdump 또는 Rust PE 리더로 대체 — W0에서 확정.
-- **W4 필수(Grok 지적):** 타입체커는 "모든 경로 return"을 강제하지 않는다(MVP 한계). 따라서 W4 코드젠은 타입 있는 함수가 값 없이 fall-through하지 않도록 **반환 누락 경로를 trap/`unreachable`로 마감하거나 반환을 강제**해야 한다.
+- **W4 필수(Grok 지적) — 처리됨:** 타입체커는 "모든 경로 return"을 강제하지 않으므로(MVP 한계), codegen이 마지막 문이 `return`이 아니면 **codegen 에러**로 거부한다(`block_always_returns`).
+- **후속 하드닝(Grok W4 노트, 버그 아님):** codegen이 식별자/crate_name을 그대로 삽입하므로, Mathless 파라미터·변수명이 **Rust 예약어**(예: `type`, `match`)와 겹치면 잘못된 Rust가 생성된다 → 식별자 이스케이프(`r#`) 또는 프런트엔드 예약어 금지로 후속 처리. e2e 빌드 `workdir`는 고정명이라 동시 빌드 시 경합 가능(현재 소비자 1개).
 
 ## 범위 밖 (후속 슬라이스, 별도 SPEC)
 

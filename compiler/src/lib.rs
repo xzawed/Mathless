@@ -1,10 +1,11 @@
 //! Mathless compiler (`mlc`) — Phase 1.
 //!
-//! Pipeline (see `docs/phase1/WBS.md`): source → **lex/parse (W2)** → typecheck + IR
-//! (W3) → codegen (W4). Per D19 codegen lowers a non-Rust IR to `no_std` + `extern "C"`
-//! + `repr(C)` Rust, then `cargo build --crate-type cdylib`.
+//! Pipeline (see `docs/phase1/WBS.md`): source → **lex/parse (W2)** → **typecheck + IR
+//! (W3)** → **codegen (W4)**. Per D19 codegen lowers the non-Rust IR to `extern "C"`
+//! Rust, then `cargo build --crate-type cdylib`.
 
 pub mod ast;
+pub mod codegen;
 pub mod error;
 pub mod ir;
 pub mod lexer;
@@ -12,6 +13,7 @@ pub mod parser;
 pub mod typeck;
 
 pub use ast::*;
+pub use codegen::CodegenError;
 pub use error::ParseError;
 pub use typeck::{check, TypeError};
 
@@ -27,17 +29,17 @@ pub fn compile_to_ir(src: &str) -> Result<ir::IrModule, CompileError> {
     check(&module).map_err(CompileError::Type)
 }
 
-/// Compile a `.mls` source string to emitted Rust module source (W4). Not yet implemented.
-pub fn compile_to_rust(_src: &str) -> Result<String, CompileError> {
-    Err(CompileError::NotImplemented)
+/// Full front→middle→back: source → typed IR → emitted `extern "C"` Rust source (W4).
+pub fn compile_to_rust(src: &str) -> Result<String, CompileError> {
+    let ir = compile_to_ir(src)?;
+    codegen::emit(&ir).map_err(CompileError::Codegen)
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CompileError {
     Parse(ParseError),
     Type(TypeError),
-    /// Codegen is not implemented until W4.
-    NotImplemented,
+    Codegen(CodegenError),
 }
 
 #[cfg(test)]
@@ -45,10 +47,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codegen_is_stubbed_until_w4() {
-        assert_eq!(
-            compile_to_rust("export fn f() -> f64 { return 0 }"),
-            Err(CompileError::NotImplemented)
-        );
+    fn compiles_discount_to_extern_c_rust() {
+        let rust = compile_to_rust(include_str!("../../examples/discount.mls")).expect("compile");
+        assert!(rust.contains(r#"pub extern "C" fn mlx_discount"#));
+        assert!(rust.contains("ml_module_abi_version"));
     }
 }

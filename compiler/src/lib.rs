@@ -1,13 +1,24 @@
-//! Mathless compiler (`mlc`) — Phase 1 skeleton.
+//! Mathless compiler (`mlc`) — Phase 1.
 //!
-//! The real lexer/parser/typecheck/codegen land in W2–W4 (see `docs/phase1/WBS.md`).
-//! Per D19, codegen will lower a **non-Rust IR** to `no_std` + `extern "C"` + `repr(C)`
-//! Rust, then `cargo build --crate-type cdylib`. Not implemented yet.
+//! Pipeline (see `docs/phase1/WBS.md`): source → **lex/parse (W2)** → typecheck + IR
+//! (W3) → codegen (W4). Per D19 codegen lowers a non-Rust IR to `no_std` + `extern "C"`
+//! + `repr(C)` Rust, then `cargo build --crate-type cdylib`.
 
-/// Compile a `.mls` source string to emitted Rust module source.
-///
-/// Unimplemented until W4. Returns [`CompileError::NotImplemented`] for now so the
-/// pipeline shape is testable before the stages exist.
+pub mod ast;
+pub mod error;
+pub mod lexer;
+pub mod parser;
+
+pub use ast::*;
+pub use error::ParseError;
+
+/// Parse Mathless source into a [`Module`] AST (W2).
+pub fn parse(src: &str) -> Result<ast::Module, ParseError> {
+    let tokens = lexer::tokenize(src)?;
+    parser::parse(tokens)
+}
+
+/// Compile a `.mls` source string to emitted Rust module source (W4). Not yet implemented.
 pub fn compile_to_rust(_src: &str) -> Result<String, CompileError> {
     Err(CompileError::NotImplemented)
 }
@@ -22,8 +33,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pipeline_is_stubbed_until_w4() {
-        assert_eq!(compile_to_rust("export fn f() -> f64 { return 0 }"),
-                   Err(CompileError::NotImplemented));
+    fn codegen_is_stubbed_until_w4() {
+        assert_eq!(
+            compile_to_rust("export fn f() -> f64 { return 0 }"),
+            Err(CompileError::NotImplemented)
+        );
     }
 }

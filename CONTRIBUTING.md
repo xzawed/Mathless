@@ -23,6 +23,20 @@
    silently self-substitute.
 7. Squash-merge into `main`. Delete the branch after merge.
 
+## Methodology: SDD + WBS + TDD (mandatory from Phase 1)
+
+1. **SDD (spec-first):** write the spec before code — `docs/phaseN/SPEC*.md` with inputs, outputs,
+   contracts, and measurable acceptance criteria. Get user confirmation before implementing.
+2. **WBS:** break the spec into PR-sized tasks in `docs/phaseN/WBS.md`, in dependency order; each
+   task = one PR with a measurable done-criterion.
+3. **TDD:** write the failing test first (Red → Green → Refactor). Test results are the E2 evidence.
+4. **Grok + measured data (both doing and reviewing):** perform and verify each task with Grok,
+   grounded in real data (test results, build artifacts, export dumps, run logs). `grok_build_verify`
+   is required before a PR is marked complete.
+
+Order: **SPEC → (user confirm) → WBS → per task [failing test → implement → pass → Grok verify] → PR → merge.**
+Never write "it works / it's fast / it's protected" without a measurement.
+
 ## Positioning rule
 
 Never describe the protection as "impossible to reverse". The honest phrasing is

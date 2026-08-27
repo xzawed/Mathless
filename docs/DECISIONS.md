@@ -24,8 +24,12 @@
 | D16 | 메모리 = **소유권 3층 분리**(인자=빌림 / 반환=caller-allocates / 상태=context handle), 힙 분리 | 2026-08-28 | 해제 책임 명확, 힙 교차 UB 회피, 상태(D08)는 handle |
 | D17 | 에러 = **ABI 정수 상태코드+out-param**, 표면 Result는 sugar, 실패 가능 함수만 | 2026-08-28 | 전 호스트 통일, 예외 unwinding 회피. Result는 표준 C 레이아웃 없음 |
 | D18 | 모듈 포맷 = **표준 DLL/SO + 버전 export 심볼 + 모듈 전용 접두어**, 컨테이너는 P1 | 2026-08-28 | OS 로더 직접 사용. 선두 헤더는 PE/ELF 매직과 충돌해 로드 불가 |
+| D19 | 코드젠 = **잠정 rustc lowering** (비-Rust IR → `no_std`/`extern"C"`/`repr(C)` Rust → `cargo cdylib`) | 2026-08-28 | 설치된 유일 네이티브 툴, 스모크 E2 통과. Q6 **잠정** 해결(닫지 않음), C-emit 슬롯 유지 |
+| D20 | 컴파일러 구현 언어 = **Rust** | 2026-08-28 | 설치·검증됨, 컴파일러 작성·cdylib/FFI 유리 |
+| D21 | Phase 1 호스트 = **Rust kernel32 오라클(CI)** + D14 done-gate(Delphi/C)는 툴체인 확보 시까지 **보류** | 2026-08-28 | 이 머신에 dcc64/cl/gcc 없음(BLOCKED). 사용자 승인으로 오라클 진행 |
+| D22 | 1차 타깃 = **Windows x64** ("msvc"를 D18에 고정하지 않음) | 2026-08-28 | 현재 OS. export/CRT/unwind는 측정 |
 
-## 확정 상세 (D14~D18)
+## 확정 상세 (D14~D22)
 
 2026-08-28, Q1~Q5를 닫으며 사용자 승인. 각 결정의 범위와 기각 대안.
 
@@ -34,6 +38,13 @@
 - **D16 메모리.** (1) 인자 포인터=호출 기간만 유효(빌림), (2) 반환 데이터=caller-allocates out-buffer(MVP는 스칼라 반환 우선), (3) 모듈 상태=명시적 context handle(생성~파괴 생존). 모듈 힙과 호스트 힙 분리, 할당자 넘는 소유권 이전 금지. 기각: 모듈 단위 RC(경계 증감 주체 모호, 내부 구현으로만), 순수 arena(호출 넘는 상태 불가 → handle로 흡수).
 - **D17 에러.** ABI 유일 규약 = 정수 상태코드 + out-parameter. 표면 Result/명시적 에러는 그 위 sugar로 lowering. 실패 가능 함수만 대상(순수 함수는 값 직접 반환). 모듈 내부 예외는 후속. 기각: 예외 ABI 통과(언어별 unwinding 비호환), errno 전역(재진입 취약).
 - **D18 모듈 포맷.** 플랫폼 표준 DLL/SO. ABI 버전은 파일 선두 헤더가 아니라 예약 export 심볼 `ml_module_abi_version`으로 노출(로더가 GetProcAddress/dlsym 조회). 사용자 모듈 export는 런타임 `ml_*`와 충돌하지 않는 별도 접두어(예: `mlx_`). 암호화/서명 컨테이너는 P1. 기각: 파일 선두 커스텀 헤더(PE/ELF 매직 필요, 로드 불가), 컨테이너 MVP 내재화(R05·범위 위반).
+
+Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/cargo 설치·동작, C 컴파일러·Delphi CLI 미설치, cdylib 빌드+kernel32 로드·호출 스모크 E2 통과.
+
+- **D19 코드젠(잠정).** 비-Rust 독립 IR → `no_std`+`extern "C"`+`repr(C)` Rust → `cargo build --crate-type cdylib`. **Q6를 닫지 않는다** — C-emit 슬롯 유지, LLVM 이연. IR은 Rust가 아님(Q11 불변). 보호(D04/D05)는 rustc가 자동 보장하지 않으므로 export/심볼을 **측정**한다(Phase 1 SPEC 수용 C).
+- **D20 컴파일러 언어.** Rust. 기각: C++(미설치·무거움), Python(별도 런타임·타입 약함).
+- **D21 Phase 1 호스트.** Rust kernel32 오라클 = **CI 검증 수단**일 뿐. D14 done-gate(Delphi 플래그십/C)는 이 머신에 dcc64/cl/gcc 없어 BLOCKED → 사용자 승인으로 잠정 보류, 오라클로 W0~W6 진행. 슬라이스는 C 헤더+Delphi unit을 산출(실제 로드 검증은 툴체인 확보 후). 오라클 그린을 "Delphi에서 됐다"로 말하지 않는다.
+- **D22 타깃.** Windows x64 우선. **"msvc"를 D18에 못박지 않는다**(빌드 설정). export 집합·CRT/unwind는 측정.
 
 ## 기각 또는 보류
 
@@ -47,4 +58,4 @@
 
 ## 아직 결정 아님
 
-`OPEN_QUESTIONS.md` 참고. Q1~Q5는 D14~D18로 닫힘. 남은 하위 결정: 반환 값 소유권 규약(Q12), 에러 코드 체계·out-param 세부(Q13), ABI 버전 배치·모듈 접두어(Q14), 확장자(Q10), 그리고 미뤄둔 Q6~Q11.
+`OPEN_QUESTIONS.md` 참고. Q1~Q5 → D14~D18. Phase 1 툴체인(DP1~DP4) → D19~D22 (Q6는 D19로 **잠정** 해결, C-emit 재검토 여지 유지). 남은 것: Q10(확장자), Q12~Q14, Q7~Q9, Q11.

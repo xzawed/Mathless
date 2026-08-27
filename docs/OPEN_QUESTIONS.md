@@ -28,7 +28,7 @@ ABI 정수 상태코드+out-param, 표면 Result는 sugar. 남은 하위 → Q13
 
 ## 미뤄도 되는 것
 
-- Q6. LLVM을 직접 쓸 것인가, C emit 후 clang/fpc를 쓸 것인가?
+- Q6. 코드젠 경로 — **잠정 해결 → D19** (MVP는 rustc lowering). C-emit 후 clang/fpc, LLVM 직접은 재검토 여지로 남김.
 - Q7. 클래스 상속을 언제 넣을 것인가?
 - Q8. WASM 타깃 시기
 - Q9. 서명 키 관리

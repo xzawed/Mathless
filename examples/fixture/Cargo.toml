@@ -1,0 +1,10 @@
+[package]
+name = "discount_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Hand-written stand-in for the eventual compiler output. Replaced by generated
+# Rust at W5; no_std + strip hardening + export measurement is W6.
+[lib]
+crate-type = ["cdylib"]

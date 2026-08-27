@@ -1,0 +1,6 @@
+// Mathless surface source — D15 MVP subset. Compiled by `mlc` at W5.
+// Reference function for the Phase 1 vertical slice (SPEC §1).
+export fn discount(price: f64, vip: bool) -> f64 {
+  if vip { return price * 0.9 }
+  return price
+}

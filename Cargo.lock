@@ -9,6 +9,9 @@ version = "0.0.0"
 [[package]]
 name = "ml_oracle"
 version = "0.0.0"
+dependencies = [
+ "mlc",
+]
 
 [[package]]
 name = "mlc"

@@ -5,3 +5,7 @@ edition = "2021"
 publish = false
 
 [lib]
+
+[dev-dependencies]
+# The end-to-end test compiles a .mls module with the compiler, then loads the DLL.
+mlc = { path = "../../compiler" }

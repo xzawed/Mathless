@@ -1,52 +1,103 @@
 # Mathless
 
-> 상태: 개념 설계 단계 (구현 전)  
-> 최종 정리: 2026-08-27  
-> 목적: Claude 등 AI 에이전트와 협업해 구현을 시작하기 위한 기준 문서
+> **Status:** design stage (pre-implementation) · Phase 0 decisions locked (D14–D18)
+> **Languages:** English (this file) · [한국어 → README.ko.md](README.ko.md)
 
-**Mathless**는 Object Pascal/Delphi의 타입 안정성과 네이티브 성능을 계승하면서,  
-더 폭넓은 개발자가 쓰는 표면 문법으로 작성하고,  
-소스가 아닌 **보호된 네이티브 라이브러리**로 배포하는 동적 확장 언어이다.
+**Mathless** is a statically-typed extension language that keeps Object Pascal / Delphi's
+type safety and native performance, is written in a surface syntax familiar to a broad
+developer audience, and is distributed **not as source but as protected native modules**
+loaded over a **C ABI**.
 
-태그라인 후보:
+Tagline candidates:
 
-- `Mathless – Pascal for those who dropped math`
-- `Mathless – 수학포기자를 위한 현대적 Pascal`
+- *Mathless — Pascal for those who dropped math*
+- *Mathless — 수학포기자를 위한 현대적 Pascal*
 
-## 한 줄 정의
+## One-line definition
 
-현대적 표면 문법 + 강한 정적 타입 + 컴파일 타임 변환 + 네이티브 바이너리 배포 + C ABI 호스트 연동.
+Modern surface syntax + strong static typing + compile-time transformation + native binary
+distribution + C-ABI host integration.
 
-## 문서 지도 (Claude는 이 순서로 읽을 것)
+## Why
 
-| 순서 | 파일 | 내용 |
-|------|------|------|
-| 0 | [CLAUDE.md](CLAUDE.md) | 에이전트 작업 규칙, 하지 말 것, 우선순위 |
-| 1 | [docs/VISION.md](docs/VISION.md) | 왜 만드는가, 성공 조건 |
-| 2 | [docs/DECISIONS.md](docs/DECISIONS.md) | 확정된 결정 / 기각된 대안 |
-| 3 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 컴파일·배포·실행 파이프라인 |
-| 4 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | 표면 문법 vs 내부 모델 |
-| 5 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | C ABI, 호스트 연동 |
-| 6 | [docs/SECURITY.md](docs/SECURITY.md) | 보호 목표와 단계 |
-| 7 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → 확장 |
-| 8 | [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | 아직 닫히지 않은 질문 |
-| 9 | [docs/COMPETITIVE.md](docs/COMPETITIVE.md) | 기존 사례와 차별점 |
-| 10 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | 용어 |
+Delphi / Object Pascal is strong on type safety, native performance, and structure, but its
+ecosystem is closed and its dynamic-extension, tooling, and AI experience lag. Existing script
+languages (Python, Lua, JS) are flexible but weak on typing and on protecting the distributed
+artifact. Mathless pulls Delphi's strengths **outward**: a familiar surface, a native execution
+model underneath, source-free native-module distribution, and host integration **without
+recompiling the host**.
 
-## 현재 확정된 핵심
+## Confirmed core
 
-1. 이름은 **Mathless**.
-2. 실행 모델은 **순수 네이티브** (비용 효율). VM/바이트코드 런타임은 1차 목표가 아님.
-3. 배포는 **소스 금지, 네이티브 공유 라이브러리**(DLL/.so, BPL 유사).
-4. 보호 목표는 리버싱 **불가능이 아니라 분석 비용을 매우 높게**.
-5. 호스트는 Delphi 한정 아님. 경계는 **C ABI**.
-6. 표현력은 단순 룰이 아니라 **복잡한 로직과 상태**.
-7. 표면 문법은 Delphi 고유 문법보다 **넓은 사용자층 문법**. 내부는 Delphi/네이티브 모델.
-8. 중간 변환은 **런타임 해석이 아니라 컴파일 타임**.
-9. 웹(브라우저)은 1차 목표가 아님. 이후 WASM 타깃으로 검토.
-10. 전략은 강점 하나부터. 여러 토끼를 동시에 잡지 않음.
+1. Name is **Mathless**.
+2. Execution model is **pure native** — no default VM / bytecode runtime.
+3. Distribution is a **native shared library** (DLL / `.so`) — **no source shipped**.
+4. Protection goal is to **raise the cost of analysis and tampering** — *not* a claim that
+   reversing is impossible.
+5. Hosts are **not limited to Delphi**. The first-class boundary is the **C ABI**.
+6. Expressiveness targets **complex logic and state**, not simple rule tables.
+7. The surface syntax is broader than Delphi-specific syntax; the internal model stays
+   Delphi / native.
+8. The middle layer is **compile-time only** — no runtime interpretation.
+9. Browser / web is **not** a first target (WASM considered later, as a separate target).
+10. One strength first — no chasing several goals at once.
 
-## 프로젝트 성격
+## Phase 0 decisions (Q1–Q5 → D14–D18)
 
-아직 구현 저장소가 아니다.  
-이 폴더는 **설계 기준 문서**이다. 구현을 시작할 때 이 문서를 복사해 실제 저장소의 루트로 옮긴다.
+| # | Decision |
+|---|----------|
+| D14 | Primary hosts = **Delphi** (flagship demo / first-class host) + **C** (ABI reference boundary) |
+| D15 | Surface family = **brace-based, statically-typed, value-first C-family** (MVP subset = struct + free functions + modules) |
+| D16 | Memory = **3-layer ownership** — args = borrowed (call duration only) / returns = caller-allocates / long-lived state = explicit context handle |
+| D17 | Errors = **integer status code + out-parameter across the ABI**; surface `Result` is sugar; no exceptions cross the boundary |
+| D18 | Module format = **standard DLL/SO + exported ABI-version symbol + module-specific export prefix**; encrypted/signed container deferred to P1 |
+
+Details and rejected alternatives: [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Document map (read in this order)
+
+| # | File | Content |
+|---|------|---------|
+| 0 | [CLAUDE.md](CLAUDE.md) | Agent working rules, do-nots, priorities |
+| 1 | [docs/VISION.md](docs/VISION.md) | Why, success criteria |
+| 2 | [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions / rejected alternatives |
+| 3 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Compile / distribute / run pipeline |
+| 4 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | Surface syntax vs internal model |
+| 5 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | C ABI, host integration |
+| 6 | [docs/SECURITY.md](docs/SECURITY.md) | Protection goals and stages |
+| 7 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
+| 8 | [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | Still-open questions |
+| 9 | [docs/COMPETITIVE.md](docs/COMPETITIVE.md) | Prior art and differentiation |
+| 10 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terms |
+
+## Success criterion (initial)
+
+Load a Mathless-compiled native module into a host **without recompiling the host** and call a
+typed function (e.g. `discount(price, vip)`).
+
+## Contributing / workflow
+
+All changes go through **Pull Requests** — no direct commits to `main`. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Topics / tags
+
+**English (GitHub topics):** `programming-language` · `compiler` · `native` · `c-abi` ·
+`delphi` · `object-pascal` · `dll` · `shared-library` · `plugin-system` · `static-typing` ·
+`code-protection` · `extension-language` · `compile-time` · `design-docs`
+
+**한글 태그:** 프로그래밍언어 · 컴파일러 · 네이티브 · C-ABI · 델파이 · 오브젝트파스칼 · DLL ·
+공유라이브러리 · 플러그인시스템 · 정적타입 · 코드보호 · 확장언어 · 컴파일타임 · 설계문서
+
+> GitHub topics accept only lowercase ASCII + hyphens, so the Korean tags above are documented
+> here rather than set as repository topics.
+
+## Project status
+
+This repository is currently a **design-baseline**, not yet an implementation repo. Phase 0
+decisions (D14–D18) are locked; the next step is the Phase 1 vertical slice (C ABI draft →
+minimal compiler pipeline → load into one Delphi host). See [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## License
+
+Not yet decided (TBD).

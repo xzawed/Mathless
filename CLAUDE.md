@@ -75,6 +75,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `ROADMAP.md` Phase 0(현재)의 완료 조건은 `OPEN_QUESTIONS.md`의 **Q1~Q5(주력 호스트 2개 / 표면 문법 계열 / 메모리 모델 / 에러 모델 / 모듈 파일 포맷)가 닫히는 것**이다. 이것들이 닫히기 전에는 본격 구현을 시작하지 않는다.
 
+## Git 워크플로 (PR 기반, 필수)
+
+- 저장소: **GitHub Private — `xzawed/Mathless`**. 원격은 `origin`.
+- **모든 변경은 PR로만 반영한다. `main`에 직접 커밋/푸시 금지.**
+- 브랜치 접두어: `docs/*`(문서), `feat/*`(구현), `fix/*`(버그), `chore/*`(도구·메타).
+- PR은 한 관심사로 좁히고, 관련 결정/질문 번호(예: `D16`, `Q12`)를 본문에 명시한다.
+- PR 완료(머지) 선언 전, 규칙대로 근거 수준(E0/E1/E2)과 Grok 2차 검증(구현·진단·코드 검토는 필수)을 충족한다.
+- `main`에는 squash-merge, 머지 후 브랜치 삭제. 자세한 규칙은 `CONTRIBUTING.md`.
+
 ## 작업 우선순위
 
 1. 열린 질문 중 MVP에 반드시 필요한 것만 닫기 (Q1~Q5)

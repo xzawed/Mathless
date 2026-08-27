@@ -1,0 +1,54 @@
+# Contributing / 기여 가이드
+
+> English first, 한국어 아래. This project works **PR-first**: `main` is never committed to directly.
+
+## Workflow (English)
+
+1. **Never commit to `main` directly.** Every change lands via a Pull Request.
+2. Branch from `main` using a typed prefix:
+   - `docs/*` — documentation / design docs
+   - `feat/*` — new implementation
+   - `fix/*` — bug fixes
+   - `chore/*` — tooling, meta, housekeeping
+3. Keep a PR scoped to one concern. Reference the decision/question it touches
+   (e.g. `D16`, `Q12`).
+4. **Do not overturn a decision in `docs/DECISIONS.md`** without first writing the rationale
+   and trade-off into that file (see [CLAUDE.md](CLAUDE.md)).
+5. **Evidence level** must match the phase (per CLAUDE.md):
+   - Phase 0 (docs) → **E0** (doc consistency) / **E1** (cited external facts). No fabricated
+     measurements.
+   - Once code exists → **E2** (real build/run artifacts) is required before "done".
+6. **Second-order verification via Grok** is required for implementation / diagnosis / code
+   review before a PR is marked complete. If a Grok tool fails, report it and ask — do not
+   silently self-substitute.
+7. Squash-merge into `main`. Delete the branch after merge.
+
+## Positioning rule
+
+Never describe the protection as "impossible to reverse". The honest phrasing is
+**"raises the cost of analysis and tampering"** (see `docs/SECURITY.md`, decision D05).
+
+---
+
+## 워크플로 (한국어)
+
+1. **`main`에 직접 커밋 금지.** 모든 변경은 Pull Request로만 반영한다.
+2. `main`에서 분기하고, 접두어로 종류를 표시한다:
+   - `docs/*` — 문서 / 설계 문서
+   - `feat/*` — 신규 구현
+   - `fix/*` — 버그 수정
+   - `chore/*` — 도구·메타·정리
+3. PR은 한 가지 관심사로 좁힌다. 관련 결정/질문 번호(예: `D16`, `Q12`)를 명시한다.
+4. `docs/DECISIONS.md`의 **결정을 뒤집으려면**, 먼저 그 파일에 근거와 트레이드오프를 쓴다
+   (자세한 규칙은 [CLAUDE.md](CLAUDE.md)).
+5. **근거 수준**은 단계에 맞춘다 (CLAUDE.md 규칙):
+   - Phase 0(문서) → **E0**(문서 정합) / **E1**(출처 있는 외부 사실). 없는 측정값 날조 금지.
+   - 코드가 생기면 → "완료" 선언 전 **E2**(실제 빌드/실행 산출물) 필수.
+6. **Grok 2차 검증**은 구현·진단·코드 검토에서 PR 완료 전 필수. Grok 도구가 실패하면
+   보고하고 판단을 구한다 — 임의 대체 금지.
+7. `main`에는 squash-merge. 머지 후 브랜치 삭제.
+
+## 대외 표현 규칙
+
+보호를 "리버싱 불가능"으로 표현하지 않는다. 정직한 문구는 **"분석과 변조 비용을 높인다"**
+이다 (`docs/SECURITY.md`, 결정 D05 참고).

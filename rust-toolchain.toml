@@ -1,0 +1,10 @@
+# Pin the Rust toolchain so CI and local builds are reproducible and can't drift.
+#
+# This is the version that produced the measured Phase 1 artifacts (e.g. the ~9,728 B
+# stripped `no_std` module and the export set in the protection test). Pinning also stops a
+# new stable's clippy lints from breaking CI's `-D warnings` gate unexpectedly.
+#
+# Bump this deliberately (and re-measure the size proxies) when moving to a newer toolchain.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]

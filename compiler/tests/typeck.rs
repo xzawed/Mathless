@@ -14,6 +14,24 @@ fn type_err(src: &str) -> String {
 }
 
 #[test]
+fn rejects_duplicate_function_names() {
+    // Two `mlx_f` exports would collide as duplicate `#[no_mangle]` symbols at link time;
+    // catch it early with a clear type error instead.
+    let msg = type_err("export fn f() -> f64 { return 1.0 }\nexport fn f() -> f64 { return 2.0 }");
+    assert!(msg.to_lowercase().contains("duplicate"), "{msg}");
+    assert!(msg.contains('f'), "{msg}");
+}
+
+#[test]
+fn rejects_case_insensitive_duplicate_function_names() {
+    // The Delphi import unit is case-insensitive, so `foo` and `Foo` would collide there
+    // even though C/Rust keep them distinct — reject case-insensitive duplicates.
+    let msg =
+        type_err("export fn foo() -> f64 { return 1.0 }\nexport fn Foo() -> f64 { return 2.0 }");
+    assert!(msg.to_lowercase().contains("duplicate"), "{msg}");
+}
+
+#[test]
 fn lowers_discount_to_typed_ir() {
     let src = include_str!("../../examples/discount.mls");
 

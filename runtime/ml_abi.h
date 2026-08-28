@@ -16,8 +16,10 @@
 extern "C" {
 #endif
 
-/* Reserved runtime/version symbol (ml_* namespace). The host resolves this via
- * GetProcAddress/dlsym and refuses to load on a major-version mismatch. */
+/* Reserved runtime/version symbol (ml_* namespace). Contract for hosts: resolve
+ * this via GetProcAddress/dlsym and refuse the module on a major-version
+ * mismatch. NOTE: that refusal is a requirement on the host, not yet implemented
+ * anywhere in this repo — the Rust oracle only asserts the value matches. */
 uint32_t ml_module_abi_version(void);
 
 /* User module exports use the mlx_ prefix (distinct from the runtime ml_*).

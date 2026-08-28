@@ -84,3 +84,16 @@
 - `packager/`: 모듈 포맷
 
 MVP는 compiler 최소 + C ABI + Delphi 또는 C 호스트 하나면 충분하다.
+
+### 현재 실제 레이아웃 (2026-08-29)
+
+위는 **권장 경계**이고, 지금 저장소에 있는 것은 다음뿐이다. 나머지는 **조기 경계**이므로
+필요해질 때 만든다(빈 크레이트를 미리 만들지 않는다).
+
+| 경로 | 내용 | 상태 |
+|------|------|------|
+| `compiler/` | lex → parse → typecheck → IR → codegen + `mlc build` CLI | 있음 (codegen도 여기) |
+| `runtime/` | C ABI 헤더·예약 심볼 규약 | 있음 (헤더만, 런타임 코드 없음) |
+| `hosts/rust-oracle/` | kernel32 로더 + PE export 리더 (테스트 오라클) | 있음 |
+| `examples/` | `.mls` 예제 | 있음 |
+| `backend/` · `host/delphi` · `host/c` · `packager/` | — | **미생성** |

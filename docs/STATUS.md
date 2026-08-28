@@ -26,19 +26,28 @@
 - **열린 PR: #32** — `let mut`(가변 지역 변수) + 대입 슬라이스 **SPEC 초안, 설계 확인 대기**.
 - 방식: 각 슬라이스 SDD(SPEC→사용자 확인)·TDD(Red→Green)·Grok(plan+verify)·CI green·PR.
 
+## 2b. 다음 세션(2026-08-29) 진행분
+
+- **3b-#1 문서 정합화 완료** — 문서 전용 PR(코드 변경 0). 실측 재확인: `cargo test --workspace`
+  **67 pass / 0 fail**, `mlc build examples/discount.mls` → `discount.dll` **9,728 B** + `.h` + `.pas`,
+  `cl`/`gcc`/`dcc64` **여전히 없음**(수용 D BLOCKED 유지).
+
 ## 3. 잔여 작업 — 다음 세션 착수
 
 ### 3a. 즉시 재개 (확인/블록 대기)
 - **PR #32 `let mut`**: 사용자가 DP-M1~M4 확인 → WM1(렉서 `mut`)부터 TDD. (SPEC: `docs/phase1/SPEC-let-mut.md`)
 
 ### 3b. Grok 실측 검토 — fix/improve 우선순위 (다음 세션 권장, 슬라이스와 별개)
-> **#1이 최우선.** 21 PR 후 문서가 `main`보다 뒤처져 있어(“awaiting confirmation” 배너, README 58 →
-> 실제 67, `LANGUAGE.md` MVP가 아직 while/for/string을 미래로 나열, `OPEN_QUESTIONS`의 Q13
-> “DECISIONS pending” 잔여) 다음 SDD 사이클이 닫힌 작업을 재논의할 위험 → **한 문서 PR로 해소.**
+> **#1 완료(2026-08-29).** 21 PR 후 문서가 `main`보다 뒤처져 있었고(“awaiting confirmation” 배너,
+> README 58 → 실제 67, `LANGUAGE.md` MVP가 while/for/string을 미래로 나열, `OPEN_QUESTIONS`의 Q13
+> “DECISIONS pending” 잔여) 다음 SDD 사이클이 닫힌 작업을 재논의할 위험이 있었다 → 한 문서 PR로 해소.
+> **다음 우선순위는 #2(fixture 제거).**
 
-1. **문서 정합화 (최우선):** SPEC/WBS/`LANGUAGE.md`/README/`OPEN_QUESTIONS`를 실측 `main`에 맞춘다.
-   출시된 SPEC를 “accepted”로, W7 이후 작업을 WBS에 기록, “MVP 제안” vs “구현됨” 분리, 테스트 수 58→67,
-   Q13 잔여 문구 정리.
+1. ~~**문서 정합화 (최우선)**~~ — **완료(문서 정합 PR).** 출시된 SPEC 4종을 `상태: 확정 · 구현 완료`로
+   전환(승인·구현 PR 번호 명기), W7 이후 작업(STEP1/W8~W10 + 하드닝 9건)을 WBS에 기록, `LANGUAGE.md`를
+   “MVP 목표(제안)” vs “현재 구현된 표면(E2)”으로 분리, README EN/KO 테스트 수 58→67 및 `i32` 반영,
+   `OPEN_QUESTIONS` Q13 잔여 문구 정리, `ARCHITECTURE`(실제 레이아웃)·`HOST_ABI`(현재 구현된 경계)·
+   `SECURITY`(P0 실측 프록시) 보강. **`DECISIONS.md`는 건드리지 않음**(규칙 8).
 2. **`examples/fixture` + `loads_fixture` 제거**(워크스페이스에서도). `mlc build`가 W5 경로를 대체 —
    손수 만든 fixture는 두 번째 ABI 소스이고 매 `cargo test`가 빌드한다.
 3. **skip-게이트 C(이후 Delphi) 호스트를 `hosts/`에 추가** — `cl`/`gcc`/`dcc64`가 있을 때만 컴파일.
@@ -72,4 +81,4 @@
 1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md` → 열린 SPEC(`SPEC-let-mut.md` 등) 순.
 2. 규칙: `CLAUDE.md`·`CONTRIBUTING.md`. 절차 = **SPEC → (사용자 확인) → TDD(Red→Green) → Grok verify → PR → squash-merge**.
 3. `main` 직접 커밋 금지. 각 변경은 CI(`windows-latest`, 툴체인 핀) green + Grok verify 후 머지.
-4. 권장 다음 순서: **PR #32 확인 → (또는 먼저) 3b-#1 문서 정합 → 3b-#2 fixture 제거 → 3b-#4/#5 emit·진단 → 이후 슬라이스.**
+4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 → 3b-#4/#5 emit·진단 → PR #32(`let mut`) 확인 → 이후 슬라이스.**

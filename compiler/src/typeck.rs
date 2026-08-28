@@ -78,6 +78,9 @@ fn ir_type(t: Type) -> IrType {
 
 fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, TypeError> {
     let mut scope: Scope = HashMap::new();
+    // Parameter names must be unique case-insensitively: distinct in C/Rust, but the
+    // (case-insensitive) Delphi import unit would see `x` and `X` as the same param.
+    let mut seen_params: HashSet<String> = HashSet::new();
     let mut params = Vec::with_capacity(f.params.len());
     for p in &f.params {
         let targets = crate::reserved::reserving_targets(&p.name);
@@ -89,13 +92,14 @@ fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, Type
                 targets.join(", ")
             )));
         }
-        let ty = ir_type(p.ty);
-        if scope.insert(p.name.clone(), ty).is_some() {
+        if !seen_params.insert(p.name.to_ascii_lowercase()) {
             return Err(TypeError::new(format!(
-                "function '{}': duplicate parameter '{}'",
+                "function '{}': duplicate parameter '{}' — parameter names must be unique case-insensitively (Delphi binding)",
                 f.name, p.name
             )));
         }
+        let ty = ir_type(p.ty);
+        scope.insert(p.name.clone(), ty);
         params.push(IrParam {
             name: p.name.clone(),
             ty,

@@ -92,6 +92,19 @@ fn lowers_discount_to_typed_ir() {
 }
 
 #[test]
+fn rejects_duplicate_parameter_names() {
+    let msg = type_err("export fn f(x: f64, x: f64) -> f64 { return x }");
+    assert!(msg.to_lowercase().contains("duplicate"), "{msg}");
+}
+
+#[test]
+fn rejects_case_insensitive_duplicate_parameter_names() {
+    // Delphi parameters are case-insensitive, so `x` and `X` collide in the import unit.
+    let msg = type_err("export fn f(x: f64, X: f64) -> f64 { return x }");
+    assert!(msg.to_lowercase().contains("duplicate"), "{msg}");
+}
+
+#[test]
 fn rejects_return_type_mismatch() {
     let msg = type_err("export fn f(x: f64) -> bool { return x }");
     assert!(msg.contains("return type"), "message was: {msg}");

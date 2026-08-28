@@ -20,7 +20,7 @@ fn oracle_calls_fallible_success_and_failure_paths() {
     // int32_t mlx_safe_div(double a, double b, double* out_value)
     let safe_div: extern "C" fn(f64, f64, *mut f64) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_safe_div\0").unwrap()) };
-    assert_eq!(ver(), 1, "abi version");
+    assert_eq!(ver(), mlc::ML_MODULE_ABI_VERSION, "abi version");
 
     // Success path: status 0, value written to the out-param.
     let mut out_ok: f64 = -999.0; // finite sentinel (NaN would break the unchanged check)

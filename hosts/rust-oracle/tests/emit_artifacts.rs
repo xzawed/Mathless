@@ -22,7 +22,7 @@ fn oracle_loads_and_calls_the_packaged_module() {
         unsafe { std::mem::transmute(m.symbol(b"ml_module_abi_version\0").unwrap()) };
     let discount: extern "C" fn(f64, bool) -> f64 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_discount\0").unwrap()) };
-    assert_eq!(ver(), 1, "abi version");
+    assert_eq!(ver(), mlc::ML_MODULE_ABI_VERSION, "abi version");
     assert_eq!(discount(100.0, true), 90.0, "vip discount");
     assert_eq!(discount(100.0, false), 100.0, "non-vip");
 

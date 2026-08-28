@@ -4,6 +4,7 @@
 //! (W3)** → **codegen (W4)**. Per D19 codegen lowers the non-Rust IR to `extern "C"`
 //! Rust, then `cargo build --crate-type cdylib`.
 
+pub mod abi;
 pub mod ast;
 pub mod codegen;
 pub mod emit;
@@ -15,6 +16,7 @@ pub mod parser;
 pub mod reserved;
 pub mod typeck;
 
+pub use abi::ML_MODULE_ABI_VERSION;
 pub use ast::*;
 pub use codegen::CodegenError;
 pub use error::ParseError;
@@ -54,5 +56,18 @@ mod tests {
         let rust = compile_to_rust(include_str!("../../examples/discount.mls")).expect("compile");
         assert!(rust.contains(r#"pub extern "C" fn mlx_discount"#));
         assert!(rust.contains("ml_module_abi_version"));
+    }
+
+    #[test]
+    fn emitted_abi_version_matches_the_single_source_constant() {
+        // The version lives in exactly one place; codegen interpolates it, so bumping the
+        // constant can't drift from what the module actually exports.
+        let rust = compile_to_rust("export fn f() -> f64 { return 1.0 }").expect("compile");
+        assert!(
+            rust.contains(&format!(
+                "ml_module_abi_version() -> u32 {{ {ML_MODULE_ABI_VERSION} }}"
+            )),
+            "{rust}"
+        );
     }
 }

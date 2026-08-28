@@ -48,7 +48,7 @@ fn oracle_loads_fixture_and_calls_discount() {
         .symbol(b"ml_module_abi_version\0")
         .expect("ml_module_abi_version");
     let ver: extern "C" fn() -> u32 = unsafe { std::mem::transmute(ver_p) };
-    assert_eq!(ver(), 1, "abi version");
+    assert_eq!(ver(), mlc::ML_MODULE_ABI_VERSION, "abi version");
 
     // User export (mlx_ prefix).
     let fn_p = m.symbol(b"mlx_discount\0").expect("mlx_discount");

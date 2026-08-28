@@ -55,7 +55,7 @@
 
 ## 현재 구현된 표면 (2026-08-29 실측, E2)
 
-`cargo test --workspace` = 67 pass / 0 fail 기준. **이 목록에 없는 것은 아직 컴파일되지 않는다.**
+`cargo test --workspace` = 66 pass / 0 fail 기준. **이 목록에 없는 것은 아직 컴파일되지 않는다.**
 
 구현됨:
 

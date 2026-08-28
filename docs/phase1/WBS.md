@@ -5,7 +5,7 @@
 
 > 진행(2026-08-29 실측): **W0~W7 ✅** · **STEP1 CLI ✅** · **W8~W10 ✅**(D17 에러 경로 · `let` 지역 변수 · `i32`).
 > **Phase 1 빌드 가능 범위(수용 A/B/C + W7 산출물) 완료**; **수용 D만 툴체인 확보 대기(BLOCKED)**.
-> `cargo test --workspace` = **67 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
+> `cargo test --workspace` = **66 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
 > 잔여 작업 목록의 정본은 `docs/STATUS.md` §3.
 >
 > **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 67), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. `.h`/`.pas`의 실제 C/Delphi 로드는 여전히 **BLOCKED**(생성물에 DRAFT 표기 유지).
@@ -16,7 +16,7 @@
 | ID | 작업 | 산출물 | 완료 기준 (측정) | 의존 |
 |----|------|--------|------------------|------|
 | **W0** | DP1~DP4 확인 → `DECISIONS.md` D19~D22 반영 + export 측정 도구 확보 | DECISIONS 갱신, export 덤프 방법(dumpbin 또는 llvm-objdump/PE 리더) | `discount.dll`의 export 목록을 실제로 출력해 첨부 | SPEC 확인 |
-| **W1** | 리포 스캐폴드 | `compiler/`(Rust), `runtime/`(예약 심볼 규약 문서+헤더), `hosts/rust-oracle/`(kernel32 로더), `examples/discount.mls` | `cargo test` 그린: 오라클이 **손수 만든 fixture DLL**을 로드해 §3-B 3개 assert 통과 | W0 |
+| **W1** | 리포 스캐폴드 | `compiler/`(Rust), `runtime/`(예약 심볼 규약 문서+헤더), `hosts/rust-oracle/`(kernel32 로더), `examples/discount.mls` | `cargo test` 그린: 오라클이 **손수 만든 fixture DLL**을 로드해 §3-B 3개 assert 통과 *(그 fixture 크레이트·테스트는 W5가 대체한 뒤 삭제됨 — 아래 하드닝 표)* | W0 |
 | **W2** | 렉서·파서 (TDD) | `compiler`의 lexer/parser | `discount.mls` → AST 스냅샷 테스트 통과; 잘못된 입력은 명확한 에러 | W1 |
 | **W3** | 타입체크 + 독립 IR (TDD) | typecheck(f64/bool), 비-Rust IR | AST → typed IR 테스트 통과; 타입 오류 케이스 실패 처리 | W2 |
 | **W4** | 코드젠 (TDD) | IR → `no_std`+`extern "C"`+`repr(C)` Rust emit → `cargo cdylib` 호출 | 생성 Rust가 빌드되어 DLL 산출; 유닛 테스트 그린 | W3 |
@@ -49,6 +49,7 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 | 파서 `peek()`/`err()` 경계 안전 | #21 |
 | PE 리더의 손상 입력 가드에 부정 테스트 추가 | #23 |
 | CI(`windows-latest`, fmt+clippy+test) · Rust 툴체인 1.97.1 핀 | #12 / #24 |
+| W1 fixture 크레이트(`examples/fixture`) + `loads_fixture` 테스트 삭제 — W5의 컴파일러 산출물이 대체(두 번째 ABI 소스 제거, 매 `cargo test`의 불필요한 cdylib 빌드 제거). 테스트 67→66 | #35 |
 
 ## 게이트/블로커
 

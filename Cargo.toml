@@ -1,4 +1,4 @@
 # Mathless Rust workspace (Phase 1). See docs/phase1/WBS.md.
 [workspace]
 resolver = "2"
-members = ["compiler", "hosts/rust-oracle", "examples/fixture"]
+members = ["compiler", "hosts/rust-oracle"]

@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **67 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **66 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
@@ -28,9 +28,13 @@
 
 ## 2b. 다음 세션(2026-08-29) 진행분
 
-- **3b-#1 문서 정합화 완료** — 문서 전용 PR(코드 변경 0). 실측 재확인: `cargo test --workspace`
+- **3b-#1 문서 정합화 완료 (PR #34)** — 문서 전용(코드 변경 0). 실측 재확인: `cargo test --workspace`
   **67 pass / 0 fail**, `mlc build examples/discount.mls` → `discount.dll` **9,728 B** + `.h` + `.pas`,
   `cl`/`gcc`/`dcc64` **여전히 없음**(수용 D BLOCKED 유지).
+  Grok verify가 **실제 과대 주장 1건**을 잡음: "ABI major 불일치 시 로드 거부"는 구현되어 있지 않다
+  (`Module::load`는 `LoadLibraryW`만, 오라클은 로드 **후** 값 일치를 assert). 리포 전체 4곳을 "호스트
+  계약 / 여기서는 미강제"로 수정.
+- **3b-#2 W1 fixture 제거 완료** — 테스트 67 → 66.
 
 ## 3. 잔여 작업 — 다음 세션 착수
 
@@ -48,8 +52,9 @@
    “MVP 목표(제안)” vs “현재 구현된 표면(E2)”으로 분리, README EN/KO 테스트 수 58→67 및 `i32` 반영,
    `OPEN_QUESTIONS` Q13 잔여 문구 정리, `ARCHITECTURE`(실제 레이아웃)·`HOST_ABI`(현재 구현된 경계)·
    `SECURITY`(P0 실측 프록시) 보강. **`DECISIONS.md`는 건드리지 않음**(규칙 8).
-2. **`examples/fixture` + `loads_fixture` 제거**(워크스페이스에서도). `mlc build`가 W5 경로를 대체 —
-   손수 만든 fixture는 두 번째 ABI 소스이고 매 `cargo test`가 빌드한다.
+2. ~~**`examples/fixture` + `loads_fixture` 제거**~~ — **완료.** 크레이트·테스트·워크스페이스 멤버·
+   `Cargo.lock` 항목 삭제. `end_to_end`가 동일한 §3-B 3개 assert를 **컴파일러 산출 DLL**로 이미 덮고
+   있어 커버리지 손실 없음. 테스트 **67 → 66**(삭제한 그 1개만 감소), fmt/clippy clean.
 3. **skip-게이트 C(이후 Delphi) 호스트를 `hosts/`에 추가** — `cl`/`gcc`/`dcc64`가 있을 때만 컴파일.
    수용 D를 “됐다”고 위장하지 않으면서 Gate-D 준비를 이어감(CI green 유지, 툴체인 오는 날 즉시 검증).
 4. **`mlc build` 산출을 원자적으로**(stage → rename) + `reserved.rs`에 나쁜 모듈 stem 거부. WBS 잔여에
@@ -81,4 +86,4 @@
 1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md` → 열린 SPEC(`SPEC-let-mut.md` 등) 순.
 2. 규칙: `CLAUDE.md`·`CONTRIBUTING.md`. 절차 = **SPEC → (사용자 확인) → TDD(Red→Green) → Grok verify → PR → squash-merge**.
 3. `main` 직접 커밋 금지. 각 변경은 CI(`windows-latest`, 툴체인 핀) green + Grok verify 후 머지.
-4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 → 3b-#4/#5 emit·진단 → PR #32(`let mut`) 확인 → 이후 슬라이스.**
+4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 ✅ → 3b-#4/#5 emit·진단 → PR #32(`let mut`) 확인 → 이후 슬라이스.**

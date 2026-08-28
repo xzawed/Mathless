@@ -52,7 +52,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
   - `mlx_discount(100.0, true)  == 90.0`
   - `mlx_discount(100.0, false) == 100.0`
   - `ml_module_abi_version()    == 1`
-  - *현재 손수 작성한 fixture로 위 3개 통과 실측 완료(E2). 남은 것은 fixture를 컴파일러 산출물로 대체하는 것.*
+  - *W1에서는 손수 작성한 fixture DLL로 위 3개를 통과했고, W5에서 **컴파일러 산출물로 대체**되었다(E2, `end_to_end` 테스트). 이후 fixture 크레이트와 `loads_fixture` 테스트는 **삭제**되었다 — ABI 소스가 둘이면 서로 어긋날 수 있고, 매 `cargo test`가 쓰지 않는 cdylib를 빌드했다.*
 - **C. 보호 측정 (D04/D05):** `discount.dll`의 export 목록을 도구로 덤프해 **`mlx_*` + `ml_module_abi_version`만** 노출되고, 소스/디버그 심볼/패닉 문자열이 최소임을 확인한다. `no_std` + strip 지향. **rustc가 자동 보장하지 않으므로 반드시 측정한다.** (Grok 지적)
 - **D. D14 게이트 (별도, 현재 BLOCKED):** 동일 `discount.dll`을 **Delphi(플래그십) 또는 C 호스트**에서 로드·호출. 이 머신에 `dcc64`/`cl`/`gcc` 없음 → **툴체인 확보 전까지 BLOCKED**로 표기. 슬라이스는 C 헤더(`.h`)와 Delphi import unit(`.pas`)을 **산출**하되, 실제 로드 검증은 툴체인 확보 후.
 
@@ -102,7 +102,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 > 최신 상태의 정본은 `docs/STATUS.md`.
 
 - `.mls → parse → typecheck → emit` 파이프라인 **아직 없음**(스모크는 손수 쓴 Rust).
-  → **해소.** W2~W5로 구현, `mlc build` CLI까지(PR #5~#7, #11). `cargo test --workspace` 67 그린.
+  → **해소.** W2~W5로 구현, `mlc build` CLI까지(PR #5~#7, #11). `cargo test --workspace` 66 그린(W1 fixture 테스트 삭제 후).
 - C 헤더 소비 및 Delphi/C 호스트 로드 **미검증**.
   → **여전히 미검증(수용 D, BLOCKED).** `.h`/`.pas`는 생성되지만(PR #9) `cl`/`gcc`/`dcc64` 미확보.
 - D16(handle) / D17(status+out-param) **미검증**(범위 밖).

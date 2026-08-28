@@ -1,0 +1,9 @@
+// D17 error-path slice: a fallible function.
+// `-> f64!` marks it fallible (ABI = int32 status + out-param). `fail CODE` returns a
+// module-defined positive error code; `return e` succeeds (status 0, value in the out-param).
+error DIV_BY_ZERO = 1
+
+export fn safe_div(a: f64, b: f64) -> f64! {
+  if b == 0.0 { fail DIV_BY_ZERO }
+  return a / b
+}

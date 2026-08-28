@@ -61,6 +61,13 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     let _ = writeln!(s, "#include <stdint.h>");
     let _ = writeln!(s, "#include <stdbool.h>");
     s.push('\n');
+    // D17 error codes (module-defined, positive i32). Constants — not exported symbols.
+    if !module.errors.is_empty() {
+        for e in &module.errors {
+            let _ = writeln!(s, "#define ML_ERR_{} {}", e.name, e.code);
+        }
+        s.push('\n');
+    }
     let _ = writeln!(s, "#ifdef __cplusplus");
     let _ = writeln!(s, "extern \"C\" {{");
     let _ = writeln!(s, "#endif");
@@ -81,16 +88,31 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
 }
 
 fn c_signature(f: &IrFunction) -> String {
-    let params = if f.params.is_empty() {
+    let mut parts: Vec<String> = f
+        .params
+        .iter()
+        .map(|p| format!("{} {}", c_type(p.ty), p.name))
+        .collect();
+    if f.fallible {
+        // D17: i32 status return + a `T*` out-param.
+        parts.push(format!("{}* out_value", c_type(f.ret)));
+        format!("int32_t mlx_{}({});", f.name, join_c_params(parts))
+    } else {
+        format!(
+            "{} mlx_{}({});",
+            c_type(f.ret),
+            f.name,
+            join_c_params(parts)
+        )
+    }
+}
+
+fn join_c_params(parts: Vec<String>) -> String {
+    if parts.is_empty() {
         "void".to_string()
     } else {
-        f.params
-            .iter()
-            .map(|p| format!("{} {}", c_type(p.ty), p.name))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    format!("{} mlx_{}({});", c_type(f.ret), f.name, params)
+        parts.join(", ")
+    }
 }
 
 /// Emit a Delphi import unit. `unit_name` is the Pascal unit name; `dll_name` the module
@@ -116,6 +138,10 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     s.push('\n');
     let _ = writeln!(s, "const");
     let _ = writeln!(s, "  ML_MODULE = '{dll_name}.dll';");
+    // D17 error codes (module-defined, positive i32).
+    for e in &module.errors {
+        let _ = writeln!(s, "  ML_ERR_{} = {};", e.name, e.code);
+    }
     s.push('\n');
     let _ = writeln!(
         s,
@@ -132,19 +158,22 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
 }
 
 fn delphi_signature(f: &IrFunction) -> String {
-    if f.params.is_empty() {
+    let mut parts: Vec<String> = f
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, delphi_type(p.ty)))
+        .collect();
+    if f.fallible {
+        // D17: Integer status return + an `out` param (Delphi `out` == C `T*` for f64/bool).
+        parts.push(format!("out out_value: {}", delphi_type(f.ret)));
+        format!("function mlx_{}({}): Integer;", f.name, parts.join("; "))
+    } else if parts.is_empty() {
         format!("function mlx_{}: {};", f.name, delphi_type(f.ret))
     } else {
-        let params = f
-            .params
-            .iter()
-            .map(|p| format!("{}: {}", p.name, delphi_type(p.ty)))
-            .collect::<Vec<_>>()
-            .join("; ");
         format!(
             "function mlx_{}({}): {};",
             f.name,
-            params,
+            parts.join("; "),
             delphi_type(f.ret)
         )
     }

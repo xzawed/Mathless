@@ -37,12 +37,27 @@ impl std::error::Error for TypeError {}
 type Scope = HashMap<String, IrType>;
 
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
+    // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
+    let mut error_table: Scope2 = HashMap::new();
+    let mut errors = Vec::with_capacity(module.errors.len());
+    for e in &module.errors {
+        if error_table.insert(e.name.clone(), e.code).is_some() {
+            return Err(TypeError::new(format!("duplicate error code '{}'", e.name)));
+        }
+        errors.push(IrErrorDecl {
+            name: e.name.clone(),
+            code: e.code,
+        });
+    }
     let mut functions = Vec::with_capacity(module.functions.len());
     for f in &module.functions {
-        functions.push(check_function(f)?);
+        functions.push(check_function(f, &error_table)?);
     }
-    Ok(IrModule { functions })
+    Ok(IrModule { functions, errors })
 }
+
+/// Error-code name → resolved positive code.
+type Scope2 = HashMap<String, i32>;
 
 fn ir_type(t: Type) -> IrType {
     match t {
@@ -51,7 +66,7 @@ fn ir_type(t: Type) -> IrType {
     }
 }
 
-fn check_function(f: &ast::Function) -> Result<IrFunction, TypeError> {
+fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, TypeError> {
     let mut scope: Scope = HashMap::new();
     let mut params = Vec::with_capacity(f.params.len());
     for p in &f.params {
@@ -76,12 +91,22 @@ fn check_function(f: &ast::Function) -> Result<IrFunction, TypeError> {
             ty,
         });
     }
+    // The fallible ABI synthesizes an `out_value` out-param; a user param of that name would
+    // collide in the generated Rust (Grok verify). Reject it with a clear message.
+    if f.fallible && f.params.iter().any(|p| p.name == "out_value") {
+        return Err(TypeError::new(format!(
+            "function '{}': parameter name 'out_value' is reserved in a fallible function \
+             (it names the D17 out-param) — rename it",
+            f.name
+        )));
+    }
     let ret = ir_type(f.ret);
-    let body = check_block(&f.body, &scope, ret, &f.name)?;
+    let body = check_block(&f.body, &scope, ret, &f.name, f.fallible, errors)?;
     Ok(IrFunction {
         name: f.name.clone(),
         params,
         ret,
+        fallible: f.fallible,
         body,
     })
 }
@@ -91,14 +116,23 @@ fn check_block(
     scope: &Scope,
     ret: IrType,
     fname: &str,
+    fallible: bool,
+    errors: &Scope2,
 ) -> Result<Vec<IrStmt>, TypeError> {
     stmts
         .iter()
-        .map(|s| check_stmt(s, scope, ret, fname))
+        .map(|s| check_stmt(s, scope, ret, fname, fallible, errors))
         .collect()
 }
 
-fn check_stmt(s: &Stmt, scope: &Scope, ret: IrType, fname: &str) -> Result<IrStmt, TypeError> {
+fn check_stmt(
+    s: &Stmt,
+    scope: &Scope,
+    ret: IrType,
+    fname: &str,
+    fallible: bool,
+    errors: &Scope2,
+) -> Result<IrStmt, TypeError> {
     match s {
         Stmt::If { cond, body } => {
             let cond = check_expr(cond, scope, fname)?;
@@ -108,7 +142,7 @@ fn check_stmt(s: &Stmt, scope: &Scope, ret: IrType, fname: &str) -> Result<IrStm
                     cond.ty
                 )));
             }
-            let body = check_block(body, scope, ret, fname)?;
+            let body = check_block(body, scope, ret, fname, fallible, errors)?;
             Ok(IrStmt::If { cond, body })
         }
         Stmt::Return(e) => {
@@ -120,6 +154,19 @@ fn check_stmt(s: &Stmt, scope: &Scope, ret: IrType, fname: &str) -> Result<IrStm
                 )));
             }
             Ok(IrStmt::Return(e))
+        }
+        Stmt::Fail(name) => {
+            if !fallible {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `fail` is only allowed in a fallible function — declare it `-> {ret:?}!`"
+                )));
+            }
+            match errors.get(name) {
+                Some(&code) => Ok(IrStmt::Fail(code)),
+                None => Err(TypeError::new(format!(
+                    "function '{fname}': unknown error code '{name}' — declare `error {name} = <positive int>`"
+                ))),
+            }
         }
     }
 }

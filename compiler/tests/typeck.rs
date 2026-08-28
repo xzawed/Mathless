@@ -18,6 +18,7 @@ fn lowers_discount_to_typed_ir() {
     let src = include_str!("../../examples/discount.mls");
 
     let expected = IrModule {
+        errors: vec![],
         functions: vec![IrFunction {
             name: "discount".into(),
             params: vec![
@@ -31,6 +32,7 @@ fn lowers_discount_to_typed_ir() {
                 },
             ],
             ret: IrType::F64,
+            fallible: false,
             body: vec![
                 IrStmt::If {
                     cond: IrExpr {

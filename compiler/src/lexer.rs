@@ -12,6 +12,8 @@ pub enum Token {
     Return,
     True,
     False,
+    Error,
+    Fail,
     // atoms
     Ident(String),
     Number(f64),
@@ -23,6 +25,8 @@ pub enum Token {
     RBrace,
     Comma,
     Colon,
+    Assign,
+    Bang,
     // operators
     Plus,
     Minus,
@@ -116,6 +120,8 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             '}' => Some(Token::RBrace),
             ',' => Some(Token::Comma),
             ':' => Some(Token::Colon),
+            '=' => Some(Token::Assign),
+            '!' => Some(Token::Bang),
             '+' => Some(Token::Plus),
             '-' => Some(Token::Minus),
             '*' => Some(Token::Star),
@@ -179,6 +185,8 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "return" => Token::Return,
                 "true" => Token::True,
                 "false" => Token::False,
+                "error" => Token::Error,
+                "fail" => Token::Fail,
                 _ => Token::Ident(s),
             };
             out.push(Spanned {

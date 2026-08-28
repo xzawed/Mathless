@@ -15,6 +15,15 @@ pub enum IrType {
 #[derive(Debug, PartialEq)]
 pub struct IrModule {
     pub functions: Vec<IrFunction>,
+    /// Module-defined error codes (D17), used by the header/unit generators and resolved
+    /// into [`IrStmt::Fail`] by the typechecker.
+    pub errors: Vec<IrErrorDecl>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IrErrorDecl {
+    pub name: String,
+    pub code: i32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,6 +31,8 @@ pub struct IrFunction {
     pub name: String,
     pub params: Vec<IrParam>,
     pub ret: IrType,
+    /// Fallible (`-> T!`): lowers to `int32 status` return + a `*mut T` out-param (D17).
+    pub fallible: bool,
     pub body: Vec<IrStmt>,
 }
 
@@ -33,8 +44,13 @@ pub struct IrParam {
 
 #[derive(Debug, PartialEq)]
 pub enum IrStmt {
-    If { cond: IrExpr, body: Vec<IrStmt> },
+    If {
+        cond: IrExpr,
+        body: Vec<IrStmt>,
+    },
     Return(IrExpr),
+    /// `fail` with the resolved positive error code (only in a fallible function).
+    Fail(i32),
 }
 
 /// A type-annotated expression.

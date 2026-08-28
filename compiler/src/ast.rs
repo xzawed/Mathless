@@ -4,6 +4,15 @@
 #[derive(Debug, PartialEq)]
 pub struct Module {
     pub functions: Vec<Function>,
+    /// Module-scoped error-code declarations (`error NAME = N`), for fallible functions (D17).
+    pub errors: Vec<ErrorDecl>,
+}
+
+/// `error NAME = N` — a module-defined domain error code (Q13: positive i32).
+#[derive(Debug, PartialEq)]
+pub struct ErrorDecl {
+    pub name: String,
+    pub code: i32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -11,6 +20,8 @@ pub struct Function {
     pub name: String,
     pub params: Vec<Param>,
     pub ret: Type,
+    /// `-> T!` — the function may `fail`; it lowers to the D17 ABI (i32 status + out-param).
+    pub fallible: bool,
     pub body: Vec<Stmt>,
 }
 
@@ -32,6 +43,8 @@ pub enum Stmt {
     If { cond: Expr, body: Vec<Stmt> },
     /// `return <expr>`.
     Return(Expr),
+    /// `fail <CODE>` — fail with a declared error code (only in a fallible function).
+    Fail(String),
 }
 
 #[derive(Debug, PartialEq)]

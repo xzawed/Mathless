@@ -60,7 +60,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         )));
     }
 
-    let params: Vec<String> = f
+    let mut params: Vec<String> = f
         .params
         .iter()
         .map(|p| format!("{}: {}", p.name, rust_type(p.ty)))
@@ -68,25 +68,37 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
 
     // `write!` into a String is infallible; the `_ =` documents that.
     out.push_str("#[no_mangle]\n");
-    let _ = writeln!(
-        out,
-        "pub extern \"C\" fn mlx_{}({}) -> {} {{",
-        f.name,
-        params.join(", "),
-        rust_type(f.ret)
-    );
+    if f.fallible {
+        // D17: a fallible fn returns an `i32` status and delivers its value through a
+        // `*mut T` out-param appended after the declared parameters.
+        params.push(format!("out_value: *mut {}", rust_type(f.ret)));
+        let _ = writeln!(
+            out,
+            "pub extern \"C\" fn mlx_{}({}) -> i32 {{",
+            f.name,
+            params.join(", ")
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            "pub extern \"C\" fn mlx_{}({}) -> {} {{",
+            f.name,
+            params.join(", "),
+            rust_type(f.ret)
+        );
+    }
     for s in &f.body {
-        emit_stmt(s, 1, out);
+        emit_stmt(s, 1, f.fallible, out);
     }
     out.push_str("}\n");
     Ok(())
 }
 
-/// A statement list guarantees a return iff its last statement guarantees one.
-/// An `if` without an `else` does not (its false path falls through), so a function
-/// must end in a `return`.
+/// A statement list guarantees an exit iff its last statement does. An `if` without an
+/// `else` does not (its false path falls through), so a function must end in a `return`
+/// (or, in a fallible function, a `fail`).
 fn block_always_returns(body: &[IrStmt]) -> bool {
-    matches!(body.last(), Some(IrStmt::Return(_)))
+    matches!(body.last(), Some(IrStmt::Return(_) | IrStmt::Fail(_)))
 }
 
 fn rust_type(t: IrType) -> &'static str {
@@ -96,16 +108,29 @@ fn rust_type(t: IrType) -> &'static str {
     }
 }
 
-fn emit_stmt(s: &IrStmt, indent: usize, out: &mut String) {
+fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
     let pad = "    ".repeat(indent);
     match s {
         IrStmt::Return(e) => {
-            let _ = writeln!(out, "{pad}return {};", emit_expr(e));
+            if fallible {
+                // Success: write the value through the out-param, return status 0 (D17).
+                let _ = writeln!(
+                    out,
+                    "{pad}unsafe {{ *out_value = {}; }} return 0;",
+                    emit_expr(e)
+                );
+            } else {
+                let _ = writeln!(out, "{pad}return {};", emit_expr(e));
+            }
+        }
+        IrStmt::Fail(code) => {
+            // Failure: return the positive domain code; the out-param is left untouched.
+            let _ = writeln!(out, "{pad}return {code};");
         }
         IrStmt::If { cond, body } => {
             let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond));
             for st in body {
-                emit_stmt(st, indent + 1, out);
+                emit_stmt(st, indent + 1, fallible, out);
             }
             let _ = writeln!(out, "{pad}}}");
         }
@@ -205,6 +230,7 @@ mod tests {
     fn rejects_function_without_guaranteed_return() {
         // Only statement is an `if` (no trailing return) → some path returns no value.
         let module = IrModule {
+            errors: vec![],
             functions: vec![IrFunction {
                 name: "f".into(),
                 params: vec![IrParam {
@@ -212,6 +238,7 @@ mod tests {
                     ty: IrType::Bool,
                 }],
                 ret: IrType::F64,
+                fallible: false,
                 body: vec![IrStmt::If {
                     cond: IrExpr {
                         ty: IrType::Bool,

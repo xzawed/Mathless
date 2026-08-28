@@ -9,6 +9,7 @@ fn parses_discount_example() {
     let module = parse(src).expect("discount.mls should parse");
 
     let expected = Module {
+        errors: vec![],
         functions: vec![Function {
             name: "discount".into(),
             params: vec![
@@ -22,6 +23,7 @@ fn parses_discount_example() {
                 },
             ],
             ret: Type::F64,
+            fallible: false,
             body: vec![
                 Stmt::If {
                     cond: Expr::Var("vip".into()),

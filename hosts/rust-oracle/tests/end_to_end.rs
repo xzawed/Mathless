@@ -11,7 +11,10 @@ fn compiles_discount_mls_and_calls_it_via_oracle() {
     // A: source → emitted Rust → native DLL, produced by the compiler.
     let src = include_str!("../../../examples/discount.mls");
     let rust = compile_to_rust(src).expect("compile discount.mls");
-    let workdir = std::env::temp_dir().join("mlc_e2e");
+    // Isolate the build tree per test process (build_cdylib expects a unique workdir); a
+    // fixed name would race two concurrent `cargo test` runs.
+    let workdir = std::env::temp_dir().join(format!("mlc_e2e_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&workdir);
     let dll = build_cdylib(&rust, "discount", &workdir).expect("build cdylib");
     assert!(dll.exists(), "dll not produced at {}", dll.display());
 
@@ -26,4 +29,8 @@ fn compiles_discount_mls_and_calls_it_via_oracle() {
     assert_eq!(ver(), mlc::ML_MODULE_ABI_VERSION, "abi version");
     assert_eq!(discount(100.0, true), 90.0, "vip discount");
     assert_eq!(discount(100.0, false), 100.0, "non-vip");
+
+    // Release the loaded DLL (Windows locks it) before removing the isolated build tree.
+    drop(m);
+    let _ = std::fs::remove_dir_all(&workdir);
 }

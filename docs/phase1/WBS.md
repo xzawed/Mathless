@@ -3,9 +3,10 @@
 의존 순서. **각 작업 = 1 PR**, 측정 가능한 완료 기준(DoD). DP1~DP4 확인 후 W0부터 착수.
 방법론은 SDD+WBS+TDD (CLAUDE.md). 각 코드 작업은 실패 테스트 → 구현 → 통과 → `grok_build_verify`.
 
-> 진행: **W0 ✅**(#3) · **W1 ✅**(#4) · **W2 ✅**(#5) · **W3 ✅**(#6) · **W4+W5 ✅**(codegen + e2e, 수용 A+B 달성) · **W6 ⏳**(보호 측정) · W7 대기.
+> 진행: **W0 ✅**(#3) · **W1 ✅**(#4) · **W2 ✅**(#5) · **W3 ✅**(#6) · **W4+W5 ✅**(#7, 수용 A+B) · **W6 ✅**(보호 측정, 수용 C) · **W7 ⏳**(C헤더/Delphi unit — 로드 게이트 BLOCKED).
 >
-> 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll`(107KB) → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 W4 필수 요건대로 "모든 경로 return"을 강제(미충족 시 codegen 에러).
+> 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll` → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 "모든 경로 return"을 강제(미충족 시 codegen 에러).
+> 수용 C 실측: no_std+strip+lto+opt-z DLL = **9,728 B**(std ~107,008 B 대비 ~11×↓), export = **정확히 `mlx_discount` + `ml_module_abi_version`**(PE 리더로 파싱), 소스 코멘트/파일명 비유출. 프록시만 측정 — "리버싱 난이도" 주장 없음(D05).
 
 | ID | 작업 | 산출물 | 완료 기준 (측정) | 의존 |
 |----|------|--------|------------------|------|

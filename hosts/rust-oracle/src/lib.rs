@@ -7,6 +7,8 @@
 //! Dependency-free: uses Win32 `LoadLibraryW`/`GetProcAddress` directly.
 #![cfg(windows)]
 
+pub mod pe;
+
 use std::ffi::c_void;
 
 #[link(name = "kernel32")]

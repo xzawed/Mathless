@@ -5,3 +5,9 @@ edition = "2021"
 publish = false
 
 [lib]
+
+# Thin CLI wrapper over the library (`mlc build <file.mls> -o <dir>`). The library does
+# all the work so it stays unit-tested; the bin is argv parsing only.
+[[bin]]
+name = "mlc"
+path = "src/main.rs"

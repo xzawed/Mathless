@@ -55,6 +55,15 @@ fn check_function(f: &ast::Function) -> Result<IrFunction, TypeError> {
     let mut scope: Scope = HashMap::new();
     let mut params = Vec::with_capacity(f.params.len());
     for p in &f.params {
+        let targets = crate::reserved::reserving_targets(&p.name);
+        if !targets.is_empty() {
+            return Err(TypeError::new(format!(
+                "function '{}': parameter '{}' is a reserved word in {} — rename it",
+                f.name,
+                p.name,
+                targets.join(", ")
+            )));
+        }
         let ty = ir_type(p.ty);
         if scope.insert(p.name.clone(), ty).is_some() {
             return Err(TypeError::new(format!(

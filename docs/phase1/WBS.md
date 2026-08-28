@@ -5,6 +5,8 @@
 
 > 진행: **W0~W6 ✅** · **W7 ✅**(C헤더/Delphi unit 생성기 — 생성물 검증됨, 실제 **로드 게이트(수용 D)는 BLOCKED**). **Phase 1 빌드 가능 범위(A/B/C + W7 산출물) 완료**; 수용 D만 툴체인 확보 대기.
 >
+> **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2: `cargo test` 30 그린, 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. `.h`/`.pas`의 실제 C/Delphi 로드는 여전히 **BLOCKED**(생성물에 DRAFT 표기 유지).
+>
 > 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll` → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 "모든 경로 return"을 강제(미충족 시 codegen 에러).
 > 수용 C 실측: no_std+strip+lto+opt-z DLL = **9,728 B**(std ~107,008 B 대비 ~11×↓), export = **정확히 `mlx_discount` + `ml_module_abi_version`**(PE 리더로 파싱), 소스 코멘트/파일명 비유출. 프록시만 측정 — "리버싱 난이도" 주장 없음(D05).
 
@@ -26,7 +28,11 @@
 - W6 export 측정 도구가 없으면(dumpbin 미설치) llvm-objdump 또는 Rust PE 리더로 대체 — W0에서 확정.
 - **W4 필수(Grok 지적) — 처리됨:** 타입체커는 "모든 경로 return"을 강제하지 않으므로(MVP 한계), codegen이 마지막 문이 `return`이 아니면 **codegen 에러**로 거부한다(`block_always_returns`).
 - **크로스 타깃 식별자 하드닝 — 처리됨:** 파라미터명이 대상 언어(Rust/C/Pascal) 예약어와 겹치면 typecheck가 명확한 에러로 거부한다(`compiler/reserved.rs`; 프런트엔드 단일 검사 → 모든 백엔드 보호, Pascal은 대소문자 무시). 함수명은 `mlx_` 접두어라 안전.
-- **잔여 하드닝(버그 아님):** e2e 빌드 `workdir`는 고정명이라 동시 빌드 시 경합 가능(현재 소비자 1개). 후속 변수(local) 도입 시 예약어 검사를 변수명에도 확장.
+- **잔여 하드닝(버그 아님):**
+  - `mlc build`(`emit_artifacts`)는 호출마다 고유 임시 빌드 트리(`mlc-build-<pid>-<seq>`)를 쓰고 성공·실패와 무관하게 정리한다 → CLI 경로 경합/임시폴더 누수 해소(STEP1, Grok verify 반영). `codegen::build_cdylib`의 직접 소비자(테스트 `end_to_end`/`protection`)는 고정 `workdir`명 유지(직렬 실행이라 미실현 경합).
+  - `mlc build` 산출은 원자적이지 않다: `.dll` 기록 후 `.h`/`.pas` 기록이 실패하면 부분 산출 가능(후속: staging→rename).
+  - 모듈명은 입력 파일 stem에서 유도하며 식별자 검증이 없다: 예약어/하이픈/선행숫자 stem은 cargo/Delphi **빌드 에러**로 표면화(무음 오작동 아님). 후속: `reserved.rs` 규칙을 모듈명에도 확장.
+  - 후속 변수(local) 도입 시 예약어 검사를 변수명에도 확장.
 
 ## 범위 밖 (후속 슬라이스, 별도 SPEC)
 

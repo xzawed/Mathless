@@ -112,6 +112,15 @@ fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, Type
     }
     let ret = ir_type(f.ret);
     let body = check_block(&f.body, &scope, ret, &f.name, f.fallible, errors)?;
+    // Every path must exit with a value (or `fail`); an `if` without `else` can fall through.
+    // Caught here (frontend) as well as in codegen (backend safety net for directly-built IR).
+    if !block_always_returns(&body) {
+        return Err(TypeError::new(format!(
+            "function '{}' may not return on all paths — end it with a `return`{}",
+            f.name,
+            if f.fallible { " or `fail`" } else { "" }
+        )));
+    }
     Ok(IrFunction {
         name: f.name.clone(),
         params,

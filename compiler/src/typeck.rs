@@ -8,7 +8,7 @@
 //! - `return <e>`: type of `<e>` must equal the function's return type
 //! - variables must be in scope (parameters only, in this subset)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{self, BinOp, Expr, Stmt, Type};
 use crate::ir::*;
@@ -49,8 +49,18 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
             code: e.code,
         });
     }
+    // Function names must be unique case-insensitively. Same-case duplicates collide as
+    // duplicate `#[no_mangle] mlx_<name>` symbols at link time; `foo` vs `Foo` are distinct
+    // in C/Rust but collide in the (case-insensitive) Delphi import unit.
+    let mut seen_fns: HashSet<String> = HashSet::new();
     let mut functions = Vec::with_capacity(module.functions.len());
     for f in &module.functions {
+        if !seen_fns.insert(f.name.to_ascii_lowercase()) {
+            return Err(TypeError::new(format!(
+                "duplicate function '{}' — function names must be unique case-insensitively (Delphi binding)",
+                f.name
+            )));
+        }
         functions.push(check_function(f, &error_table)?);
     }
     Ok(IrModule { functions, errors })

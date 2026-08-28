@@ -1,125 +1,113 @@
 # Mathless
 
-> **Status:** Phase 1 vertical slice **in progress** · Phase 0 decisions locked (D14–D18), Phase 1 toolchain decisions locked (D19–D22)
-> **Languages:** English (this file) · [한국어 → README.ko.md](README.ko.md)
+> Compile typed logic into a native module. A host loads it over a plain **C ABI** — no source shipped, no host rebuild.
 
-**Mathless** is a statically-typed extension language that keeps Object Pascal / Delphi's
-type safety and native performance, is written in a surface syntax familiar to a broad
-developer audience, and is distributed **not as source but as protected native modules**
-loaded over a **C ABI**.
+[![CI](https://github.com/xzawed/Mathless/actions/workflows/ci.yml/badge.svg)](https://github.com/xzawed/Mathless/actions/workflows/ci.yml)
+![Rust](https://img.shields.io/badge/rust-1.97.1-orange?logo=rust&logoColor=white)
+![Phase](https://img.shields.io/badge/phase-1_·_vertical_slice-blue)
+![Target](https://img.shields.io/badge/target-Windows_x64-informational)
 
-Tagline candidates:
+**Mathless** is a statically-typed extension language. You write typed logic in a small surface
+syntax; the compiler turns it — **at compile time** — into a **protected native module**
+(`.dll` / `.so`) that an existing application loads over a **C ABI**. What you ship is a native
+binary, **not** source.
 
-- *Mathless — Pascal for those who dropped math*
-- *Mathless — 수학포기자를 위한 현대적 Pascal*
+*For developers who want to add typed, protected logic to a native host — Delphi, C, C++, C# … —
+without recompiling that host.*
 
-## One-line definition
+한국어 → **[README.ko.md](README.ko.md)**
 
-Modern surface syntax + strong static typing + compile-time transformation + native binary
-distribution + C-ABI host integration.
+## How it works — compile-time only
+
+```
+.mls  →  parse / typecheck  →  typed IR  →  native codegen  →  module (.dll/.so)  →  [ C ABI ]  →  host
+```
+
+No runtime interpreter and no bytecode VM: the module is native code behind a C ABI.
 
 ## Why
 
-Delphi / Object Pascal is strong on type safety, native performance, and structure, but its
-ecosystem is closed and its dynamic-extension, tooling, and AI experience lag. Existing script
-languages (Python, Lua, JS) are flexible but weak on typing and on protecting the distributed
-artifact. Mathless pulls Delphi's strengths **outward**: a familiar surface, a native execution
-model underneath, source-free native-module distribution, and host integration **without
-recompiling the host**.
+Delphi / Object Pascal gives you strong static types and native performance, but a closed
+ecosystem and a dated extension/tooling story. Scripting languages (Python, Lua, JS) are flexible
+but weak on typing — and on protecting what you distribute. Mathless goes for both: a familiar
+typed surface, a native module underneath, shipped without source and loaded **without recompiling
+the host**.
 
-## Confirmed core
+Four things hold throughout:
 
-1. Name is **Mathless**.
-2. Execution model is **pure native** — no default VM / bytecode runtime.
-3. Distribution is a **native shared library** (DLL / `.so`) — **no source shipped**.
-4. Protection goal is to **raise the cost of analysis and tampering** — *not* a claim that
-   reversing is impossible.
-5. Hosts are **not limited to Delphi**. The first-class boundary is the **C ABI**.
-6. Expressiveness targets **complex logic and state**, not simple rule tables.
-7. The surface syntax is broader than Delphi-specific syntax; the internal model stays
-   Delphi / native.
-8. The middle layer is **compile-time only** — no runtime interpretation.
-9. Browser / web is **not** a first target (WASM considered later, as a separate target).
-10. One strength first — no chasing several goals at once.
+- **Native only** — no default VM or bytecode runtime.
+- **No source shipped** — distribution is a native shared library.
+- **The C ABI is the one first-class boundary** — per-language bindings are thin wrappers on top.
+- **Protection raises the cost of analysis and tampering** — *not* a claim that reversing is impossible.
 
-## Phase 0 decisions (Q1–Q5 → D14–D18)
+## Status — Phase 1 (vertical slice)
 
-| # | Decision |
-|---|----------|
-| D14 | Primary hosts = **Delphi** (flagship demo / first-class host) + **C** (ABI reference boundary) |
-| D15 | Surface family = **brace-based, statically-typed, value-first C-family** (MVP subset = struct + free functions + modules) |
-| D16 | Memory = **3-layer ownership** — args = borrowed (call duration only) / returns = caller-allocates / long-lived state = explicit context handle |
-| D17 | Errors = **integer status code + out-parameter across the ABI**; surface `Result` is sugar; no exceptions cross the boundary |
-| D18 | Module format = **standard DLL/SO + exported ABI-version symbol + module-specific export prefix**; encrypted/signed container deferred to P1 |
+Measured on Windows (`cargo test --workspace` = **58 green**, CI on `windows-latest`, toolchain pinned):
 
-Details and rejected alternatives: [docs/DECISIONS.md](docs/DECISIONS.md).
+- **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
+  `extern "C"` Rust → `cargo` cdylib).
+- **Language today** — `f64` / `bool`, `if` / `return`, **fallible functions** (`-> T!` = integer
+  status + out-parameter), **local variables** (`let`).
+- **CLI** — `mlc build <file.mls> -o <dir>` produces `<name>.dll` + `<name>.h` (C header) +
+  `<name>.pas` (Delphi import unit).
+- **Loaded & called** — a Rust `kernel32` *oracle* loads the compiled module and calls the typed
+  function; the stripped `no_std` module exports **only** the intended symbols (~9.7 KB).
 
-## Phase 1 toolchain decisions (DP1–DP4 → D19–D22)
+Acceptance **A** (compile) · **B** (load-and-call via the oracle) · **C** (export/size protection
+proxies) pass. Acceptance **D** — loading the same module from a real **Delphi or C host** — is
+**not yet verified** (no `cl` / `gcc` / `dcc64` on the build machine); the `.h` / `.pas` are
+generated but marked DRAFT.
 
-| # | Decision |
-|---|----------|
-| D19 | Codegen = **provisional rustc lowering** (backend-independent IR → `no_std` / `extern "C"` / `repr(C)` Rust → `cargo` cdylib); a C-emit slot stays open (Q6 not closed) |
-| D20 | Compiler implementation language = **Rust** |
-| D21 | Phase 1 host = **Rust kernel32 oracle (CI only)**; the D14 done-gate (Delphi/C) stays **BLOCKED** until a C/Delphi toolchain exists |
-| D22 | First target = **Windows x64** (does not pin "msvc" into D18; export set / CRT / unwind are measured) |
+## Example
 
-## Document map (read in this order)
+```rust
+export fn discount(price: f64, vip: bool) -> f64 {
+  let rate = 0.9
+  if vip { return price * rate }
+  return price
+}
+```
 
-| # | File | Content |
-|---|------|---------|
-| 0 | [CLAUDE.md](CLAUDE.md) | Agent working rules, do-nots, priorities |
-| 1 | [docs/VISION.md](docs/VISION.md) | Why, success criteria |
-| 2 | [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions / rejected alternatives |
-| 3 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Compile / distribute / run pipeline |
-| 4 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | Surface syntax vs internal model |
-| 5 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | C ABI, host integration |
-| 6 | [docs/SECURITY.md](docs/SECURITY.md) | Protection goals and stages |
-| 7 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
-| 8 | [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | Still-open questions |
-| 9 | [docs/COMPETITIVE.md](docs/COMPETITIVE.md) | Prior art and differentiation |
-| 10 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terms |
+```sh
+mlc build discount.mls -o out/
+#  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version
+#  out/discount.h     C header
+#  out/discount.pas   Delphi import unit
+```
 
-## Success criterion (initial)
+A host loads `discount.dll` over the C ABI and calls `mlx_discount(100.0, true) == 90.0` — with no
+host rebuild.
 
-Load a Mathless-compiled native module into a host **without recompiling the host** and call a
-typed function (e.g. `discount(price, vip)`).
+## Hosts
 
-## Contributing / workflow
+The first-class boundary is the **C ABI**; per-language bindings are thin wrappers on top of it.
+Phase 1 targets **Delphi** (the flagship demo host) and **C** (the ABI reference). It is **not**
+Delphi-only.
 
-All changes go through **Pull Requests** — no direct commits to `main`. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+## Honest limits
 
-## Topics / tags
+- Phase 1 targets **Windows x64** (`.dll`); a Linux / `.so` build is a later target.
+- Phase 1 is a vertical slice: a small surface and one measured host path (the Rust oracle). Real
+  Delphi/C host load is **blocked** pending a toolchain on the build machine.
+- Protection is reported only through **proxies** — exported-symbol count, stripped binary size, no
+  source in the artifact — never framed as "reversing difficulty."
+- File extensions (`.mls`, `.mll`) and the C API names are **provisional**.
 
-**English (GitHub topics):** `programming-language` · `compiler` · `native` · `c-abi` ·
-`delphi` · `object-pascal` · `dll` · `shared-library` · `plugin-system` · `static-typing` ·
-`code-protection` · `extension-language` · `compile-time` · `design-docs`
+## Documentation
 
-**한글 태그:** 프로그래밍언어 · 컴파일러 · 네이티브 · C-ABI · 델파이 · 오브젝트파스칼 · DLL ·
-공유라이브러리 · 플러그인시스템 · 정적타입 · 코드보호 · 확장언어 · 컴파일타임 · 설계문서
+| Document | What it covers |
+|----------|----------------|
+| [docs/VISION.md](docs/VISION.md) | Why Mathless exists, and what success looks like |
+| [docs/LANGUAGE.md](docs/LANGUAGE.md) | Surface syntax vs the internal model |
+| [docs/HOST_ABI.md](docs/HOST_ABI.md) | The C ABI and host integration |
+| [docs/SECURITY.md](docs/SECURITY.md) | Protection goals and stages |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions (D14–D22) and rejected alternatives |
 
-> GitHub topics accept only lowercase ASCII + hyphens, so the Korean tags above are documented
-> here rather than set as repository topics.
+## Contributing
 
-## Project status
-
-**Phase 1 (vertical slice) is under way** — the repository now holds a Rust workspace, not just
-design docs. Implemented and measured (Windows; `cargo test --workspace` = 30 green; CI on
-`windows-latest`):
-
-- Compiler pipeline `mlc`: lex → parse → typecheck → backend-independent IR → codegen
-  (IR → `no_std` `extern "C"` Rust → `cargo` cdylib).
-- CLI `mlc build <file.mls> -o <dir>` packages a module into `<name>.dll` + `<name>.h`
-  (C header) + `<name>.pas` (Delphi import unit).
-- A Rust kernel32 **oracle** loads the compiled `discount.dll` and calls the typed function
-  (`discount(100, true) == 90`, `abi_version == 1`); the stripped `no_std` module exports
-  **only** `mlx_discount` + `ml_module_abi_version` (measured, ~9.7 KB).
-
-Acceptance **A/B/C** (compile · load-and-call via the oracle · export/size protection proxies)
-pass. Acceptance **D** — loading the same DLL from a real **Delphi or C host** — stays **BLOCKED**
-on this machine (no `cl`/`gcc`/`dcc64`); the `.h`/`.pas` are generated but not yet
-host-load-verified. See [docs/ROADMAP.md](docs/ROADMAP.md) and
-[docs/phase1/WBS.md](docs/phase1/WBS.md).
+PR-first — no direct commits to `main`; each change is test-driven and gated by CI (`fmt` +
+`clippy` + tests on `windows-latest`). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

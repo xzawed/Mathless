@@ -35,7 +35,7 @@ ABI 정수 상태코드+out-param, 표면 Result는 sugar. 남은 하위 → Q13
 - Q10. 패키지 이름/확장자 확정 (`.mls`, `.mll`은 가칭)
 - Q11. 내부 IR을 실제 Object Pascal 소스에 가깝게 생성할 것인가, 독자 IR인가?
 - Q12. 반환 값 소유권 규약: out-buffer(caller-allocates) vs 모듈 소유+명시 free vs 스칼라 반환만 — Phase 2(struct)에서 확정 (D16 파생)
-- Q13. 에러 코드 체계와 out-param 세부: HRESULT식 vs 0/음수 관례 vs 모듈 정의 — C ABI 초안에서 확정 (D17 파생)
+- Q13. 에러 코드 체계 — **닫힘(2026-08-28)**: 사용자 확정으로 **평탄 i32**(`0`=OK / 양수=모듈 정의 도메인 에러 / 음수=예약 런타임·ABI). **D17 에러-경로 슬라이스로 구현·실측**(SPEC PR #14, 구현 PR #15; 오라클 로드로 status/out-param 검증). out-param 세부는 D17대로. *`DECISIONS.md` 상세 반영은 규칙 8상 사용자 확인 후 별도 PR.* 기각: HRESULT식(무겁·Windows 중심), 0/음수 무구조(의미 비트 부족).
 - Q14. ABI 버전 배치(export 심볼 vs PE/ELF section)와 사용자 모듈 export 접두어 확정(`ml_`는 런타임 예약) — (D18 파생)
 
 ## Claude에게

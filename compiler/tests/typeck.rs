@@ -14,6 +14,14 @@ fn type_err(src: &str) -> String {
 }
 
 #[test]
+fn rejects_a_function_that_does_not_return_on_all_paths() {
+    // An `if` without a trailing `return` can fall through. This must be a frontend (type)
+    // error now, not only a backend/codegen error.
+    let msg = type_err("export fn f(b: bool) -> f64 { if b { return 1.0 } }");
+    assert!(msg.to_lowercase().contains("return"), "{msg}");
+}
+
+#[test]
 fn rejects_duplicate_function_names() {
     // Two `mlx_f` exports would collide as duplicate `#[no_mangle]` symbols at link time;
     // catch it early with a clear type error instead.

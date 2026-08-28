@@ -86,3 +86,11 @@ pub enum IrBinOp {
     Eq,
     Ne,
 }
+
+/// Whether a statement list is guaranteed to exit the function: its last statement is a
+/// `return` or (in a fallible function) a `fail`. An `if` without an `else` can fall through,
+/// so a well-formed body must end in one of these. Shared by the typechecker (frontend error)
+/// and codegen (backend safety net for directly-built IR).
+pub fn block_always_returns(body: &[IrStmt]) -> bool {
+    matches!(body.last(), Some(IrStmt::Return(_) | IrStmt::Fail(_)))
+}

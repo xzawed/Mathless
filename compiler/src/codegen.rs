@@ -58,8 +58,8 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
 
 fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     if !block_always_returns(&f.body) {
-        // typeck (W3) does not enforce this; codegen must not emit a fn that falls
-        // off the end without returning a typed value (Grok W3 review).
+        // Backend safety net: typeck rejects this for real source (see `typeck::check`), but
+        // directly-built IR could still fall off the end without returning a typed value.
         return Err(CodegenError::new(format!(
             "function '{}' may not return on all paths",
             f.name
@@ -98,13 +98,6 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     }
     out.push_str("}\n");
     Ok(())
-}
-
-/// A statement list guarantees an exit iff its last statement does. An `if` without an
-/// `else` does not (its false path falls through), so a function must end in a `return`
-/// (or, in a fallible function, a `fail`).
-fn block_always_returns(body: &[IrStmt]) -> bool {
-    matches!(body.last(), Some(IrStmt::Return(_) | IrStmt::Fail(_)))
 }
 
 fn rust_type(t: IrType) -> &'static str {

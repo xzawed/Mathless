@@ -3,7 +3,7 @@
 의존 순서. **각 작업 = 1 PR**, 측정 가능한 완료 기준(DoD). DP1~DP4 확인 후 W0부터 착수.
 방법론은 SDD+WBS+TDD (CLAUDE.md). 각 코드 작업은 실패 테스트 → 구현 → 통과 → `grok_build_verify`.
 
-> 진행: **W0 ✅**(#3) · **W1 ✅**(#4) · **W2 ✅**(#5) · **W3 ✅**(#6) · **W4+W5 ✅**(#7, 수용 A+B) · **W6 ✅**(보호 측정, 수용 C) · **W7 ⏳**(C헤더/Delphi unit — 로드 게이트 BLOCKED).
+> 진행: **W0~W6 ✅** · **W7 ✅**(C헤더/Delphi unit 생성기 — 생성물 검증됨, 실제 **로드 게이트(수용 D)는 BLOCKED**). **Phase 1 빌드 가능 범위(A/B/C + W7 산출물) 완료**; 수용 D만 툴체인 확보 대기.
 >
 > 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll` → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 "모든 경로 return"을 강제(미충족 시 codegen 에러).
 > 수용 C 실측: no_std+strip+lto+opt-z DLL = **9,728 B**(std ~107,008 B 대비 ~11×↓), export = **정확히 `mlx_discount` + `ml_module_abi_version`**(PE 리더로 파싱), 소스 코멘트/파일명 비유출. 프록시만 측정 — "리버싱 난이도" 주장 없음(D05).
@@ -25,7 +25,7 @@
   - 해소안(사용자 판단 필요): (a) Delphi/BDS CLI(`dcc64`)를 PATH에 추가, (b) MSVC Build Tools 또는 (c) MinGW/LLVM 설치. 어떤 것을 준비할지 확인 요청 예정.
 - W6 export 측정 도구가 없으면(dumpbin 미설치) llvm-objdump 또는 Rust PE 리더로 대체 — W0에서 확정.
 - **W4 필수(Grok 지적) — 처리됨:** 타입체커는 "모든 경로 return"을 강제하지 않으므로(MVP 한계), codegen이 마지막 문이 `return`이 아니면 **codegen 에러**로 거부한다(`block_always_returns`).
-- **후속 하드닝(Grok W4 노트, 버그 아님):** codegen이 식별자/crate_name을 그대로 삽입하므로, Mathless 파라미터·변수명이 **Rust 예약어**(예: `type`, `match`)와 겹치면 잘못된 Rust가 생성된다 → 식별자 이스케이프(`r#`) 또는 프런트엔드 예약어 금지로 후속 처리. e2e 빌드 `workdir`는 고정명이라 동시 빌드 시 경합 가능(현재 소비자 1개).
+- **후속 하드닝(Grok 노트, 버그 아님) — 크로스 타깃:** codegen(Rust)과 W7 바인딩(C/Pascal) 모두 식별자를 그대로 삽입한다. Mathless 파라미터·함수명이 **대상 언어 예약어**(Rust `type`/`match`, C `int`, Pascal `type`/`function` 등)와 겹치면 잘못된 산출물이 나온다 → **프런트엔드에서 예약어 금지 또는 대상별 이스케이프**로 후속 처리(가장 안전: 프런트엔드 단일 검사). e2e 빌드 `workdir`는 고정명이라 동시 빌드 시 경합 가능(현재 소비자 1개).
 
 ## 범위 밖 (후속 슬라이스, 별도 SPEC)
 

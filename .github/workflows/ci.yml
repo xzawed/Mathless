@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Supersede in-progress runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    # Authoritative job. Acceptance A/B/C build a real `.dll` and `LoadLibraryW` it, so they
+    # are `#![cfg(windows)]` (Phase 1 target; SO/ELF is deferred, D22). Running the suite
+    # HERE is what makes those acceptance tests actually execute in CI — a Linux runner would
+    # compile them away and report a vacuous pass (the "false-green" this job exists to kill).
+    name: fmt + clippy + test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure rustfmt + clippy
+        run: rustup component add rustfmt clippy
+      - name: Format check
+        run: cargo fmt --all --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test (locked)
+        run: cargo test --workspace --locked

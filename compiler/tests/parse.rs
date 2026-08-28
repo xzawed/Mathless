@@ -51,7 +51,8 @@ fn reports_missing_arrow_with_position() {
 
 #[test]
 fn rejects_unknown_type() {
-    let err = parse("export fn f(x: i32) -> f64 { return x }").unwrap_err();
+    // `i64` is not a supported type (the set is f64|bool|i32).
+    let err = parse("export fn f(x: i64) -> f64 { return x }").unwrap_err();
     assert!(err.message.contains("type"), "message was: {}", err.message);
 }
 

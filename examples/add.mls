@@ -1,0 +1,6 @@
+// Integer-type (`i32`) slice: signed 32-bit integers. `2` is an i32 literal (no decimal
+// point); a decimal literal like `0.9` stays f64.
+export fn add(a: i32, b: i32) -> i32 {
+  let sum = a + b
+  return sum
+}

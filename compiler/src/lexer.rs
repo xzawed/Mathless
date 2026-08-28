@@ -17,7 +17,10 @@ pub enum Token {
     Let,
     // atoms
     Ident(String),
+    /// A float literal (has a decimal point), e.g. `0.9`.
     Number(f64),
+    /// An integer literal (no decimal point), e.g. `12`.
+    Int(i64),
     // punctuation
     Arrow,
     LParen,
@@ -142,7 +145,8 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             continue;
         }
 
-        // number: digits with an optional single fractional part
+        // number: digits with an optional single fractional part. A decimal point makes it a
+        // float (`f64`); without one it is an integer literal (`i32`, carried as `i64` here).
         if c.is_ascii_digit() {
             let mut s = String::new();
             while i < chars.len() && chars[i].is_ascii_digit() {
@@ -150,7 +154,9 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 i += 1;
                 col += 1;
             }
+            let mut has_dot = false;
             if i < chars.len() && chars[i] == '.' {
+                has_dot = true;
                 s.push('.');
                 i += 1;
                 col += 1;
@@ -160,21 +166,33 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                     col += 1;
                 }
             }
-            let n: f64 = s
-                .parse()
-                .map_err(|_| ParseError::new(format!("invalid number '{s}'"), sl, sc))?;
-            // `f64::from_str` yields `inf` on overflow (never `Err`); reject it here so codegen
-            // never emits an invalid `inff64` literal. (NaN is impossible from a digit string;
-            // negatives are a separate `Minus` token — so `is_finite` catches exactly overflow.)
-            if !n.is_finite() {
-                return Err(ParseError::new(
-                    "number literal is out of range for f64 (overflows to infinity)",
-                    sl,
-                    sc,
-                ));
-            }
+            let tok = if has_dot {
+                let n: f64 = s
+                    .parse()
+                    .map_err(|_| ParseError::new(format!("invalid number '{s}'"), sl, sc))?;
+                // `f64::from_str` yields `inf` on overflow (never `Err`); reject it so codegen
+                // never emits an invalid `inff64`. (NaN is impossible from a digit string;
+                // negatives are a separate `Minus` token — so `is_finite` catches only overflow.)
+                if !n.is_finite() {
+                    return Err(ParseError::new(
+                        "number literal is out of range for f64 (overflows to infinity)",
+                        sl,
+                        sc,
+                    ));
+                }
+                Token::Number(n)
+            } else {
+                let n: i64 = s.parse().map_err(|_| {
+                    ParseError::new(
+                        format!("integer literal '{s}' is out of range for i64"),
+                        sl,
+                        sc,
+                    )
+                })?;
+                Token::Int(n)
+            };
             out.push(Spanned {
-                tok: Token::Number(n),
+                tok,
                 line: sl,
                 col: sc,
             });
@@ -260,7 +278,7 @@ mod tests {
                 Token::Fn,
                 Token::Ident("x".into()),
                 Token::Number(0.9),
-                Token::Number(12.0),
+                Token::Int(12),
                 Token::True,
                 Token::Eof,
             ]
@@ -275,10 +293,22 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_number_literal_that_overflows_f64() {
-        // A 400-digit integer overflows f64 to `inf`; that must be a lex error, not a silent
-        // `inf` that codegen would emit as invalid Rust (`inff64`).
-        let e = tokenize(&"9".repeat(400)).unwrap_err();
+    fn rejects_a_float_literal_that_overflows_f64() {
+        // A huge DECIMAL literal overflows f64 to `inf`; that must be a lex error, not a silent
+        // `inf` that codegen would emit as invalid Rust (`inff64`). (A no-dot literal would be
+        // an integer, so the `.0` is what routes this to the f64 path.)
+        let e = tokenize(&format!("{}.0", "9".repeat(400))).unwrap_err();
+        assert!(
+            e.message.to_lowercase().contains("f64"),
+            "message was: {}",
+            e.message
+        );
+    }
+
+    #[test]
+    fn rejects_an_integer_literal_that_overflows_i64() {
+        // A no-dot literal is an integer; one that exceeds i64 is a lex error.
+        let e = tokenize(&"9".repeat(40)).unwrap_err();
         assert!(
             e.message.to_lowercase().contains("range"),
             "message was: {}",

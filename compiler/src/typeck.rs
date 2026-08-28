@@ -1,12 +1,14 @@
 //! Typecheck + lowering AST → typed IR (W3).
 //!
 //! Rules for the MVP subset:
-//! - arithmetic (`+ - * /`): both operands `f64` → `f64`
-//! - ordered comparison (`< > <= >=`): both operands `f64` → `bool`
+//! - arithmetic (`+ - *`): both operands the same numeric type (`f64`→`f64`, `i32`→`i32`);
+//!   no implicit i32/f64 mixing. Division `/` is `f64` only — `i32 /` is rejected (i32 `/0`
+//!   would abort the module).
+//! - ordered comparison (`< > <= >=`): both operands the same numeric type → `bool`
 //! - equality (`== !=`): operands of equal type → `bool`
 //! - `if` condition must be `bool`
 //! - `return <e>`: type of `<e>` must equal the function's return type
-//! - variables must be in scope (parameters only, in this subset)
+//! - variables must be in scope (parameters and `let` locals)
 
 use std::collections::{HashMap, HashSet};
 
@@ -73,6 +75,7 @@ fn ir_type(t: Type) -> IrType {
     match t {
         Type::F64 => IrType::F64,
         Type::Bool => IrType::Bool,
+        Type::I32 => IrType::I32,
     }
 }
 
@@ -233,6 +236,18 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str) -> Result<IrExpr, TypeError>
             ty: IrType::F64,
             kind: IrExprKind::ConstF64(*n),
         }),
+        Expr::Int(n) => {
+            // The only integer type is i32; the literal must fit.
+            if *n < i32::MIN as i64 || *n > i32::MAX as i64 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': integer literal {n} does not fit in i32"
+                )));
+            }
+            Ok(IrExpr {
+                ty: IrType::I32,
+                kind: IrExprKind::ConstI32(*n as i32),
+            })
+        }
         Expr::Bool(b) => Ok(IrExpr {
             ty: IrType::Bool,
             kind: IrExprKind::ConstBool(*b),
@@ -269,22 +284,30 @@ fn check_binop(
     fname: &str,
 ) -> Result<(IrBinOp, IrType), TypeError> {
     match op {
-        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-            if lt != IrType::F64 || rt != IrType::F64 {
-                return Err(TypeError::new(format!(
-                    "function '{fname}': operator {op:?} expects f64 operands, found {lt:?} and {rt:?}"
-                )));
-            }
-            Ok((map_op(op), IrType::F64))
-        }
-        BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
-            if lt != IrType::F64 || rt != IrType::F64 {
-                return Err(TypeError::new(format!(
-                    "function '{fname}': comparison {op:?} expects f64 operands, found {lt:?} and {rt:?}"
-                )));
-            }
-            Ok((map_op(op), IrType::Bool))
-        }
+        // Same numeric type on both sides; no implicit i32/f64 mixing (DP-I2).
+        BinOp::Add | BinOp::Sub | BinOp::Mul => match (lt, rt) {
+            (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
+            (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::I32)),
+            _ => Err(TypeError::new(format!(
+                "function '{fname}': operator {op:?} expects two f64 or two i32 operands, found {lt:?} and {rt:?}"
+            ))),
+        },
+        BinOp::Div => match (lt, rt) {
+            (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
+            // i32 `/0` aborts the no_std cdylib, so i32 division is out of this slice (DP-I3).
+            (IrType::I32, IrType::I32) => Err(TypeError::new(format!(
+                "function '{fname}': i32 division `/` is not supported in this slice (i32 /0 aborts) — use f64"
+            ))),
+            _ => Err(TypeError::new(format!(
+                "function '{fname}': operator / expects two f64 operands, found {lt:?} and {rt:?}"
+            ))),
+        },
+        BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => match (lt, rt) {
+            (IrType::F64, IrType::F64) | (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::Bool)),
+            _ => Err(TypeError::new(format!(
+                "function '{fname}': comparison {op:?} expects two f64 or two i32 operands, found {lt:?} and {rt:?}"
+            ))),
+        },
         BinOp::Eq | BinOp::Ne => {
             if lt != rt {
                 return Err(TypeError::new(format!(

@@ -104,6 +104,7 @@ fn rust_type(t: IrType) -> &'static str {
     match t {
         IrType::F64 => "f64",
         IrType::Bool => "bool",
+        IrType::I32 => "i32",
     }
 }
 
@@ -143,6 +144,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
 fn emit_expr(e: &IrExpr) -> String {
     match &e.kind {
         IrExprKind::ConstF64(n) => format!("{n:?}f64"),
+        IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
         IrExprKind::Binary { op, lhs, rhs } => {

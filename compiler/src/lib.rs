@@ -11,6 +11,7 @@ pub mod header;
 pub mod ir;
 pub mod lexer;
 pub mod parser;
+pub mod reserved;
 pub mod typeck;
 
 pub use ast::*;

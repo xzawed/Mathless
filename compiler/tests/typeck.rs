@@ -86,3 +86,45 @@ fn rejects_arithmetic_on_bool() {
     let msg = type_err("export fn f(b: bool) -> f64 { return b * 0.9 }");
     assert!(msg.contains("f64"), "message was: {msg}");
 }
+
+#[test]
+fn rejects_parameter_reserved_in_rust_and_pascal() {
+    // `type` is a keyword in Rust and Pascal (case-insensitive in Pascal).
+    let msg = type_err("export fn f(type: f64) -> f64 { return type }");
+    assert!(msg.contains("reserved"), "message was: {msg}");
+    assert!(
+        msg.contains("Rust") && msg.contains("Pascal"),
+        "message was: {msg}"
+    );
+}
+
+#[test]
+fn rejects_parameter_reserved_in_c_only() {
+    // `int` is a C keyword but a valid identifier in Rust/Pascal.
+    let msg = type_err("export fn f(int: f64) -> f64 { return int }");
+    assert!(
+        msg.contains("reserved") && msg.contains("C"),
+        "message was: {msg}"
+    );
+}
+
+#[test]
+fn rejects_parameter_reserved_in_pascal_case_insensitively() {
+    // Pascal is case-insensitive, so `Begin` collides with `begin`.
+    let msg = type_err("export fn f(Begin: f64) -> f64 { return Begin }");
+    assert!(
+        msg.contains("reserved") && msg.contains("Pascal"),
+        "message was: {msg}"
+    );
+}
+
+#[test]
+fn accepts_ordinary_parameter_names() {
+    // Sanity: normal names still typecheck (discount uses price/vip).
+    assert!(
+        ir_of("export fn f(price: f64, vip: bool) -> f64 { return price }")
+            .functions
+            .len()
+            == 1
+    );
+}

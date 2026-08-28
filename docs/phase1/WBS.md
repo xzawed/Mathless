@@ -25,7 +25,8 @@
   - 해소안(사용자 판단 필요): (a) Delphi/BDS CLI(`dcc64`)를 PATH에 추가, (b) MSVC Build Tools 또는 (c) MinGW/LLVM 설치. 어떤 것을 준비할지 확인 요청 예정.
 - W6 export 측정 도구가 없으면(dumpbin 미설치) llvm-objdump 또는 Rust PE 리더로 대체 — W0에서 확정.
 - **W4 필수(Grok 지적) — 처리됨:** 타입체커는 "모든 경로 return"을 강제하지 않으므로(MVP 한계), codegen이 마지막 문이 `return`이 아니면 **codegen 에러**로 거부한다(`block_always_returns`).
-- **후속 하드닝(Grok 노트, 버그 아님) — 크로스 타깃:** codegen(Rust)과 W7 바인딩(C/Pascal) 모두 식별자를 그대로 삽입한다. Mathless 파라미터·함수명이 **대상 언어 예약어**(Rust `type`/`match`, C `int`, Pascal `type`/`function` 등)와 겹치면 잘못된 산출물이 나온다 → **프런트엔드에서 예약어 금지 또는 대상별 이스케이프**로 후속 처리(가장 안전: 프런트엔드 단일 검사). e2e 빌드 `workdir`는 고정명이라 동시 빌드 시 경합 가능(현재 소비자 1개).
+- **크로스 타깃 식별자 하드닝 — 처리됨:** 파라미터명이 대상 언어(Rust/C/Pascal) 예약어와 겹치면 typecheck가 명확한 에러로 거부한다(`compiler/reserved.rs`; 프런트엔드 단일 검사 → 모든 백엔드 보호, Pascal은 대소문자 무시). 함수명은 `mlx_` 접두어라 안전.
+- **잔여 하드닝(버그 아님):** e2e 빌드 `workdir`는 고정명이라 동시 빌드 시 경합 가능(현재 소비자 1개). 후속 변수(local) 도입 시 예약어 검사를 변수명에도 확장.
 
 ## 범위 밖 (후속 슬라이스, 별도 SPEC)
 

@@ -36,7 +36,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 - 산출물: 플랫폼 표준 DLL (Windows x64 우선; §4 DP4).
 - 사용자 export 접두어: `mlx_` (예: `mlx_discount`). 런타임 예약 `ml_*`와 분리.
-- 예약 심볼: `ml_module_abi_version() -> u32`. 호스트가 major 불일치 시 로드 거부.
+- 예약 심볼: `ml_module_abi_version() -> u32`. 호스트는 major 불일치 시 로드를 거부해야 한다 — **호스트에 대한 계약**이며, 이 저장소에서는 아직 강제되지 않는다(오라클은 값 일치를 assert만).
 - 경계: cdecl / C ABI, `extern "C"`, `repr(C)`.
 - **실측 검증됨(E2):** 위 export를 가진 cdylib를 kernel32 `LoadLibraryW`/`GetProcAddress`로 로드·호출 성공 (스모크 테스트, 아래 §3-B 수치).
 

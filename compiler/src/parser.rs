@@ -65,10 +65,35 @@ impl Parser {
 
     fn parse_module(&mut self) -> Result<Module, ParseError> {
         let mut functions = Vec::new();
+        let mut errors = Vec::new();
         while *self.peek() != Token::Eof {
-            functions.push(self.parse_function()?);
+            if *self.peek() == Token::Error {
+                errors.push(self.parse_error_decl()?);
+            } else {
+                functions.push(self.parse_function()?);
+            }
         }
-        Ok(Module { functions })
+        Ok(Module { functions, errors })
+    }
+
+    /// `error NAME = N` — N must be a positive integer (Q13: 0 is OK, negatives reserved).
+    fn parse_error_decl(&mut self) -> Result<ErrorDecl, ParseError> {
+        self.eat(&Token::Error, "'error'")?;
+        let name = self.ident("error code name")?;
+        self.eat(&Token::Assign, "'='")?;
+        match self.peek().clone() {
+            Token::Number(n) if n.fract() == 0.0 && n > 0.0 && n <= i32::MAX as f64 => {
+                self.pos += 1;
+                Ok(ErrorDecl {
+                    name,
+                    code: n as i32,
+                })
+            }
+            other => self.err(format!(
+                "error code must be a positive integer (1..={}), found {other:?}",
+                i32::MAX
+            )),
+        }
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
@@ -94,11 +119,19 @@ impl Parser {
         self.eat(&Token::RParen, "')'")?;
         self.eat(&Token::Arrow, "'->'")?;
         let ret = self.parse_type()?;
+        // `-> T!` marks the function fallible (D17 ABI = i32 status + out-param).
+        let fallible = if *self.peek() == Token::Bang {
+            self.pos += 1;
+            true
+        } else {
+            false
+        };
         let body = self.parse_block()?;
         Ok(Function {
             name,
             params,
             ret,
+            fallible,
             body,
         })
     }
@@ -143,7 +176,14 @@ impl Parser {
                 let e = self.parse_expr()?;
                 Ok(Stmt::Return(e))
             }
-            other => self.err(format!("expected statement (if|return), found {other:?}")),
+            Token::Fail => {
+                self.pos += 1;
+                let code = self.ident("error code name")?;
+                Ok(Stmt::Fail(code))
+            }
+            other => self.err(format!(
+                "expected statement (if|return|fail), found {other:?}"
+            )),
         }
     }
 

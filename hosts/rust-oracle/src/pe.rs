@@ -140,4 +140,42 @@ mod tests {
         b[65] = b'E';
         assert!(read_exports_bytes(&b).is_err());
     }
+
+    #[test]
+    fn rejects_empty_input() {
+        // Too short even for the DOS header — the first `need(0x40, 0)` guard.
+        assert!(read_exports_bytes(b"").is_err());
+    }
+
+    #[test]
+    fn rejects_missing_mz_signature() {
+        // Long enough for the DOS header but not a PE ("MZ" absent) — hits the MZ guard
+        // (the existing 20-byte case is too short and hits the truncation guard instead).
+        let e = read_exports_bytes(&[0u8; 64]).unwrap_err();
+        assert!(e.contains("MZ"), "{e}");
+    }
+
+    #[test]
+    fn rejects_pe_offset_past_eof() {
+        // MZ present but e_lfanew points past the buffer → truncated PE header, no panic.
+        let mut b = vec![0u8; 64];
+        b[0] = b'M';
+        b[1] = b'Z';
+        b[0x3C] = 200;
+        assert!(read_exports_bytes(&b).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_optional_header_magic() {
+        // MZ + "PE\0\0" + a zero optional-header magic → the unknown-magic guard, no panic.
+        let mut b = vec![0u8; 96];
+        b[0] = b'M';
+        b[1] = b'Z';
+        b[0x3C] = 64;
+        b[64] = b'P';
+        b[65] = b'E';
+        // Optional-header magic sits at opt_off = 64 + 24 = 88 and is left 0x0000.
+        let e = read_exports_bytes(&b).unwrap_err();
+        assert!(e.to_lowercase().contains("magic"), "{e}");
+    }
 }

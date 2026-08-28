@@ -40,11 +40,11 @@ Mathless는 둘 다 노린다: 익숙한 타입 표면, 그 아래의 네이티�
 
 ## 현재 상태 — Phase 1 (수직 슬라이스)
 
-Windows에서 실측(`cargo test --workspace` = **58 그린**, CI는 `windows-latest`, 툴체인 핀):
+Windows에서 실측(`cargo test --workspace` = **67 그린**, CI는 `windows-latest`, 툴체인 핀):
 
 - **컴파일러 `mlc`** — lex → parse → typecheck → 백엔드 독립 IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
-- **현재 언어** — `f64` / `bool`, `if` / `return`, **실패 가능 함수**(`-> T!` = 정수 status +
+- **현재 언어** — `f64` / `bool` / `i32`, `if` / `return`, **실패 가능 함수**(`-> T!` = 정수 status +
   out-param), **지역 변수**(`let`).
 - **CLI** — `mlc build <file.mls> -o <dir>`가 `<name>.dll` + `<name>.h`(C 헤더) +
   `<name>.pas`(Delphi import unit)를 생성.
@@ -99,6 +99,7 @@ mlc build discount.mls -o out/
 | [docs/SECURITY.md](docs/SECURITY.md) | 보호 목표와 단계 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → 확장 |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | 확정 결정(D14–D22)과 기각된 대안 |
+| [docs/STATUS.md](docs/STATUS.md) | `main`의 실측 상태와 잔여 작업 (세션 핸드오프) |
 
 ## 기여
 

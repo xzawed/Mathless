@@ -1,8 +1,13 @@
 # Phase 1 SPEC — Vertical Slice (SDD)
 
-> **상태:** 초안. §4의 DP1~DP4는 **제안(사용자 확인 대기)**. 확인 전까지 구현 코드 착수 및 `DECISIONS.md` 변경 금지.
-> **근거 수준:** "실측 검증됨(E2)"로 표기한 것만 측정 완료. 결정 제안은 E1(외부 근거)+측정.
-> **작성 절차:** SDD. 이 SPEC 확인 후 `WBS.md`의 작업을 TDD로 진행한다.
+> **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
+> §4의 DP1~DP4는 **2026-08-28 사용자 승인으로 닫혔고**, `DECISIONS.md` **D19~D22**로 반영되었다(PR #3).
+> 구현: **W0~W7 = PR #4~#9**(+#10 하드닝, #11 `mlc build` CLI). **수용 A/B/C 통과**,
+> **수용 D(실제 Delphi/C 호스트 로드)만 BLOCKED** — 빌드 머신에 `cl`/`gcc`/`dcc64` 없음.
+> 이 문서는 이제 **설계 기록(design record)**이다. 여기서 닫힌 제안을 다시 열지 않는다 —
+> 범위를 바꾸려면 **새 SPEC**을 쓴다.
+> **근거 수준:** "실측 검증됨(E2)"로 표기한 것만 측정 완료. `main`의 최신 실측은 `docs/STATUS.md`.
+> **작성 절차:** SDD. 이 SPEC 확인 후 `WBS.md`의 작업을 TDD로 진행했다.
 
 ## 1. 목표 (ROADMAP Phase 1)
 
@@ -53,7 +58,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 > Phase 1 "완료"는 A+B+C이며, **D는 D14 정직성을 위해 반드시 별도 게이트**로 남긴다. CI 오라클(Rust) 그린만으로 "Delphi에서 됐다"고 말하지 않는다.
 
-## 4. 결정 제안 (DP1~DP4 — 사용자 확인 대기)
+## 4. 결정 제안 (DP1~DP4 — **확인됨 2026-08-28 → D19~D22**)
 
 측정 근거: rustc/cargo 1.97 설치·동작 / clang·gcc·cl(MSVC)·fpc·dcc·cmake·make 미설치 / cdylib 빌드 스모크·kernel32 로드 스모크 PASS(§2.2). ※ 이 스모크는 손수 쓴 Rust 기준이며, 수용 기준 §3-A(컴파일러 파이프라인)와 다르다.
 
@@ -89,12 +94,21 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 - **Windows x64 우선.** 단, **"msvc"를 D18에 못박지 않는다.** target은 빌드 설정으로 두고, export 집합·CRT/unwind 동작은 측정한다.
 
-> 확인되면 DP1~DP4를 `DECISIONS.md`에 **D19~D22**로 반영(별도 PR). DP1은 Q6를 "잠정 해결"로만 표기하고 완전 종결하지 않는다.
+> **확인 완료(2026-08-28).** DP1~DP4는 `DECISIONS.md`에 **D19~D22**로 반영되었다(PR #3). DP1은 Q6를 "잠정 해결"로만 표기하고 완전 종결하지 않는다 — C-emit 슬롯은 열려 있다.
 
-## 5. 명시적 미검증 / 가정 (Grok 교차검토)
+## 5. 명시적 미검증 / 가정 (Grok 교차검토) — 작성 시점 2026-08-28, **해소 현황 표기**
+
+> 아래는 이 SPEC을 쓸 당시의 미검증 목록이다. 각 항목의 현재 상태를 덧붙인다(2026-08-29 실측).
+> 최신 상태의 정본은 `docs/STATUS.md`.
 
 - `.mls → parse → typecheck → emit` 파이프라인 **아직 없음**(스모크는 손수 쓴 Rust).
+  → **해소.** W2~W5로 구현, `mlc build` CLI까지(PR #5~#7, #11). `cargo test --workspace` 67 그린.
 - C 헤더 소비 및 Delphi/C 호스트 로드 **미검증**.
+  → **여전히 미검증(수용 D, BLOCKED).** `.h`/`.pas`는 생성되지만(PR #9) `cl`/`gcc`/`dcc64` 미확보.
 - D16(handle) / D17(status+out-param) **미검증**(범위 밖).
+  → **D17만 해소**: 에러-경로 슬라이스로 구현·실측(SPEC `SPEC-D17-error-abi.md`, PR #14/#15).
+  **D16은 여전히 범위 밖**(후속 슬라이스, SPEC 미작성).
 - target triple·CRT/unwind·정확한 export 집합(`dumpbin /exports` 등) **미측정** → 수용 C에서 측정.
+  → **해소.** 자체 PE 리더로 export 집합 측정(PR #8): `mlx_*` + `ml_module_abi_version`만.
+  `dumpbin`은 여전히 미설치 — 교차 확인은 툴체인 확보 후.
 - 이 문서의 어떤 항목도 측정 전까지 "확정"으로 서술하지 않는다.

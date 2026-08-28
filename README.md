@@ -42,11 +42,11 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **58 green**, CI on `windows-latest`, toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **67 green**, CI on `windows-latest`, toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
-- **Language today** — `f64` / `bool`, `if` / `return`, **fallible functions** (`-> T!` = integer
+- **Language today** — `f64` / `bool` / `i32`, `if` / `return`, **fallible functions** (`-> T!` = integer
   status + out-parameter), **local variables** (`let`).
 - **CLI** — `mlc build <file.mls> -o <dir>` produces `<name>.dll` + `<name>.h` (C header) +
   `<name>.pas` (Delphi import unit).
@@ -103,6 +103,7 @@ Delphi-only.
 | [docs/SECURITY.md](docs/SECURITY.md) | Protection goals and stages |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions (D14–D22) and rejected alternatives |
+| [docs/STATUS.md](docs/STATUS.md) | Measured state of `main` and the remaining work (session handoff) |
 
 ## Contributing
 

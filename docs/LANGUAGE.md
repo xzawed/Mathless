@@ -27,7 +27,10 @@
 "C#-like"는 개발자층·친숙도를 가리키는 **좁은 라벨**일 뿐, class 상속·GC·제네릭·async를 약속하지 않는다(전부 MVP 밖, `Q7`).  
 이유: 값 타입/모듈이 네이티브 lowering에 직결, 넓은 친숙도와 AI 데이터, TS의 구조적 타이핑·웹 정체성 회피.
 
-## MVP 언어 범위 (제안)
+## MVP 언어 범위 (제안 — **목표**, 오늘 컴파일되는 것과 다름)
+
+> 아래 두 목록은 MVP의 **목표 범위(제안)** 이다. **지금 실제로 컴파일되는 표면**은 다음 절
+> "현재 구현된 표면"을 본다. 최신 실측의 정본은 `docs/STATUS.md`.
 
 포함:
 
@@ -49,6 +52,29 @@
 - 리플렉션으로 임의 호스트 멤버 탐색
 
 복잡한 로직·상태는 **구조체 + 함수 + 모듈 전역/컨텍스트 객체**로도 MVP에서 가능하다.
+
+## 현재 구현된 표면 (2026-08-29 실측, E2)
+
+`cargo test --workspace` = 67 pass / 0 fail 기준. **이 목록에 없는 것은 아직 컴파일되지 않는다.**
+
+구현됨:
+
+- 타입: `f64`, `bool`, `i32`
+- `export fn NAME(params) -> T { … }` — 자유 함수, 모듈 export
+- **실패 가능 함수**: `-> T!` 표식 + `error NAME = N` 선언 + `fail NAME` 문
+  (D17 lowering = i32 status 반환 + out-param, 실패 시 out 미변경)
+- `if cond { … }` — **`else` 없음**
+- `return expr`
+- **지역 변수** `let NAME = EXPR` — 블록 스코프, **불변**, 타입 추론
+- 식: 리터럴, 파라미터·지역 변수 참조, `+ - * /`(단 `i32 /`는 미지원), 비교
+
+아직 아님 (위 "포함" 목록 중 미구현):
+
+- 문자열, struct/record, null 안전 또는 option
+- `while` / `for`, `else`
+- 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향)
+- 가변 지역 변수 `let mut`·대입 — SPEC 초안 열림(PR #32, 확인 대기)
+- `i32` ↔ `f64` 캐스트, `i32` 나눗셈·나머지, 체크드 오버플로
 
 ## 내부 의미 모델 (Delphi 방식의 의미)
 
@@ -74,14 +100,25 @@
 예: `host.mls.d` / `host.abi.json` 같은 계약 파일.  
 AI와 컴파일러가 같은 계약을 본다.
 
-## 예시 (표면 문법 미확정, 의도만)
+## 예시 (세부 문법은 여전히 미확정 — 확장자·이름은 가칭)
+
+아래는 **오늘 실제로 컴파일된다**(`mlc build`, 오라클 로드·호출로 E2 검증):
 
 ```text
-// 가칭. 문법 확정 전
 export fn discount(price: f64, vip: bool) -> f64 {
-  if vip { return price * 0.9 }
+  let rate = 0.9
+  if vip { return price * rate }
   return price
+}
+
+error DIV_BY_ZERO = 1                       // i32 양수 도메인 에러
+
+export fn safe_div(a: f64, b: f64) -> f64! {   // `!` = 실패 가능
+  if b == 0.0 { fail DIV_BY_ZERO }
+  return a / b
 }
 ```
 
 내부에서는 동일 시그니처의 네이티브 함수로 내려가고, 호스트는 C ABI로 호출한다.
+실패 가능 함수는 D17대로 `int32_t mlx_safe_div(double a, double b, double* out_value)`로 내려간다
+(성공=0 + out 기록, 실패=양수 코드 + out 미변경).

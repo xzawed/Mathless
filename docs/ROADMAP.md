@@ -15,15 +15,15 @@
 
 목표: 한 호스트에서 모듈 로드 → 함수 호출.
 
-- 초소형 표면 문법 ✅
-- 타입체크 ✅
+- 초소형 표면 문법 ✅ (`f64`/`bool`/`i32`, `if`/`return`, `let` 지역 변수, 실패 가능 함수 `-> T!`)
+- 타입체크 ✅ (모든 경로 return·혼합 타입·예약어·중복 식별자 거부 포함)
 - 네이티브 출력 (IR → `no_std`/`extern "C"` Rust → `cargo` cdylib) ✅
 - C ABI 로더 (Rust kernel32 오라클) ✅
 - `mlc build` CLI → `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit) 산출 ✅
 - Delphi 또는 C 데모 앱 — **BLOCKED**(툴체인 미확보)
 
 완료 조건: `discount(price, vip)` 같은 함수를 모듈에서 호출.
-→ 수용 A/B/C 완료(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시). 수용 D(실제 Delphi/C 호스트 로드)는 `cl`/`gcc`/`dcc64` 확보 전까지 **BLOCKED**. 세부는 `docs/phase1/WBS.md`.
+→ 수용 A/B/C 완료(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시). 수용 D(실제 Delphi/C 호스트 로드)는 `cl`/`gcc`/`dcc64` 확보 전까지 **BLOCKED**. 세부는 `docs/phase1/WBS.md`, 현재 상태·잔여 작업은 `docs/STATUS.md`.
 
 ## Phase 2 — 상태와 계약
 

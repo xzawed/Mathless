@@ -162,6 +162,16 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             let n: f64 = s
                 .parse()
                 .map_err(|_| ParseError::new(format!("invalid number '{s}'"), sl, sc))?;
+            // `f64::from_str` yields `inf` on overflow (never `Err`); reject it here so codegen
+            // never emits an invalid `inff64` literal. (NaN is impossible from a digit string;
+            // negatives are a separate `Minus` token — so `is_finite` catches exactly overflow.)
+            if !n.is_finite() {
+                return Err(ParseError::new(
+                    "number literal is out of range for f64 (overflows to infinity)",
+                    sl,
+                    sc,
+                ));
+            }
             out.push(Spanned {
                 tok: Token::Number(n),
                 line: sl,
@@ -260,5 +270,17 @@ mod tests {
         let e = tokenize("fn @").unwrap_err();
         assert!(e.message.contains('@'));
         assert_eq!((e.line, e.col), (1, 4));
+    }
+
+    #[test]
+    fn rejects_a_number_literal_that_overflows_f64() {
+        // A 400-digit integer overflows f64 to `inf`; that must be a lex error, not a silent
+        // `inf` that codegen would emit as invalid Rust (`inff64`).
+        let e = tokenize(&"9".repeat(400)).unwrap_err();
+        assert!(
+            e.message.to_lowercase().contains("range"),
+            "message was: {}",
+            e.message
+        );
     }
 }

@@ -35,12 +35,18 @@ impl Parser {
     }
 
     fn peek(&self) -> &Token {
-        &self.toks[self.pos].tok
+        // Bounds-safe: the stream always ends in `Eof` and the parser stops there, but never
+        // index out of range even if that invariant is somehow violated.
+        static EOF: Token = Token::Eof;
+        self.toks.get(self.pos).map(|s| &s.tok).unwrap_or(&EOF)
     }
 
     fn err<T>(&self, msg: impl Into<String>) -> Result<T, ParseError> {
-        let s = &self.toks[self.pos];
-        Err(ParseError::new(msg, s.line, s.col))
+        // Report at the current token, or the last one (the `Eof`) if `pos` is past the end;
+        // `toks` is never empty (tokenize always appends `Eof`).
+        let s = self.toks.get(self.pos).or_else(|| self.toks.last());
+        let (line, col) = s.map(|s| (s.line, s.col)).unwrap_or((0, 0));
+        Err(ParseError::new(msg, line, col))
     }
 
     /// Consume `want` or produce "expected {what}, found {token}".
@@ -278,5 +284,23 @@ impl Parser {
             }
             other => self.err(format!("expected expression, found {other:?}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::tokenize;
+
+    #[test]
+    fn peek_and_err_are_bounds_safe_past_the_end() {
+        // Defensive: the token stream always ends in `Eof` and the parser stops there, but an
+        // over-advanced `pos` must not index out of bounds / panic.
+        let mut p = Parser::new(tokenize("export fn f() -> f64 { return 1.0 }").unwrap());
+        p.pos = 9999;
+        assert_eq!(*p.peek(), Token::Eof, "peek past the end returns Eof");
+        // `eat` mismatches → calls `err`, which must also be bounds-safe (not index `pos`).
+        let r: Result<(), ParseError> = p.eat(&Token::Fn, "'fn'");
+        assert!(r.is_err(), "eat past the end errors instead of panicking");
     }
 }

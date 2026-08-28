@@ -81,7 +81,7 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
 ## 버전
 
 ABI 버전은 파일 선두 커스텀 헤더가 아니라 **예약 export 심볼**로 노출한다(D18). 표준 DLL/SO는 offset 0에 PE/ELF 매직이 있어야 로더가 인식하므로 선두 헤더는 로드 불가다. 로더는 `ml_module_abi_version`을 `GetProcAddress`/`dlsym`로 조회한다.  
-호스트와 모듈의 major가 다르면 로드 실패.
+호스트와 모듈의 major가 다르면 로드 실패 — 단 이는 **호스트에 대한 계약(요구사항)** 이고, 현재 Rust 오라클은 심볼을 조회해 값이 일치함을 **assert만** 한다(거부 경로 미구현, 2026-08-29).
 
 ## 네이밍 규약
 

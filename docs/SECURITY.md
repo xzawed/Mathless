@@ -35,9 +35,9 @@
 | export 심볼 집합 | **정확히 2개** — `mlx_discount` + `ml_module_abi_version` (자체 PE 리더로 파싱) |
 | 산출물 크기 | **9,728 B** (`no_std`+strip+lto+opt-z; std 기본 빌드 ~107,008 B 대비 ~11×↓) |
 | 산출물 내 소스 | 없음 — 소스 코멘트·원본 파일명 비유출 |
-| ABI 버전 검사 | 호스트가 `ml_module_abi_version()`을 조회해 major 불일치 시 로드 거부(오라클에서 검증) |
+| ABI 버전 심볼 | 모듈이 `ml_module_abi_version`을 export하고, 오라클이 이를 조회해 컴파일러 상수와 **일치함을 assert**(모든 오라클 테스트). ⚠ **major 불일치 시 로드 거부는 아직 미구현** — `Module::load`는 `LoadLibraryW`만 하고 버전 게이트가 없다. 거부는 D18/HOST_ABI가 호스트에 요구하는 **계약**이지 측정된 동작이 아니다. |
 
-미구현: 무결성/서명(P1), 난독화(P2), 호스트 함수 화이트리스트(P1).
+미구현: 무결성/서명(P1), 난독화(P2), 호스트 함수 화이트리스트(P1), **ABI major 불일치 로드 거부**(현재는 assert만).
 
 ### P1
 

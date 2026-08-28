@@ -172,6 +172,10 @@ fn op_str(op: IrBinOp) -> &'static str {
 /// Write `rust_src` as a `cdylib` crate under `workdir/<crate_name>` and build it,
 /// returning the produced DLL path. Requires `cargo` on PATH (D19/D20). Windows target
 /// (D22): the artifact is `<crate_name>.dll`.
+///
+/// This is a caller-supplied-dir primitive: the caller must pass a **unique** `workdir` per
+/// concurrent invocation (`emit_artifacts` uses a private temp tree; the oracle tests
+/// namespace theirs per process). Two calls sharing a `workdir` would race.
 pub fn build_cdylib(
     rust_src: &str,
     crate_name: &str,

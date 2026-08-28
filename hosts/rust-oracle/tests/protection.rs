@@ -14,7 +14,9 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     let src = include_str!("../../../examples/discount.mls");
     let rust = compile_to_rust(src).expect("compile");
-    let workdir = std::env::temp_dir().join("mlc_w6");
+    // Isolate the build tree per test process (build_cdylib expects a unique workdir).
+    let workdir = std::env::temp_dir().join(format!("mlc_w6_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&workdir);
     let dll = build_cdylib(&rust, "discount_w6", &workdir).expect("build");
 
     // Export table = exactly the reserved version symbol + the mlx_ function (D18).
@@ -47,4 +49,7 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     );
 
     println!("W6 measured: size={size} bytes, exports={exports:?}");
+
+    // Nothing holds the file open here (we read bytes, not LoadLibrary) — clean up.
+    let _ = std::fs::remove_dir_all(&workdir);
 }

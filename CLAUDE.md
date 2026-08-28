@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 저장소 성격
 
-- **설계 문서 저장소다. 아직 구현 코드가 없다.** `src/`, 빌드 스크립트, 테스트, 패키지 매니페스트가 없으므로 build/lint/test 명령도 없다.
-- 산출물은 `docs/*.md`와 루트의 `README.md` / `CLAUDE.md`뿐이다.
-- 작업의 기본 형태는 **문서를 읽고, 모순을 찾고, 열린 질문을 닫을 대안을 제시하는 것**이다. 코드 생성이 아니다.
+- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 수용 A/B/C 실행). CI는 `windows-latest`에서 fmt+clippy+test.
+- 설계 산출물은 여전히 `docs/*.md`와 루트의 `README.md` / `CLAUDE.md`이며, **개념을 깨지 않는 것**이 최우선이다(위 규칙 우선).
+- 작업은 이제 **문서 정합(모순 탐지·열린 질문)** 과 **SDD+WBS+TDD 구현**을 함께 한다. 코드 변경은 실패 테스트 → 구현 → 통과 → Grok 검증 → PR 순서를 따른다(아래 "개발 방법론").
 
 ## 문서를 읽는 순서
 
@@ -73,7 +73,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 구현 게이트
 
-`ROADMAP.md` Phase 0(현재)의 완료 조건은 `OPEN_QUESTIONS.md`의 **Q1~Q5(주력 호스트 2개 / 표면 문법 계열 / 메모리 모델 / 에러 모델 / 모듈 파일 포맷)가 닫히는 것**이다. 이것들이 닫히기 전에는 본격 구현을 시작하지 않는다.
+Phase 0의 게이트(`OPEN_QUESTIONS.md`의 **Q1~Q5** — 주력 호스트 2개 / 표면 문법 계열 / 메모리 모델 / 에러 모델 / 모듈 파일 포맷)는 **닫혔다(2026-08-28, D14~D18)**. Phase 1 툴체인 결정(D19~D22)도 확정되어 **Phase 1(수직 슬라이스) 구현이 진행 중**이다(현재 상태는 `ROADMAP.md`·`docs/phase1/WBS.md`).
+
+각 **새 슬라이스**는 여전히 SDD 게이트를 지킨다: 먼저 `docs/phaseN/SPEC*.md`를 쓰고 **사용자 확인 후** 구현한다(아래 "개발 방법론"). 스펙 없는 구현은 시작하지 않는다.
 
 ## Git 워크플로 (PR 기반, 필수)
 
@@ -98,19 +100,19 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
 
 ## 작업 우선순위
 
-1. 열린 질문 중 MVP에 반드시 필요한 것만 닫기 (Q1~Q5)
-2. 표면 문법 MVP 범위 확정
-3. C ABI 초안 (로드 / export / 콜백 / 수명)
-4. 최소 컴파일러 파이프라인 설계 (parse → IR → native)
-5. Delphi 호스트 1개로 Hello 로드
+Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 A/B/C는 **완료**다. 현재/다음 (최신 상태는 `docs/phase1/WBS.md`·`docs/ROADMAP.md`):
+
+1. 수용 D 닫기 — 동일 DLL을 실제 Delphi/C 호스트에서 로드(현재 **BLOCKED**, 툴체인 확보 시).
+2. 다음 슬라이스 **D17**(정수 status + out-param 에러 경로): SPEC 먼저 → 사용자 확인 → TDD.
+3. 이후 슬라이스: D16(caller-allocates/context handle), 문자열/구조체 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
 
 ## 산출물 규칙
 
 - 설계 변경은 해당 `docs/*.md`를 **먼저** 수정한다.
-- 코드가 생기면 `src/` 아래에 두고, 실험 코드와 제품 코드를 섞지 않는다. `ARCHITECTURE.md`가 권장하는 경계: `compiler/`(프론트엔드+IR), `backend/`(네이티브 codegen), `runtime/`(얇은 C ABI 런타임), `host/delphi`·`host/c`(바인딩), `packager/`(모듈 포맷).
+- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`host/delphi`·`host/c`·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지).
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.
 
 ## 성공 기준 (초기)
 
-호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다.
+호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **Rust 오라클로는 달성**(수용 A/B). **실제 Delphi/C 호스트(수용 D)는 툴체인 확보 전까지 미달성(BLOCKED).**

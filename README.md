@@ -1,6 +1,6 @@
 # Mathless
 
-> **Status:** design stage (pre-implementation) · Phase 0 decisions locked (D14–D18)
+> **Status:** Phase 1 vertical slice **in progress** · Phase 0 decisions locked (D14–D18), Phase 1 toolchain decisions locked (D19–D22)
 > **Languages:** English (this file) · [한국어 → README.ko.md](README.ko.md)
 
 **Mathless** is a statically-typed extension language that keeps Object Pascal / Delphi's
@@ -54,6 +54,15 @@ recompiling the host**.
 
 Details and rejected alternatives: [docs/DECISIONS.md](docs/DECISIONS.md).
 
+## Phase 1 toolchain decisions (DP1–DP4 → D19–D22)
+
+| # | Decision |
+|---|----------|
+| D19 | Codegen = **provisional rustc lowering** (backend-independent IR → `no_std` / `extern "C"` / `repr(C)` Rust → `cargo` cdylib); a C-emit slot stays open (Q6 not closed) |
+| D20 | Compiler implementation language = **Rust** |
+| D21 | Phase 1 host = **Rust kernel32 oracle (CI only)**; the D14 done-gate (Delphi/C) stays **BLOCKED** until a C/Delphi toolchain exists |
+| D22 | First target = **Windows x64** (does not pin "msvc" into D18; export set / CRT / unwind are measured) |
+
 ## Document map (read in this order)
 
 | # | File | Content |
@@ -94,9 +103,23 @@ All changes go through **Pull Requests** — no direct commits to `main`. See
 
 ## Project status
 
-This repository is currently a **design-baseline**, not yet an implementation repo. Phase 0
-decisions (D14–D18) are locked; the next step is the Phase 1 vertical slice (C ABI draft →
-minimal compiler pipeline → load into one Delphi host). See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Phase 1 (vertical slice) is under way** — the repository now holds a Rust workspace, not just
+design docs. Implemented and measured (Windows; `cargo test --workspace` = 30 green; CI on
+`windows-latest`):
+
+- Compiler pipeline `mlc`: lex → parse → typecheck → backend-independent IR → codegen
+  (IR → `no_std` `extern "C"` Rust → `cargo` cdylib).
+- CLI `mlc build <file.mls> -o <dir>` packages a module into `<name>.dll` + `<name>.h`
+  (C header) + `<name>.pas` (Delphi import unit).
+- A Rust kernel32 **oracle** loads the compiled `discount.dll` and calls the typed function
+  (`discount(100, true) == 90`, `abi_version == 1`); the stripped `no_std` module exports
+  **only** `mlx_discount` + `ml_module_abi_version` (measured, ~9.7 KB).
+
+Acceptance **A/B/C** (compile · load-and-call via the oracle · export/size protection proxies)
+pass. Acceptance **D** — loading the same DLL from a real **Delphi or C host** — stays **BLOCKED**
+on this machine (no `cl`/`gcc`/`dcc64`); the `.h`/`.pas` are generated but not yet
+host-load-verified. See [docs/ROADMAP.md](docs/ROADMAP.md) and
+[docs/phase1/WBS.md](docs/phase1/WBS.md).
 
 ## License
 

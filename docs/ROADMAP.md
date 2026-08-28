@@ -2,26 +2,28 @@
 
 구현은 문서의 열린 질문 중 MVP에 필요한 것만 닫은 뒤에 시작한다.
 
-## Phase 0 — 설계 고정 (현재)
+## Phase 0 — 설계 고정 (완료)
 
 - 비전/결정/아키텍처 문서화
 - 표면 문법 계열 선택
 - C ABI 초안 확정
 - MVP 언어 범위 확정
 
-완료 조건: `OPEN_QUESTIONS.md`의 Q1~Q5가 닫힘.
+완료 조건: `OPEN_QUESTIONS.md`의 Q1~Q5가 닫힘. → **닫힘(2026-08-28, D14~D18)**. Phase 1 툴체인 결정 D19~D22 확정.
 
-## Phase 1 — 수직 슬라이스
+## Phase 1 — 수직 슬라이스 (진행 중)
 
 목표: 한 호스트에서 모듈 로드 → 함수 호출.
 
-- 초소형 표면 문법
-- 타입체크
-- 네이티브 출력 (처음엔 C로 emit 후 시스템 컴파일러를 써도 됨)
-- C ABI 로더
-- Delphi 또는 C 데모 앱
+- 초소형 표면 문법 ✅
+- 타입체크 ✅
+- 네이티브 출력 (IR → `no_std`/`extern "C"` Rust → `cargo` cdylib) ✅
+- C ABI 로더 (Rust kernel32 오라클) ✅
+- `mlc build` CLI → `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit) 산출 ✅
+- Delphi 또는 C 데모 앱 — **BLOCKED**(툴체인 미확보)
 
 완료 조건: `discount(price, vip)` 같은 함수를 모듈에서 호출.
+→ 수용 A/B/C 완료(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시). 수용 D(실제 Delphi/C 호스트 로드)는 `cl`/`gcc`/`dcc64` 확보 전까지 **BLOCKED**. 세부는 `docs/phase1/WBS.md`.
 
 ## Phase 2 — 상태와 계약
 

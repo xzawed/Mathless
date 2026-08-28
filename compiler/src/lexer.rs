@@ -14,6 +14,7 @@ pub enum Token {
     False,
     Error,
     Fail,
+    Let,
     // atoms
     Ident(String),
     Number(f64),
@@ -197,6 +198,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "false" => Token::False,
                 "error" => Token::Error,
                 "fail" => Token::Fail,
+                "let" => Token::Let,
                 _ => Token::Ident(s),
             };
             out.push(Spanned {

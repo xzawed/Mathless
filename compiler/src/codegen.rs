@@ -126,6 +126,10 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
             // Failure: return the positive domain code; the out-param is left untouched.
             let _ = writeln!(out, "{pad}return {code};");
         }
+        IrStmt::Let { name, value } => {
+            // Internal binding — a plain Rust `let`, never an export.
+            let _ = writeln!(out, "{pad}let {name} = {};", emit_expr(value));
+        }
         IrStmt::If { cond, body } => {
             let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond));
             for st in body {

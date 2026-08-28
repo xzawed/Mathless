@@ -51,6 +51,11 @@ pub enum IrStmt {
     Return(IrExpr),
     /// `fail` with the resolved positive error code (only in a fallible function).
     Fail(i32),
+    /// `let <name> = <value>` — an immutable local binding.
+    Let {
+        name: String,
+        value: IrExpr,
+    },
 }
 
 /// A type-annotated expression.

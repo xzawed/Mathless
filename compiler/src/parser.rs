@@ -187,8 +187,15 @@ impl Parser {
                 let code = self.ident("error code name")?;
                 Ok(Stmt::Fail(code))
             }
+            Token::Let => {
+                self.pos += 1;
+                let name = self.ident("variable name")?;
+                self.eat(&Token::Assign, "'='")?;
+                let value = self.parse_expr()?;
+                Ok(Stmt::Let { name, value })
+            }
             other => self.err(format!(
-                "expected statement (if|return|fail), found {other:?}"
+                "expected statement (if|return|fail|let), found {other:?}"
             )),
         }
     }

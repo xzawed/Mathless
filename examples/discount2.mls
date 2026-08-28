@@ -1,0 +1,6 @@
+// Local-variables (`let`) slice: `rate` is an internal binding (a Rust `let`), not exported.
+export fn discount2(price: f64, vip: bool) -> f64 {
+  let rate = 0.9
+  if vip { return price * rate }
+  return price
+}

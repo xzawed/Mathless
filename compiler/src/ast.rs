@@ -45,6 +45,8 @@ pub enum Stmt {
     Return(Expr),
     /// `fail <CODE>` — fail with a declared error code (only in a fallible function).
     Fail(String),
+    /// `let <NAME> = <EXPR>` — an immutable, block-scoped local binding.
+    Let { name: String, value: Expr },
 }
 
 #[derive(Debug, PartialEq)]

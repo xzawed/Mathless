@@ -136,21 +136,25 @@ fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, Type
 
 fn check_block(
     stmts: &[Stmt],
-    scope: &Scope,
+    parent_scope: &Scope,
     ret: IrType,
     fname: &str,
     fallible: bool,
     errors: &Scope2,
 ) -> Result<Vec<IrStmt>, TypeError> {
-    stmts
-        .iter()
-        .map(|s| check_stmt(s, scope, ret, fname, fallible, errors))
-        .collect()
+    // Block scope (DP-L5): locals declared here extend a private copy of the scope and do not
+    // leak to the parent block. Nested `if` bodies get their own copy the same way.
+    let mut scope = parent_scope.clone();
+    let mut out = Vec::with_capacity(stmts.len());
+    for s in stmts {
+        out.push(check_stmt(s, &mut scope, ret, fname, fallible, errors)?);
+    }
+    Ok(out)
 }
 
 fn check_stmt(
     s: &Stmt,
-    scope: &Scope,
+    scope: &mut Scope,
     ret: IrType,
     fname: &str,
     fallible: bool,
@@ -190,6 +194,35 @@ fn check_stmt(
                     "function '{fname}': unknown error code '{name}' — declare `error {name} = <positive int>`"
                 ))),
             }
+        }
+        Stmt::Let { name, value } => {
+            // Check the RHS in the CURRENT scope first, so `let x = x` is use-before-def.
+            let value = check_expr(value, scope, fname)?;
+            // Local names honour the same reserved-word policy as parameters (all targets).
+            let targets = crate::reserved::reserving_targets(name);
+            if !targets.is_empty() {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' is a reserved word in {} — rename it",
+                    targets.join(", ")
+                )));
+            }
+            // In a fallible fn, `out_value` names the synthesized D17 out-param.
+            if fallible && name == "out_value" {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local 'out_value' is reserved in a fallible function (it names the D17 out-param) — rename it"
+                )));
+            }
+            // No redeclaration or shadowing (DP-L2): the name must not already be in scope.
+            if scope.contains_key(name) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': '{name}' is already in scope — no redeclaration or shadowing"
+                )));
+            }
+            scope.insert(name.clone(), value.ty);
+            Ok(IrStmt::Let {
+                name: name.clone(),
+                value,
+            })
         }
     }
 }

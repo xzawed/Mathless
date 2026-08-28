@@ -112,4 +112,4 @@ PR-first — no direct commits to `main`; each change is test-driven and gated b
 
 ## License
 
-Not yet decided (TBD).
+[MIT](LICENSE).

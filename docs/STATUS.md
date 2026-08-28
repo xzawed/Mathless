@@ -69,7 +69,7 @@
    `#25`/`#29`/`#32`를 여기 쌓으면 “Phase 1 완료(단 D)” 가독성이 나빠짐. **← 위치는 사용자 결정 필요.**
 
 ### 3c. 사용자 결정 대기
-- **LICENSE**: MIT / Apache-2.0 / 둘 다 / 독점 — 정하면 5분 PR.
+- ~~**LICENSE**~~ — **MIT 확정**(2026-08-29 사용자 결정). `LICENSE` 추가, README EN/KO 반영 완료.
 - **홈페이지 URL**: About 텍스트는 갱신됨, URL만 미설정.
 - **수용 D 툴체인**: MSVC Build Tools vs MinGW/LLVM vs `dcc64`. 그 전까지는 3b-#3(skip-게이트 호스트)만.
 - **새 SPEC 위치**(3b-#8), **D22(SO/ELF) 개시 여부**.

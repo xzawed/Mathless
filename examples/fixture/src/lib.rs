@@ -15,6 +15,9 @@ pub extern "C" fn mlx_discount(price: f64, vip: bool) -> f64 {
 }
 
 /// Reserved ABI-version symbol queried by the host (D18).
+///
+/// Hand-written literal, kept in sync with `mlc::ML_MODULE_ABI_VERSION` by convention (this
+/// fixture crate deliberately does not depend on `mlc`). `loads_fixture` asserts the two match.
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 {
     1

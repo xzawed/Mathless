@@ -22,6 +22,10 @@
    review before a PR is marked complete. If a Grok tool fails, report it and ask — do not
    silently self-substitute.
 7. Squash-merge into `main`. Delete the branch after merge.
+8. **CI** (GitHub Actions, `windows-latest`) runs `cargo fmt --check` + `clippy -D warnings`
+   + `cargo test --workspace` on every PR — the authoritative gate that actually executes the
+   `#![cfg(windows)]` acceptance tests. Keep it green before merge. (Cross-platform SO/ELF CI
+   is deferred with D22.)
 
 ## Methodology: SDD + WBS + TDD (mandatory from Phase 1)
 
@@ -61,6 +65,9 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 6. **Grok 2차 검증**은 구현·진단·코드 검토에서 PR 완료 전 필수. Grok 도구가 실패하면
    보고하고 판단을 구한다 — 임의 대체 금지.
 7. `main`에는 squash-merge. 머지 후 브랜치 삭제.
+8. **CI**(GitHub Actions, `windows-latest`)가 모든 PR에서 `cargo fmt --check` +
+   `clippy -D warnings` + `cargo test --workspace`를 실행한다 — `#![cfg(windows)]` 수용
+   테스트를 실제로 돌리는 정본 게이트. 머지 전 green 유지. (크로스플랫폼 SO/ELF CI는 D22와 함께 이연.)
 
 ## 대외 표현 규칙
 

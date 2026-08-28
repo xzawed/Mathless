@@ -54,7 +54,8 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 ## 게이트/블로커
 
 - **BLOCKED (툴체인):** 수용 D(Delphi/C 호스트 실제 로드)는 이 머신에 `dcc64`/`cl`/`gcc`가 없어 실행 불가. W7은 **산출물 생성**까지, 실제 로드 검증은 별도.
-  - 해소안(사용자 판단 필요): (a) Delphi/BDS CLI(`dcc64`)를 PATH에 추가, (b) MSVC Build Tools 또는 (c) MinGW/LLVM 설치. 어떤 것을 준비할지 확인 요청 예정.
+  - 해소안 — **결정됨(2026-08-29): (b) MSVC Build Tools.** 기각: (a) Delphi/BDS CLI(`dcc64`) — 플래그십 호스트지만 설치 비용이 크고 C ABI 기준 검증이 먼저다, (c) MinGW/LLVM — rustc host triple이 `x86_64-pc-windows-msvc`라 CRT/링커 계열이 갈린다. **이 선택은 D22를 바꾸지 않는다**(D22 = 모듈 포맷에 "msvc"를 못박지 않음 / 이것 = Gate-D 검증용 호스트 툴체인).
+  - 설치 후 할 일: `hosts/`에 실제 C 호스트를 두고 산출 `.h`+`.dll`로 로드·호출(수용 D), `dumpbin /exports`로 자체 PE 리더 측정치를 교차 확인. 설치 전까지는 skip-게이트(툴체인 있을 때만 컴파일)로 준비만 한다.
 - W6 export 측정 도구가 없으면(dumpbin 미설치) llvm-objdump 또는 Rust PE 리더로 대체 — W0에서 확정.
 - **W4 필수(Grok 지적) — 처리됨(강화):** 초기에는 codegen이 마지막 문이 `return`이 아니면 거부했으나(`block_always_returns`), 이후 **typeck로 올려** "모든 경로 return"을 프런트엔드에서 강제한다(PR #20) — 진단이 소스에 가까워짐.
 - **크로스 타깃 식별자 하드닝 — 처리됨:** 파라미터명이 대상 언어(Rust/C/Pascal) 예약어와 겹치면 typecheck가 명확한 에러로 거부한다(`compiler/reserved.rs`; 프런트엔드 단일 검사 → 모든 백엔드 보호, Pascal은 대소문자 무시). 함수명은 `mlx_` 접두어라 안전.

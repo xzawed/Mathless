@@ -71,7 +71,12 @@
 ### 3c. 사용자 결정 대기
 - ~~**LICENSE**~~ — **MIT 확정**(2026-08-29 사용자 결정). `LICENSE` 추가, README EN/KO 반영 완료.
 - **홈페이지 URL**: About 텍스트는 갱신됨, URL만 미설정.
-- **수용 D 툴체인**: MSVC Build Tools vs MinGW/LLVM vs `dcc64`. 그 전까지는 3b-#3(skip-게이트 호스트)만.
+- ~~**수용 D 툴체인**~~ — **MSVC Build Tools 확정**(2026-08-29 사용자 결정). 근거: 이 머신의 rustc
+  host triple이 이미 `x86_64-pc-windows-msvc`라 산출 cdylib가 MSVC CRT/링커 계열이고, C 호스트를
+  같은 계열로 맞추면 CRT·링커 불일치 변수를 없앤 상태로 수용 D를 측정할 수 있다. **D22를 바꾸지
+  않는다** — D22는 모듈 *포맷* 결정에 "msvc"를 못박지 않는다는 뜻이고, 이것은 **Gate-D 검증용
+  호스트 툴체인** 선택이다. 설치 전까지는 3b-#3(skip-게이트 호스트)만 진행. 설치되면: 실제 C 호스트
+  로드 테스트 + `dumpbin /exports` 교차 확인(현재 export 측정은 자체 PE 리더 단독).
 - **새 SPEC 위치**(3b-#8), **D22(SO/ELF) 개시 여부**.
 
 ### 3d. 하지 말 것 (Grok)

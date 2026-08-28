@@ -88,11 +88,11 @@ impl Parser {
         let name = self.ident("error code name")?;
         self.eat(&Token::Assign, "'='")?;
         match self.peek().clone() {
-            Token::Number(n) if n.fract() == 0.0 && n > 0.0 && n <= i32::MAX as f64 => {
+            Token::Int(i) if i > 0 && i <= i32::MAX as i64 => {
                 self.pos += 1;
                 Ok(ErrorDecl {
                     name,
-                    code: n as i32,
+                    code: i as i32,
                 })
             }
             other => self.err(format!(
@@ -152,7 +152,11 @@ impl Parser {
                 self.pos += 1;
                 Ok(Type::Bool)
             }
-            other => self.err(format!("expected type (f64|bool), found {other:?}")),
+            Token::Ident(s) if s == "i32" => {
+                self.pos += 1;
+                Ok(Type::I32)
+            }
+            other => self.err(format!("expected type (f64|bool|i32), found {other:?}")),
         }
     }
 
@@ -270,6 +274,10 @@ impl Parser {
             Token::Number(n) => {
                 self.pos += 1;
                 Ok(Expr::Number(n))
+            }
+            Token::Int(n) => {
+                self.pos += 1;
+                Ok(Expr::Int(n))
             }
             Token::True => {
                 self.pos += 1;

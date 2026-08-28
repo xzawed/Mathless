@@ -13,6 +13,7 @@ fn c_type(t: IrType) -> &'static str {
     match t {
         IrType::F64 => "double",
         IrType::Bool => "bool",
+        IrType::I32 => "int32_t",
     }
 }
 
@@ -20,6 +21,7 @@ fn delphi_type(t: IrType) -> &'static str {
     match t {
         IrType::F64 => "Double",
         IrType::Bool => "Boolean",
+        IrType::I32 => "Integer",
     }
 }
 

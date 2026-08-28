@@ -10,6 +10,7 @@
 pub enum IrType {
     F64,
     Bool,
+    I32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,6 +69,7 @@ pub struct IrExpr {
 #[derive(Debug, PartialEq)]
 pub enum IrExprKind {
     ConstF64(f64),
+    ConstI32(i32),
     ConstBool(bool),
     /// Reference to a parameter/local by name.
     Var(String),

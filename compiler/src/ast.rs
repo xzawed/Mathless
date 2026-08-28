@@ -35,6 +35,7 @@ pub struct Param {
 pub enum Type {
     F64,
     Bool,
+    I32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,6 +53,7 @@ pub enum Stmt {
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(f64),
+    Int(i64),
     Bool(bool),
     Var(String),
     Binary {

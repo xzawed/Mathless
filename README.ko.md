@@ -1,6 +1,6 @@
 # Mathless
 
-> **상태:** 개념 설계 단계 (구현 전) · Phase 0 결정 확정 (D14–D18)
+> **상태:** Phase 1 수직 슬라이스 **진행 중** · Phase 0 결정 확정 (D14–D18), Phase 1 툴체인 결정 확정 (D19–D22)
 > **언어:** 한국어 (이 파일) · [English → README.md](README.md)
 
 **Mathless**는 Object Pascal/Delphi의 타입 안정성과 네이티브 성능을 계승하면서,
@@ -49,6 +49,15 @@ Delphi/Object Pascal은 타입 안정성·네이티브 성능·구조적 문법�
 
 세부·기각 대안: [docs/DECISIONS.md](docs/DECISIONS.md).
 
+## Phase 1 툴체인 결정 (DP1–DP4 → D19–D22)
+
+| # | 결정 |
+|---|------|
+| D19 | 코드젠 = **잠정 rustc lowering** (백엔드 독립 IR → `no_std`/`extern "C"`/`repr(C)` Rust → `cargo` cdylib); C-emit 슬롯 유지(Q6 미종결) |
+| D20 | 컴파일러 구현 언어 = **Rust** |
+| D21 | Phase 1 호스트 = **Rust kernel32 오라클(CI 전용)**; D14 done-gate(Delphi/C)는 툴체인 확보 전까지 **BLOCKED** |
+| D22 | 1차 타깃 = **Windows x64** ("msvc"를 D18에 고정하지 않음; export/CRT/unwind는 측정) |
+
 ## 문서 지도 (이 순서로 읽을 것)
 
 | 순서 | 파일 | 내용 |
@@ -89,9 +98,21 @@ Delphi/Object Pascal은 타입 안정성·네이티브 성능·구조적 문법�
 
 ## 프로젝트 상태
 
-이 저장소는 아직 구현 저장소가 아니라 **설계 기준선**이다. Phase 0 결정(D14–D18)이 확정됐고,
-다음 단계는 Phase 1 수직 슬라이스(C ABI 초안 → 최소 컴파일러 파이프라인 → Delphi 호스트 1개
-로드)이다. [docs/ROADMAP.md](docs/ROADMAP.md) 참고.
+**Phase 1(수직 슬라이스) 진행 중** — 이 저장소는 이제 설계 문서만이 아니라 Rust 워크스페이스를
+포함한다. 구현·실측(Windows; `cargo test --workspace` = 30 그린; CI는 `windows-latest`):
+
+- 컴파일러 파이프라인 `mlc`: lex → parse → typecheck → 백엔드 독립 IR → codegen
+  (IR → `no_std` `extern "C"` Rust → `cargo` cdylib).
+- CLI `mlc build <file.mls> -o <dir>`가 모듈을 `<name>.dll` + `<name>.h`(C 헤더) +
+  `<name>.pas`(Delphi import unit)로 패키징.
+- Rust kernel32 **오라클**이 컴파일된 `discount.dll`을 로드해 타입 함수를 호출
+  (`discount(100, true) == 90`, `abi_version == 1`); strip된 `no_std` 모듈은 **오직**
+  `mlx_discount` + `ml_module_abi_version`만 export(실측 ~9.7 KB).
+
+수용 **A/B/C**(컴파일 · 오라클 로드/호출 · export/크기 보호 프록시) 통과. 수용 **D** —
+동일 DLL을 실제 **Delphi/C 호스트**에서 로드 — 는 이 머신에 `cl`/`gcc`/`dcc64`가 없어
+**BLOCKED**이며, `.h`/`.pas`는 생성되었으나 아직 호스트 로드로 검증되지 않았다.
+[docs/ROADMAP.md](docs/ROADMAP.md), [docs/phase1/WBS.md](docs/phase1/WBS.md) 참고.
 
 ## 라이선스
 

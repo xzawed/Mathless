@@ -102,8 +102,10 @@
    `fmt`/`clippy -D warnings`/`test`를 두 번째 OS에서 돌린다. lex/parse/typeck·생성기·CLI·임시경로
    코드에 Windows 전용 가정이 스며드는 것을 잡는 **보험**이며 권위는 windows 잡에 있다(수용 테스트는
    전부 `cfg(windows)`라 여기선 컴파일되지 않는다). **D22 아님** — `.so`/ELF 빌드·로드 없음.
-7. **`grok_build_plan`을 착수 게이트에서 내림, `grok_build_verify`는 완료 게이트 유지.** 이번 세션에서
-   plan 도구가 반복적으로 얇았음 — 다음 세션을 여기서 멈추지 말 것. verify 실패는 보고(임의 대체 금지).
+7. ~~**`grok_build_plan`을 착수 게이트에서 내림**~~ — **완료(PR #46, `CLAUDE.md`).** 다만 원안보다
+   정확하게: plan은 **설계·구성 선택에서는 유용했고**(`docs/slices/` 결정을 실제로 바꿈) 일상적 구현에서만
+   얇았다 → 조건부 착수 게이트. verify는 필수 완료 게이트로 유지하되 **좁게** 써야 한다(넓은 프롬프트는
+   540초·600초 두 번 타임아웃, 쪼개면 매번 완료). verify의 지적은 코드로 재확인 후 반영한다.
 8. ~~**새 언어 SPEC를 `docs/phase1/`에서 이동**~~ — **완료.** 기능 슬라이스 SPEC 4종을
    **`docs/slices/`**로 옮기고, `docs/phase1/`에는 phase(캠페인) 문서인 `SPEC.md` + `WBS.md`만 남겼다.
    Grok 교차검토도 `docs/slices/` 지지(`docs/lang/`은 다음 슬라이스들이 ABI 작업이라 즉시

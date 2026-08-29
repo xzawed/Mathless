@@ -6,7 +6,8 @@
 ## 1. 현재 상태 (실측, `main`)
 
 - **테스트:** `cargo test --workspace` = **107 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
-- **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
+- **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
+  + `ubuntu-latest`(프런트엔드 보험, 수용 테스트는 컴파일되지 않음). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
   `error NAME=N` + `fail NAME`, i32 status + out-param, D17/Q13); **지역 변수**(`let` 불변 / `let mut` +
@@ -96,8 +97,10 @@
    (이전에는 `mlc: compile error: Parse(ParseError { … })`). 실제 바이너리를 돌려 stderr를 단언하는
    테스트 포함. `IrType`에 `Display`를 붙여 진단이 `F64`가 아니라 표면 이름 `f64`를 인용한다.
    **남은 것:** `TypeError`에는 아직 line/col이 없다(AST에 span이 없음 — 별도 작업, ROADMAP Phase 3).
-6. **`ubuntu-latest` 컴파일 전용 CI 잡** 추가(비-`cfg(windows)` 프런트엔드 `fmt`/`clippy`/`test`).
-   lex/parse/typeck·임시경로 코드의 false-green 보험. **D22 아님**(`.so`/ELF 빌드·로드 없음).
+6. ~~**`ubuntu-latest` 컴파일 전용 CI 잡**~~ — **완료(PR #45).** 비-`cfg(windows)` 프런트엔드에
+   `fmt`/`clippy -D warnings`/`test`를 두 번째 OS에서 돌린다. lex/parse/typeck·생성기·CLI·임시경로
+   코드에 Windows 전용 가정이 스며드는 것을 잡는 **보험**이며 권위는 windows 잡에 있다(수용 테스트는
+   전부 `cfg(windows)`라 여기선 컴파일되지 않는다). **D22 아님** — `.so`/ELF 빌드·로드 없음.
 7. **`grok_build_plan`을 착수 게이트에서 내림, `grok_build_verify`는 완료 게이트 유지.** 이번 세션에서
    plan 도구가 반복적으로 얇았음 — 다음 세션을 여기서 멈추지 말 것. verify 실패는 보고(임의 대체 금지).
 8. ~~**새 언어 SPEC를 `docs/phase1/`에서 이동**~~ — **완료.** 기능 슬라이스 SPEC 4종을

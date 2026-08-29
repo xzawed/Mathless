@@ -104,3 +104,19 @@ fn a_nested_loop_compiles() {
         "{rust}"
     );
 }
+
+#[test]
+fn a_return_as_the_last_statement_of_a_loop_body_is_fine() {
+    // Guards the unreachable-code check added in #50: it scans for a terminator that is not
+    // last *in its own block*. A `return` ending a loop body is last in that block, and the
+    // enclosing block sees an `IrStmt::While`, not a terminator — so this must still compile.
+    let rust = compile_to_rust("export fn f(b: bool) -> i32 { while b { return 1 } return 0 }")
+        .expect("a return inside a loop body is not dead code");
+    assert!(
+        rust.lines().any(|l| l.trim().starts_with("while ")),
+        "{rust}"
+    );
+    // Same shape one level deeper.
+    compile_to_rust("export fn g(b: bool) -> i32 { while b { if b { return 1 } } return 0 }")
+        .expect("nested return inside a loop body");
+}

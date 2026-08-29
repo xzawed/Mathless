@@ -89,6 +89,13 @@ static PASCAL: &[&str] = &[
     "array",
     "as",
     "asm",
+    // `at` and `on` are reserved in Delphi too (exception handling: `on E: … do`,
+    // `raise … at …`). They were missing, so a parameter, local or module named `on`
+    // produced a `unit on;` that Delphi would reject. Evidence level E1 — Embarcadero's
+    // documented reserved-word list, not something we can compile here (dcc64 absent,
+    // Gate D BLOCKED).
+    "at",
+    "on",
     "begin",
     "case",
     "class",

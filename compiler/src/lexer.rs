@@ -17,6 +17,7 @@ pub enum Token {
     Let,
     Mut,
     While,
+    As,
     // atoms
     Ident(String),
     /// A float literal (has a decimal point), e.g. `0.9`.
@@ -65,6 +66,7 @@ impl Token {
             Token::Let => Some("let"),
             Token::Mut => Some("mut"),
             Token::While => Some("while"),
+            Token::As => Some("as"),
             _ => None,
         }
     }
@@ -257,6 +259,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "let" => Token::Let,
                 "mut" => Token::Mut,
                 "while" => Token::While,
+                "as" => Token::As,
                 _ => Token::Ident(s),
             };
             out.push(Spanned {

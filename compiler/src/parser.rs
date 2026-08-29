@@ -16,7 +16,8 @@
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
 //! mul      := unary (('*'|'/') unary)*
-//! unary    := ('-'|'!') unary | primary
+//! unary    := ('-'|'!') unary | cast
+//! cast     := primary ('as' type)*
 //! primary  := number | 'true' | 'false' | ident | ident '(' args? ')' | '(' expr ')'
 //! ```
 
@@ -338,7 +339,7 @@ impl Parser {
         let op = match self.peek() {
             Token::Minus => UnOp::Neg,
             Token::Bang => UnOp::Not,
-            _ => return self.parse_primary(),
+            _ => return self.parse_cast(),
         };
         self.pos += 1;
         let operand = self.parse_unary()?;
@@ -346,6 +347,21 @@ impl Parser {
             op,
             operand: Box::new(operand),
         })
+    }
+
+    /// `cast := primary ('as' type)*` — binds tighter than unary, so `-x as f64` is
+    /// `-(x as f64)`. Left-associative, so `x as i32 as f64` chains.
+    fn parse_cast(&mut self) -> Result<Expr, ParseError> {
+        let mut e = self.parse_primary()?;
+        while self.peek() == &Token::As {
+            self.pos += 1;
+            let to = self.parse_type()?;
+            e = Expr::Cast {
+                to,
+                operand: Box::new(e),
+            };
+        }
+        Ok(e)
     }
 
     fn parse_mul(&mut self) -> Result<Expr, ParseError> {

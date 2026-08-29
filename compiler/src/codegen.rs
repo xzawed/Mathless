@@ -193,6 +193,13 @@ fn emit_expr(e: &IrExpr) -> String {
             let args: Vec<String> = args.iter().map(emit_expr).collect();
             format!("{name}({})", args.join(", "))
         }
+        IrExprKind::Cast { to, operand } => {
+            // Rust's `as` truncates toward zero, saturates out-of-range, and maps NaN to 0 —
+            // exactly the semantics the SPEC pins. That agreement is why this lowering is one
+            // line; it is NOT the reason the semantics were chosen, and a C backend must
+            // implement them by hand (C casts are UB out of range).
+            format!("({} as {})", emit_expr(operand), rust_type(*to))
+        }
         IrExprKind::Unary { op, operand } => {
             // Backend safety net for directly-built IR, in the same spirit as
             // `block_always_returns`: Rust's `!` is a *bitwise* complement on integers, so

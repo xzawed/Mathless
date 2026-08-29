@@ -87,6 +87,12 @@ pub enum Expr {
         op: UnOp,
         operand: Box<Expr>,
     },
+    /// `e as T` — an explicit numeric conversion. There is no implicit widening: DP-I2's
+    /// "no silent mixing" stands, this only gives a way to say it (SPEC-numeric-conversion).
+    Cast {
+        to: Type,
+        operand: Box<Expr>,
+    },
     Binary {
         op: BinOp,
         lhs: Box<Expr>,

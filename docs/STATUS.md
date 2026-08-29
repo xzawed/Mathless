@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **94 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **101 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
@@ -42,6 +42,7 @@
 - **`let mut` 슬라이스 (SPEC #32 / 구현 #39)** — 가변 지역 변수 + 대입문. 테스트 66 → 86.
 - **SPEC 재배치 (PR #40)** — 기능 SPEC은 `docs/slices/`(색인 포함), `docs/phaseN/`은 phase 계획만.
 - **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.
+- **3b-#4 emit 견고성 (PR #42)** — 스테이지→이동(+롤백), 모듈명 검증. 테스트 94 → 101.
   `discount3.dll` = **9,728 B**로 스칼라 `discount.dll`과 동일 — 가변 지역 변수는 ABI·크기에 영향 없음.
 
 ## 3. 잔여 작업 — 다음 세션 착수
@@ -67,8 +68,11 @@
    있어 커버리지 손실 없음. 테스트 **67 → 66**(삭제한 그 1개만 감소), fmt/clippy clean.
 3. **skip-게이트 C(이후 Delphi) 호스트를 `hosts/`에 추가** — `cl`/`gcc`/`dcc64`가 있을 때만 컴파일.
    수용 D를 “됐다”고 위장하지 않으면서 Gate-D 준비를 이어감(CI green 유지, 툴체인 오는 날 즉시 검증).
-4. **`mlc build` 산출을 원자적으로**(stage → rename) + `reserved.rs`에 나쁜 모듈 stem 거부. WBS 잔여에
-   기록됨: `.h`/`.pas` 기록 실패가 `.dll`만 남길 수 있고, `if.mls`/`my-mod.mls`가 typeck 아닌 cargo에서 죽음.
+4. ~~**`mlc build` 산출을 원자적으로** + 나쁜 모듈 stem 거부~~ — **완료(PR #42).** 세 산출물을 `out_dir`
+   안 스테이지에 모두 만든 뒤 이동하고, 이동 실패 시 밀어냈던 기존 파일까지 되돌린다(강제 실패 테스트 2종).
+   모듈명은 진입 즉시 검증 — 식별자 + `reserved.rs` 전 대상. `if.mls`/`my-mod.mls`는 이제 cargo가 아니라
+   `mlc`가 파일명을 짚어 거부한다. **부수 발견:** 이름이 생성 `Cargo.toml`에 그대로 보간되므로 따옴표가
+   섞인 stem은 TOML 문자열을 탈출할 수 있었다(로컬·파일명 통제 필요 — 이제 차단).
 5. ~~**`CompileError`에 실제 `Display`**~~ — **완료.** `CompileError`가 `Display` + `std::error::Error`
    (`source()`)를 구현하고 실패한 단계에 위임한다. `EmitError::Compile`은 더 이상 `{e:?}`로 감싸지
    않는다. CLI 실측: `mlc: parse error at 1:13: expected parameter name, found keyword \`mut\` …`

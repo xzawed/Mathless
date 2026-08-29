@@ -5,7 +5,7 @@
 
 > 진행(2026-08-29 실측): **W0~W7 ✅** · **STEP1 CLI ✅** · **W8~W10 ✅**(D17 에러 경로 · `let` 지역 변수 · `i32`).
 > **Phase 1 빌드 가능 범위(수용 A/B/C + W7 산출물) 완료**; **수용 D만 툴체인 확보 대기(BLOCKED)**.
-> `cargo test --workspace` = **94 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
+> `cargo test --workspace` = **101 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
 > 잔여 작업 목록의 정본은 `docs/STATUS.md` §3.
 >
 > **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 66), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. `.h`/`.pas`의 실제 C/Delphi 로드는 여전히 **BLOCKED**(생성물에 DRAFT 표기 유지).
@@ -62,8 +62,8 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 - **크로스 타깃 식별자 하드닝 — 처리됨:** 파라미터명이 대상 언어(Rust/C/Pascal) 예약어와 겹치면 typecheck가 명확한 에러로 거부한다(`compiler/reserved.rs`; 프런트엔드 단일 검사 → 모든 백엔드 보호, Pascal은 대소문자 무시). 함수명은 `mlx_` 접두어라 안전.
 - **잔여 하드닝(버그 아님):**
   - `mlc build`(`emit_artifacts`)는 호출마다 고유 임시 빌드 트리(`mlc-build-<pid>-<seq>`)를 쓰고 성공·실패와 무관하게 정리한다 → CLI 경로 경합/임시폴더 누수 해소(STEP1, Grok verify 반영). `codegen::build_cdylib`의 직접 소비자(테스트 `end_to_end`/`protection`)는 고정 `workdir`명 유지(직렬 실행이라 미실현 경합).
-  - `mlc build` 산출은 원자적이지 않다: `.dll` 기록 후 `.h`/`.pas` 기록이 실패하면 부분 산출 가능(후속: staging→rename).
-  - 모듈명은 입력 파일 stem에서 유도하며 식별자 검증이 없다: 예약어/하이픈/선행숫자 stem은 cargo/Delphi **빌드 에러**로 표면화(무음 오작동 아님). 후속: `reserved.rs` 규칙을 모듈명에도 확장.
+  - ~~`mlc build` 산출은 원자적이지 않다~~ → **처리됨**(#42): 세 산출물을 `out_dir` 안의 스테이지에 모두 만든 뒤 이동한다. 이동이 실패하면 이번 호출이 놓은 것을 걷어내고 밀어냈던 기존 파일을 되돌린다. 남는 실패 창은 이동 그 자체뿐이며, **롤백 도중 크래시**까지는 보장하지 않는다(저널이 필요한 범위 — 하지 않는다).
+  - ~~모듈명에 식별자 검증이 없다~~ → **처리됨**(#42): `emit_artifacts`가 진입 즉시 모듈명을 검사한다(식별자 + `reserved.rs` 전 대상). 이름은 생성 `Cargo.toml`의 `name = "…"`, C 헤더 가드, Delphi unit 이름에 **그대로** 들어가므로 따옴표가 섞인 stem은 TOML 문자열을 탈출할 수 있었다 — 이제 거부된다.
   - ~~후속 변수(local) 도입 시 예약어 검사를 변수명에도 확장.~~ → **처리됨**: `let` 슬라이스(PR #26)가 지역 변수명에도 `reserved.rs`와 `out_value` 검사를 적용한다.
 
 ## 범위 밖 (후속 슬라이스, 별도 SPEC)

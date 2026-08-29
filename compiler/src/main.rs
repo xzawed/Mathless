@@ -59,7 +59,14 @@ fn run(args: &[String]) -> Result<(), String> {
 
     let src = std::fs::read_to_string(&input)
         .map_err(|e| format!("cannot read {}: {e}", input.display()))?;
-    let arts = emit_artifacts(&src, &module, &out_dir).map_err(|e| e.to_string())?;
+    let arts = emit_artifacts(&src, &module, &out_dir).map_err(|e| match e {
+        // The library doesn't know the name came from a filename; say where to fix it.
+        mlc::emit::EmitError::InvalidModuleName(msg) => format!(
+            "{msg}\n       the module name is the input file's stem — rename {}",
+            input.display()
+        ),
+        other => other.to_string(),
+    })?;
 
     println!("mlc: wrote");
     println!("  {}", arts.dll.display());

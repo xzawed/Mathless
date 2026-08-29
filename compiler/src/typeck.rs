@@ -180,7 +180,7 @@ fn check_stmt(
             let cond = check_expr(cond, scope, fname)?;
             if cond.ty != IrType::Bool {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': if condition must be bool, found {:?}",
+                    "function '{fname}': if condition must be bool, found {}",
                     cond.ty
                 )));
             }
@@ -191,7 +191,7 @@ fn check_stmt(
             let e = check_expr(e, scope, fname)?;
             if e.ty != ret {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': return type mismatch: expected {ret:?}, found {:?}",
+                    "function '{fname}': return type mismatch: expected {ret}, found {}",
                     e.ty
                 )));
             }
@@ -200,7 +200,7 @@ fn check_stmt(
         Stmt::Fail(name) => {
             if !fallible {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': `fail` is only allowed in a fallible function — declare it `-> {ret:?}!`"
+                    "function '{fname}': `fail` is only allowed in a fallible function — declare it `-> {ret}!`"
                 )));
             }
             match errors.get(name) {
@@ -236,7 +236,7 @@ fn check_stmt(
             let value = check_expr(value, scope, fname)?;
             if value.ty != ty {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': cannot assign {:?} to '{name}' of type {ty:?} — type mismatch",
+                    "function '{fname}': cannot assign {} to '{name}' of type {ty} — type mismatch",
                     value.ty
                 )));
             }
@@ -351,7 +351,7 @@ fn check_binop(
             (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
             (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::I32)),
             _ => Err(TypeError::new(format!(
-                "function '{fname}': operator {op:?} expects two f64 or two i32 operands, found {lt:?} and {rt:?}"
+                "function '{fname}': operator {op:?} expects two f64 or two i32 operands, found {lt} and {rt}"
             ))),
         },
         BinOp::Div => match (lt, rt) {
@@ -361,19 +361,19 @@ fn check_binop(
                 "function '{fname}': i32 division `/` is not supported in this slice (i32 /0 aborts) — use f64"
             ))),
             _ => Err(TypeError::new(format!(
-                "function '{fname}': operator / expects two f64 operands, found {lt:?} and {rt:?}"
+                "function '{fname}': operator / expects two f64 operands, found {lt} and {rt}"
             ))),
         },
         BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => match (lt, rt) {
             (IrType::F64, IrType::F64) | (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::Bool)),
             _ => Err(TypeError::new(format!(
-                "function '{fname}': comparison {op:?} expects two f64 or two i32 operands, found {lt:?} and {rt:?}"
+                "function '{fname}': comparison {op:?} expects two f64 or two i32 operands, found {lt} and {rt}"
             ))),
         },
         BinOp::Eq | BinOp::Ne => {
             if lt != rt {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': {op:?} requires equal operand types, found {lt:?} and {rt:?}"
+                    "function '{fname}': {op:?} requires equal operand types, found {lt} and {rt}"
                 )));
             }
             Ok((map_op(op), IrType::Bool))

@@ -47,6 +47,30 @@ pub enum CompileError {
     Codegen(CodegenError),
 }
 
+impl std::fmt::Display for CompileError {
+    /// Delegate to the stage that failed. Each inner error already names itself
+    /// (`parse error at <line>:<col>: …`, `type error: …`, `codegen error: …`), so this adds
+    /// no prefix of its own — a caller printing `{e}` gets the real message, never a `Debug`
+    /// dump of the enum.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompileError::Parse(e) => write!(f, "{e}"),
+            CompileError::Type(e) => write!(f, "{e}"),
+            CompileError::Codegen(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for CompileError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CompileError::Parse(e) => Some(e),
+            CompileError::Type(e) => Some(e),
+            CompileError::Codegen(e) => Some(e),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

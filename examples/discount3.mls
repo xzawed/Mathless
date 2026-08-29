@@ -1,0 +1,8 @@
+// Mutable-locals (`let mut`) slice: a mutable sink assigned inside an `if`.
+// `if` is a statement, not an expression, so a mutable local is how a branch result is
+// collected into one value. Internal only — the ABI is unchanged.
+export fn discount3(price: f64, vip: bool) -> f64 {
+  let mut result = price
+  if vip { result = price * 0.9 }
+  return result
+}

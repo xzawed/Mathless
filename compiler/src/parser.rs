@@ -8,7 +8,8 @@
 //! param    := ident ':' type
 //! type     := 'f64' | 'bool'
 //! block    := '{' stmt* '}'
-//! stmt     := 'if' expr block | 'return' expr
+//! stmt     := 'if' expr block | 'return' expr | 'fail' ident
+//!           | 'let' 'mut'? ident '=' expr | ident '=' expr
 //! expr     := compare
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
@@ -41,6 +42,12 @@ impl Parser {
         self.toks.get(self.pos).map(|s| &s.tok).unwrap_or(&EOF)
     }
 
+    /// Look `n` tokens past the cursor. Bounds-safe like [`Parser::peek`].
+    fn peek_at(&self, n: usize) -> &Token {
+        static EOF: Token = Token::Eof;
+        self.toks.get(self.pos + n).map(|s| &s.tok).unwrap_or(&EOF)
+    }
+
     fn err<T>(&self, msg: impl Into<String>) -> Result<T, ParseError> {
         // Report at the current token, or the last one (the `Eof`) if `pos` is past the end;
         // `toks` is never empty (tokenize always appends `Eof`).
@@ -65,7 +72,15 @@ impl Parser {
                 self.pos += 1;
                 Ok(s)
             }
-            other => self.err(format!("expected {what}, found {other:?}")),
+            // Keywords are the common near-miss here (`fn f(mut: f64)`, `let let = 1`), and
+            // they never reach the reserved-word check in `reserved.rs` because the lexer
+            // already claimed them. Name the keyword instead of dumping the token variant.
+            other => match other.keyword_text() {
+                Some(kw) => self.err(format!(
+                    "expected {what}, found keyword `{kw}` — keywords cannot be used as names"
+                )),
+                None => self.err(format!("expected {what}, found {other:?}")),
+            },
         }
     }
 
@@ -193,13 +208,32 @@ impl Parser {
             }
             Token::Let => {
                 self.pos += 1;
+                // `let mut NAME` (DP-M1): one declaration keyword, `mut` as a modifier.
+                let mutable = if self.peek() == &Token::Mut {
+                    self.pos += 1;
+                    true
+                } else {
+                    false
+                };
                 let name = self.ident("variable name")?;
                 self.eat(&Token::Assign, "'='")?;
                 let value = self.parse_expr()?;
-                Ok(Stmt::Let { name, value })
+                Ok(Stmt::Let {
+                    name,
+                    value,
+                    mutable,
+                })
+            }
+            // Assignment is the only statement that starts with an identifier, so one token
+            // of lookahead (`ident` then `=`) is enough to tell it from a stray expression.
+            Token::Ident(_) if self.peek_at(1) == &Token::Assign => {
+                let name = self.ident("variable name")?;
+                self.pos += 1; // '='
+                let value = self.parse_expr()?;
+                Ok(Stmt::Assign { name, value })
             }
             other => self.err(format!(
-                "expected statement (if|return|fail|let), found {other:?}"
+                "expected statement (if|return|fail|let|assignment), found {other:?}"
             )),
         }
     }
@@ -306,6 +340,62 @@ impl Parser {
 mod tests {
     use super::*;
     use crate::lexer::tokenize;
+
+    #[test]
+    fn parses_let_mut_and_assignment_as_distinct_statements() {
+        // WM2: `let mut` sets the mutable flag; a bare `ident =` is an assignment statement.
+        let m =
+            parse(tokenize("export fn f() -> f64 { let mut x = 1.0 x = 2.0 return x }").unwrap())
+                .expect("parse");
+        let body = &m.functions[0].body;
+        assert!(
+            matches!(&body[0], Stmt::Let { name, mutable: true, .. } if name == "x"),
+            "{body:?}"
+        );
+        assert!(
+            matches!(&body[1], Stmt::Assign { name, .. } if name == "x"),
+            "{body:?}"
+        );
+        // Without `mut` the same declaration is immutable.
+        let m = parse(tokenize("export fn f() -> f64 { let x = 1.0 return x }").unwrap()).unwrap();
+        assert!(
+            matches!(&m.functions[0].body[0], Stmt::Let { mutable: false, .. }),
+            "plain `let` stays immutable"
+        );
+    }
+
+    #[test]
+    fn an_identifier_that_is_not_followed_by_assign_is_not_a_statement() {
+        // One token of lookahead: `x` alone must not be mistaken for an assignment.
+        let err = parse(tokenize("export fn f() -> f64 { x return 1.0 }").unwrap()).unwrap_err();
+        assert!(format!("{err:?}").contains("expected statement"), "{err:?}");
+    }
+
+    #[test]
+    fn a_keyword_used_as_a_name_is_named_in_the_error() {
+        // A keyword never reaches `reserved.rs` (the lexer claimed it), so the parser has to
+        // say why. Applies to every keyword, not just the newly-added `mut`.
+        for (src, kw) in [
+            ("export fn f(mut: f64) -> f64 { return 0.0 }", "mut"),
+            ("export fn f(let: f64) -> f64 { return 0.0 }", "let"),
+            ("export fn f() -> f64 { let if = 1.0 return 1.0 }", "if"),
+        ] {
+            let err = parse(tokenize(src).unwrap()).unwrap_err();
+            let msg = format!("{err:?}");
+            assert!(
+                msg.contains(&format!("keyword `{kw}`")),
+                "should name the keyword: {msg}"
+            );
+        }
+        // `let mut = 1.0` is a *missing name*, not a keyword-as-name: `mut` was consumed as
+        // the mutability modifier. The diagnostic should stay the plain one.
+        let err = parse(tokenize("export fn f() -> f64 { let mut = 1.0 return 1.0 }").unwrap())
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("expected variable name"),
+            "{err:?}"
+        );
+    }
 
     #[test]
     fn peek_and_err_are_bounds_safe_past_the_end() {

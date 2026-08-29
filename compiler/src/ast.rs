@@ -46,8 +46,16 @@ pub enum Stmt {
     Return(Expr),
     /// `fail <CODE>` — fail with a declared error code (only in a fallible function).
     Fail(String),
-    /// `let <NAME> = <EXPR>` — an immutable, block-scoped local binding.
-    Let { name: String, value: Expr },
+    /// `let <NAME> = <EXPR>` / `let mut <NAME> = <EXPR>` — a block-scoped local binding.
+    /// `mutable` marks it reassignable by [`Stmt::Assign`].
+    Let {
+        name: String,
+        value: Expr,
+        mutable: bool,
+    },
+    /// `<NAME> = <EXPR>` — reassign a mutable local. A statement, never an expression
+    /// (DP-M3), so `a = b = c` does not parse and assignment produces no value.
+    Assign { name: String, value: Expr },
 }
 
 #[derive(Debug, PartialEq)]

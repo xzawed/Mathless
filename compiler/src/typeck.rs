@@ -9,6 +9,8 @@
 //! - `if` condition must be `bool`
 //! - `return <e>`: type of `<e>` must equal the function's return type
 //! - variables must be in scope (parameters and `let` locals)
+//! - assignment (`x = e`) targets a `let mut` local only: parameters (D16 borrow) and
+//!   immutable `let`s are rejected, and the RHS type must equal the variable's
 
 use std::collections::{HashMap, HashSet};
 
@@ -36,7 +38,17 @@ impl std::fmt::Display for TypeError {
 
 impl std::error::Error for TypeError {}
 
-type Scope = HashMap<String, IrType>;
+/// How a name in scope was bound. Only [`Binding::LetMut`] may be assigned to; the other two
+/// are rejected with a message that says *why* (DP-M2 — a parameter is a borrow for the
+/// duration of the call, D16, so it is not a mutable slot either).
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Binding {
+    Param,
+    Let,
+    LetMut,
+}
+
+type Scope = HashMap<String, (IrType, Binding)>;
 
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
@@ -102,7 +114,7 @@ fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, Type
             )));
         }
         let ty = ir_type(p.ty);
-        scope.insert(p.name.clone(), ty);
+        scope.insert(p.name.clone(), (ty, Binding::Param));
         params.push(IrParam {
             name: p.name.clone(),
             ty,
@@ -198,7 +210,46 @@ fn check_stmt(
                 ))),
             }
         }
-        Stmt::Let { name, value } => {
+        Stmt::Assign { name, value } => {
+            // The target must exist, be a `let mut`, and keep its type (DP-M2).
+            let (ty, binding) = match scope.get(name) {
+                Some(&(ty, binding)) => (ty, binding),
+                None => {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': unknown variable '{name}' — assignment needs a `let mut` local in scope"
+                    )))
+                }
+            };
+            match binding {
+                Binding::LetMut => {}
+                Binding::Let => {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': '{name}' is immutable — declare it `let mut {name} = …` to reassign it"
+                    )))
+                }
+                Binding::Param => {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': cannot assign to parameter '{name}' — parameters are immutable (D16: an argument is borrowed for the call)"
+                    )))
+                }
+            }
+            let value = check_expr(value, scope, fname)?;
+            if value.ty != ty {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': cannot assign {:?} to '{name}' of type {ty:?} — type mismatch",
+                    value.ty
+                )));
+            }
+            Ok(IrStmt::Assign {
+                name: name.clone(),
+                value,
+            })
+        }
+        Stmt::Let {
+            name,
+            value,
+            mutable,
+        } => {
             // Check the RHS in the CURRENT scope first, so `let x = x` is use-before-def.
             let value = check_expr(value, scope, fname)?;
             // Local names honour the same reserved-word policy as parameters (all targets).
@@ -221,10 +272,21 @@ fn check_stmt(
                     "function '{fname}': '{name}' is already in scope — no redeclaration or shadowing"
                 )));
             }
-            scope.insert(name.clone(), value.ty);
+            scope.insert(
+                name.clone(),
+                (
+                    value.ty,
+                    if *mutable {
+                        Binding::LetMut
+                    } else {
+                        Binding::Let
+                    },
+                ),
+            );
             Ok(IrStmt::Let {
                 name: name.clone(),
                 value,
+                mutable: *mutable,
             })
         }
     }
@@ -253,7 +315,7 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str) -> Result<IrExpr, TypeError>
             kind: IrExprKind::ConstBool(*b),
         }),
         Expr::Var(name) => match scope.get(name) {
-            Some(&ty) => Ok(IrExpr {
+            Some(&(ty, _)) => Ok(IrExpr {
                 ty,
                 kind: IrExprKind::Var(name.clone()),
             }),

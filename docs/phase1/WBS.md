@@ -5,7 +5,7 @@
 
 > 진행(2026-08-29 실측): **W0~W7 ✅** · **STEP1 CLI ✅** · **W8~W10 ✅**(D17 에러 경로 · `let` 지역 변수 · `i32`).
 > **Phase 1 빌드 가능 범위(수용 A/B/C + W7 산출물) 완료**; **수용 D만 툴체인 확보 대기(BLOCKED)**.
-> `cargo test --workspace` = **66 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
+> `cargo test --workspace` = **86 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
 > 잔여 작업 목록의 정본은 `docs/STATUS.md` §3.
 >
 > **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 66), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. `.h`/`.pas`의 실제 C/Delphi 로드는 여전히 **BLOCKED**(생성물에 DRAFT 표기 유지).
@@ -35,6 +35,7 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 | **W8** | **D17 에러 경로** — 실패 가능 함수 `-> T!`, `error NAME = N`, `fail NAME` → i32 status + out-param | `SPEC-D17-error-abi.md` | 오라클이 성공(`status=0`, out 기록)·실패(`status=1`, out 미변경) **두 경로** assert; export 집합 불변 | #14(SPEC) / #15 |
 | **W9** | **지역 변수 `let`** — 블록 스코프·불변·타입 추론 | `SPEC-let-locals.md` | 재선언/섀도잉/미정의/예약어/`out_value` 부정 케이스 전부 거부; 오라클 로드·호출 통과; **ABI 불변** | #25(SPEC) / #26 |
 | **W10** | **`i32` 타입** — 정수 리터럴·산술·비교, `int32_t`/`Integer` 매핑 | `SPEC-i32.md` | 혼합 연산·`i32 /` 거부; 오라클 로드·호출 통과; ABI 불변 | #29(SPEC) / #31 |
+| **W11** | **가변 지역 변수 `let mut` + 대입문** — `if`가 문이므로 분기 결과를 모으는 수단 | `SPEC-let-mut.md` | 불변 `let`/파라미터/미선언 대입·타입 불일치·대입으로 끝나는 블록·대입식 전부 거부; 오라클 로드·호출 통과; **ABI·크기 불변**(9,728 B 동일) | #32(SPEC) / #39 |
 
 ### 하드닝·인프라 (슬라이스 아님, 각 1 PR)
 

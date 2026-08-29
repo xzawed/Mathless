@@ -102,7 +102,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 > 최신 상태의 정본은 `docs/STATUS.md`.
 
 - `.mls → parse → typecheck → emit` 파이프라인 **아직 없음**(스모크는 손수 쓴 Rust).
-  → **해소.** W2~W5로 구현, `mlc build` CLI까지(PR #5~#7, #11). `cargo test --workspace` 66 그린(W1 fixture 테스트 삭제 후).
+  → **해소.** W2~W5로 구현, `mlc build` CLI까지(PR #5~#7, #11). 현재 테스트 수는 `docs/STATUS.md` 참고(여기 적으면 슬라이스마다 낡는다).
 - C 헤더 소비 및 Delphi/C 호스트 로드 **미검증**.
   → **여전히 미검증(수용 D, BLOCKED).** `.h`/`.pas`는 생성되지만(PR #9) `cl`/`gcc`/`dcc64` 미확보.
 - D16(handle) / D17(status+out-param) **미검증**(범위 밖).

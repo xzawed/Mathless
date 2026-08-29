@@ -15,6 +15,7 @@ pub enum Token {
     Error,
     Fail,
     Let,
+    Mut,
     // atoms
     Ident(String),
     /// A float literal (has a decimal point), e.g. `0.9`.
@@ -43,6 +44,26 @@ pub enum Token {
     EqEq,
     Ne,
     Eof,
+}
+
+impl Token {
+    /// The surface spelling, if this token is a keyword. Lets the parser say "`mut` is a
+    /// keyword" instead of dumping the `Debug` variant name at the user.
+    pub fn keyword_text(&self) -> Option<&'static str> {
+        match self {
+            Token::Export => Some("export"),
+            Token::Fn => Some("fn"),
+            Token::If => Some("if"),
+            Token::Return => Some("return"),
+            Token::True => Some("true"),
+            Token::False => Some("false"),
+            Token::Error => Some("error"),
+            Token::Fail => Some("fail"),
+            Token::Let => Some("let"),
+            Token::Mut => Some("mut"),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -217,6 +238,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "error" => Token::Error,
                 "fail" => Token::Fail,
                 "let" => Token::Let,
+                "mut" => Token::Mut,
                 _ => Token::Ident(s),
             };
             out.push(Spanned {
@@ -266,6 +288,25 @@ mod tests {
                 Token::Slash,
                 Token::Eof,
             ]
+        );
+    }
+
+    #[test]
+    fn lexes_mut_as_a_keyword_not_an_identifier() {
+        // WM1: `mut` modifies `let`; it must not fall through to `Token::Ident`.
+        assert_eq!(
+            toks("let mut x"),
+            vec![
+                Token::Let,
+                Token::Mut,
+                Token::Ident("x".to_string()),
+                Token::Eof,
+            ]
+        );
+        // Still a plain identifier when it only starts with the same letters.
+        assert_eq!(
+            toks("mutable"),
+            vec![Token::Ident("mutable".to_string()), Token::Eof]
         );
     }
 

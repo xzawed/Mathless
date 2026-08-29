@@ -65,9 +65,13 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 6. **Grok 2차 검증**은 구현·진단·코드 검토에서 PR 완료 전 필수. Grok 도구가 실패하면
    보고하고 판단을 구한다 — 임의 대체 금지.
 7. `main`에는 squash-merge. 머지 후 브랜치 삭제.
-8. **CI**(GitHub Actions, `windows-latest`)가 모든 PR에서 `cargo fmt --check` +
-   `clippy -D warnings` + `cargo test --workspace`를 실행한다 — `#![cfg(windows)]` 수용
-   테스트를 실제로 돌리는 정본 게이트. 머지 전 green 유지. (크로스플랫폼 SO/ELF CI는 D22와 함께 이연.)
+8. **CI**(GitHub Actions)가 모든 PR에서 `cargo fmt --check` + `clippy -D warnings` +
+   `cargo test --workspace`를 실행한다. **`windows-latest`가 정본 게이트** — `#![cfg(windows)]`
+   수용 테스트를 실제로 돌리며, `MATHLESS_GATE_D=require`로 수용 D(실제 C 호스트)가 조용히
+   skip되지 않게 한다. **`ubuntu-latest`는 프런트엔드 보험**(Windows 전용 가정 조기 발견)이지
+   권위가 아니다 — 수용 테스트는 거기서 컴파일되지 않는다(실측: 107개 중 **88개**가 Linux에서 실행,
+   19개는 `cfg(windows)`로 제외). 머지 전 둘 다 green 유지.
+   (`.so`/ELF **타깃**은 여전히 D22와 함께 이연 — Linux 잡은 D22가 아니다.)
 
 ## 라이선스와 기여
 

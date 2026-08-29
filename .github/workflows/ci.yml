@@ -14,6 +14,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Insurance, NOT an authority — and NOT D22. This job never builds a `.so` and never loads
+  # a module: every acceptance test is `#![cfg(windows)]` and compiles away here. What it does
+  # catch is a Windows-only assumption sneaking into the platform-independent frontend
+  # (lex/parse/typecheck/IR, the code generators, the CLI, temp-path handling), which would
+  # otherwise only surface the day someone targets another OS. Starting a real `.so`/ELF
+  # target needs an explicit D22 decision; this is not it.
+  linux-frontend:
+    name: frontend fmt + clippy + test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure rustfmt + clippy
+        run: rustup component add rustfmt clippy
+      - name: Format check
+        run: cargo fmt --all --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test (locked)
+        # No MATHLESS_GATE_D here: acceptance D is a Windows gate, and demanding it on Linux
+        # would be theatre. The windows job is where that is enforced.
+        run: cargo test --workspace --locked
+
   windows:
     # Authoritative job. Acceptance A/B/C/D build a real `.dll`, `LoadLibraryW` it, and build
     # a C host with MSVC that loads it too — all `#![cfg(windows)]` (Phase 1 target; SO/ELF is

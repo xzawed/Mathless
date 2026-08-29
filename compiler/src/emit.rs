@@ -163,7 +163,12 @@ fn publish(stage: &Path, out_dir: &Path, names: &[String]) -> Result<(), EmitErr
         let backup = if dest.is_file() {
             let b = stage.join(format!("{name}.prev"));
             if let Err(e) = std::fs::rename(&dest, &b) {
-                let stranded = rollback(&mut done);
+                let mut stranded = rollback(&mut done);
+                // Defensive: a rename that reports failure *after* moving the file would
+                // otherwise leave the only copy in the stage, which we are about to delete.
+                if b.exists() {
+                    stranded.push(b);
+                }
                 return Err(fail(e, stranded));
             }
             Some(b)

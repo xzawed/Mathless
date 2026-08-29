@@ -163,3 +163,43 @@ fn the_cli_explains_a_bad_module_name_instead_of_failing_in_cargo() {
     );
     assert_eq!(entries(&dir), vec!["if.mls"], "no artifacts written");
 }
+
+#[test]
+fn rejects_windows_device_names_as_module_names() {
+    // A module name also becomes file names, and Windows resolves these as devices whatever
+    // the extension. `nul.mls` used to die with "create crate dir: the system cannot find the
+    // path specified" — an OS error nowhere near the cause.
+    let out = fresh_out("device");
+    for bad in ["nul", "NUL", "con", "Aux", "com1", "LPT9"] {
+        let err = emit_artifacts(SRC, bad, &out).unwrap_err().to_string();
+        assert!(
+            err.contains("device name"),
+            "'{bad}' should be rejected by name, got: {err}"
+        );
+    }
+    // …while an ordinary name that merely starts the same way must NOT be rejected. Point
+    // `out_dir` at an existing *file* so the call fails at I/O instead of building a DLL:
+    // what matters is that the failure is not about the name.
+    let blocked = out.join("not-a-dir");
+    std::fs::write(&blocked, "").unwrap();
+    let err = emit_artifacts(SRC, "console", &blocked).unwrap_err();
+    assert!(
+        !matches!(err, mlc::emit::EmitError::InvalidModuleName(_)),
+        "'console' is a fine module name, got: {err}"
+    );
+
+    assert_eq!(entries(&out), vec!["not-a-dir"], "no artifacts written");
+}
+
+#[test]
+fn rejects_a_module_name_that_delphi_reserves() {
+    // `on` and `at` are Delphi reserved words (exception handling). They were missing from
+    // `reserved.rs`, so `on.mls` built happily and emitted `unit on;` — which Delphi would
+    // reject. Evidence level E1 (documented reserved word); dcc64 is absent here.
+    let out = fresh_out("delphi_kw");
+    for bad in ["on", "at", "ON"] {
+        let err = emit_artifacts(SRC, bad, &out).unwrap_err().to_string();
+        assert!(err.contains("Pascal"), "'{bad}': {err}");
+    }
+    assert!(entries(&out).is_empty());
+}

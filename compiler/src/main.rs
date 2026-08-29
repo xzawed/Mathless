@@ -6,7 +6,7 @@
 //!
 //! `build` packages the module into three files in `<out_dir>` (default: current dir):
 //!   <name>.dll   native C-ABI module
-//!   <name>.h     C header       (DRAFT — not host-load-verified; D14 gate BLOCKED)
+//!   <name>.h     C header       (verified against a real MSVC C host — acceptance D)
 //!   <name>.pas   Delphi import unit (DRAFT — same)
 //! where `<name>` is the input file's stem.
 
@@ -71,7 +71,7 @@ fn run(args: &[String]) -> Result<(), String> {
     println!("mlc: wrote");
     println!("  {}", arts.dll.display());
     println!(
-        "  {}  (DRAFT: C host-load not verified — D14 gate BLOCKED)",
+        "  {}  (C header — verified against a real MSVC C host, acceptance D)",
         arts.header.display()
     );
     println!(

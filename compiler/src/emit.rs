@@ -2,12 +2,11 @@
 //! disk — `<name>.dll` (native module), `<name>.h` (C header), `<name>.pas` (Delphi import
 //! unit). This is the library entrypoint behind the `mlc build` CLI (`src/main.rs`).
 //!
-//! Honesty split (Grok cross-check #3): producing the `.dll` and *loading it via the Rust
-//! oracle* is E2 (measured — see `hosts/rust-oracle/tests/emit_artifacts.rs`). The `.h`/
-//! `.pas` are generated text whose real host-load — a C compiler consuming the header, or
-//! Delphi consuming the unit — stays **BLOCKED** (no `cl`/`gcc`/`dcc64` on the build
-//! machine). The generated files carry that DRAFT/BLOCKED note verbatim; nothing here
-//! claims the bindings "work" against a real host.
+//! Honesty split: producing the `.dll` and loading it via the Rust oracle is E2 (see
+//! `hosts/rust-oracle/tests/emit_artifacts.rs`). The **`.h` is now E2 as well** — a real C
+//! host built with MSVC compiles it and calls the module (`hosts/rust-oracle/tests/c_host.rs`,
+//! acceptance D). The **`.pas` is still unverified**: there is no `dcc64` here, so nothing has
+//! ever compiled the Delphi unit, and it keeps its DRAFT note.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -275,7 +274,7 @@ pub fn emit_artifacts(
         let _ = std::fs::remove_dir_all(&build_root);
         result?;
 
-        // Bindings (DRAFT: not host-load-verified — D14 gate BLOCKED). Delphi requires the
+        // Bindings: the `.h` is verified by the C host (acceptance D); the `.pas` is not.
         // unit name to equal the file stem, so the unit name IS the module name.
         std::fs::write(
             stage.join(&names[1]),

@@ -42,7 +42,7 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **106 green**, CI on `windows-latest`, toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **107 green**, CI on `windows-latest`, toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
@@ -54,9 +54,13 @@ Measured on Windows (`cargo test --workspace` = **106 green**, CI on `windows-la
   function; the stripped `no_std` module exports **only** the intended symbols (~9.7 KB).
 
 Acceptance **A** (compile) · **B** (load-and-call via the oracle) · **C** (export/size protection
-proxies) pass. Acceptance **D** — loading the same module from a real **Delphi or C host** — is
-**not yet verified** (no `cl` / `gcc` / `dcc64` on the build machine); the `.h` / `.pas` are
-generated but marked DRAFT.
+proxies) · **D** (a real **C host** loads the same module) all pass — D on Windows x64 with MSVC
+`cl`: [`hosts/c-host/host.c`](hosts/c-host/host.c) compiles the generated `.h`, resolves the exports
+with `LoadLibrary`/`GetProcAddress`, and checks both the scalar and the error-path calls. The same
+run cross-checks our export measurement against `dumpbin /exports`.
+
+**Delphi is still unverified.** D covers the C arm only; there is no `dcc64` here, so nothing has
+ever compiled the generated `.pas`, and it keeps its DRAFT note.
 
 ## Example
 
@@ -87,8 +91,9 @@ Delphi-only.
 ## Honest limits
 
 - Phase 1 targets **Windows x64** (`.dll`); a Linux / `.so` build is a later target.
-- Phase 1 is a vertical slice: a small surface and one measured host path (the Rust oracle). Real
-  Delphi/C host load is **blocked** pending a toolchain on the build machine.
+- Phase 1 is a vertical slice: a small surface, and two measured host paths — the Rust oracle and a
+  C host built with MSVC. **Delphi is not one of them yet** (no `dcc64`), and D14 makes Delphi the
+  flagship, so the host story is half-proven.
 - Protection is reported only through **proxies** — exported-symbol count, stripped binary size, no
   source in the artifact — never framed as "reversing difficulty."
 - File extensions (`.mls`, `.mll`) and the C API names are **provisional**.

@@ -47,24 +47,41 @@ fn emit_artifacts_writes_the_three_consumable_files() {
     );
     assert_eq!(&dll[..2], b"MZ", "dll is not a PE image");
 
-    // .h text contract: the C-ABI signature + reserved version symbol + honest DRAFT note.
+    // .h text contract: the C-ABI signature, the reserved version symbol, and a note that
+    // matches reality — the C binding IS now verified against a real host (acceptance D),
+    // and the note says exactly what that does and does not cover.
     let h = std::fs::read_to_string(&arts.header).unwrap();
     assert!(h.contains("mlx_discount"), "{h}");
     assert!(h.contains("ml_module_abi_version"), "{h}");
     assert!(
-        h.contains("D14 load gate BLOCKED"),
-        "header must stay honest: {h}"
+        h.contains("Verified (acceptance D)") && h.contains("MSVC"),
+        "the header should record what verified it: {h}"
+    );
+    assert!(
+        h.contains("Not verified: any other C compiler"),
+        "…and the limits of that claim: {h}"
+    );
+    // The header is handed to C compilers on machines with any code page; keep it ASCII.
+    // (MSVC warns C4819 otherwise, and `/WX` builds then fail — measured, acceptance D.)
+    assert!(
+        h.is_ascii(),
+        "the generated C header must be pure ASCII: {h}"
     );
 
-    // .pas text contract: matching unit name (Delphi requires file stem == unit), the
-    // cdecl external import, and the same honest DRAFT note.
+    // .pas text contract: matching unit name (Delphi requires file stem == unit), the cdecl
+    // external import, and the DRAFT note — which must STAY, because no `dcc64` has ever
+    // compiled this. Acceptance D closed the C arm only.
     let pas = std::fs::read_to_string(&arts.delphi_unit).unwrap();
     assert!(pas.contains("unit discount;"), "{pas}");
     assert!(pas.contains("function mlx_discount"), "{pas}");
     assert!(pas.contains("external ML_MODULE"), "{pas}");
     assert!(
         pas.contains("D14 load gate BLOCKED"),
-        "unit must stay honest: {pas}"
+        "the Delphi unit must stay honest — it is still unverified: {pas}"
+    );
+    assert!(
+        pas.is_ascii(),
+        "the generated Delphi unit must be ASCII: {pas}"
     );
 }
 

@@ -18,13 +18,15 @@
 
 아래 "최소 C API 스케치"는 **아직 하나도 구현되지 않았다**. 지금 실제로 동작하는 경계는 그보다 얇다:
 
-- 호스트가 OS 로더로 직접 모듈을 연다(오라클은 kernel32 `LoadLibraryW`/`GetProcAddress`).
+- 호스트가 OS 로더로 직접 모듈을 연다(Rust 오라클은 kernel32 `LoadLibraryW`, C 호스트는
+  `LoadLibraryA` + `GetProcAddress`).
   **`ml_runtime_*` / `ml_module_*` 로더 API는 없다.**
 - 모듈이 export하는 것은 **`mlx_<함수명>` + `ml_module_abi_version`뿐**(PE 리더로 측정).
 - 마샬링은 **스칼라만**: `f64`/`bool`/`i32`. 실패 가능 함수는 D17대로
   `int32_t mlx_f(<params>, T* out_value)`. 문자열·구조체·콜백·호스트 함수 등록은 **미구현**.
-- 산출물은 `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit)이며, `.h`/`.pas`의 **실제 소비는 미검증**
-  (수용 D BLOCKED — `cl`/`gcc`/`dcc64` 미확보). 생성물에 DRAFT 표기 유지.
+- 산출물은 `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit). **`.h`는 실제로 소비된다** — MSVC로 빌드한
+  C11 호스트가 이를 컴파일하고 모듈을 로드·호출한다(수용 D, 2026-08-29). **`.pas`는 여전히 미검증**
+  (`dcc64` 없음) → DRAFT 표기 유지.
 
 ## 최소 C API 스케치 (초안, 미구현)
 

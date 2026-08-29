@@ -15,10 +15,11 @@ env:
 
 jobs:
   windows:
-    # Authoritative job. Acceptance A/B/C build a real `.dll` and `LoadLibraryW` it, so they
-    # are `#![cfg(windows)]` (Phase 1 target; SO/ELF is deferred, D22). Running the suite
-    # HERE is what makes those acceptance tests actually execute in CI — a Linux runner would
-    # compile them away and report a vacuous pass (the "false-green" this job exists to kill).
+    # Authoritative job. Acceptance A/B/C/D build a real `.dll`, `LoadLibraryW` it, and build
+    # a C host with MSVC that loads it too — all `#![cfg(windows)]` (Phase 1 target; SO/ELF is
+    # deferred, D22). Running the suite HERE is what makes those acceptance tests actually
+    # execute in CI — a Linux runner would compile them away and report a vacuous pass (the
+    # "false-green" this job exists to kill).
     name: fmt + clippy + test (windows-latest)
     runs-on: windows-latest
     steps:
@@ -30,4 +31,9 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test (locked)
+        # MATHLESS_GATE_D=require turns "no MSVC found" into a FAILURE instead of a skip, so
+        # acceptance D (a real C host loading the module) can never silently stop running
+        # here and leave a green tick behind. windows-latest ships the VC++ build tools.
+        env:
+          MATHLESS_GATE_D: require
         run: cargo test --workspace --locked

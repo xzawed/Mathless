@@ -54,11 +54,11 @@ fn emit_artifacts_writes_the_three_consumable_files() {
     assert!(h.contains("mlx_discount"), "{h}");
     assert!(h.contains("ml_module_abi_version"), "{h}");
     assert!(
-        h.contains("Verified (acceptance D)") && h.contains("MSVC"),
+        h.contains("GENERATOR is verified by acceptance D") && h.contains("MSVC"),
         "the header should record what verified it: {h}"
     );
     assert!(
-        h.contains("Not verified: any other C compiler"),
+        h.contains("not this\n * particular file") || h.contains("particular file"),
         "…and the limits of that claim: {h}"
     );
     // The header is handed to C compilers on machines with any code page; keep it ASCII.

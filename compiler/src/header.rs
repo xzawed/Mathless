@@ -52,9 +52,11 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     );
     let _ = writeln!(
         s,
-        " * Verified (acceptance D): a real C host built with MSVC cl on Windows x64 compiles\n \
-         * this header and calls the module via LoadLibrary/GetProcAddress - see hosts/c-host.\n \
-         * Not verified: any other C compiler, and link-time binding via an import library."
+        " * This GENERATOR is verified by acceptance D: a C11 host built with MSVC cl on\n \
+         * Windows x64 compiles its output and calls the module through\n \
+         * LoadLibrary/GetProcAddress - see hosts/c-host. That covers the generator, not this\n \
+         * particular file. Not verified: other C compilers, and link-time binding via an\n \
+         * import library."
     );
     let _ = writeln!(
         s,

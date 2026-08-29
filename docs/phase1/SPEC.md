@@ -3,7 +3,7 @@
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
 > §4의 DP1~DP4는 **2026-08-28 사용자 승인으로 닫혔고**, `DECISIONS.md` **D19~D22**로 반영되었다(PR #3).
 > 구현: **W0~W7 = PR #4~#9**(+#10 하드닝, #11 `mlc build` CLI). **수용 A/B/C 통과**,
-> **수용 D(실제 Delphi/C 호스트 로드)만 BLOCKED** — 빌드 머신에 `cl`/`gcc`/`dcc64` 없음.
+> **수용 D는 C 호스트로 통과(2026-08-29, MSVC `cl`)**, **Delphi(`dcc64`)만 미검증**.
 > 이 문서는 이제 **설계 기록(design record)**이다. 여기서 닫힌 제안을 다시 열지 않는다 —
 > 범위를 바꾸려면 **새 SPEC**을 쓴다.
 > **근거 수준:** "실측 검증됨(E2)"로 표기한 것만 측정 완료. `main`의 최신 실측은 `docs/STATUS.md`.
@@ -86,8 +86,8 @@ export fn discount(price: f64, vip: bool) -> f64 {
 | 계층 | 무엇 | 지금 가능? |
 |---|---|---|
 | CI 오라클 | Rust kernel32 로더 호스트 | ✅ E2 검증됨 |
-| **D14 done-gate** | Delphi(플래그십)/C 호스트가 동일 DLL 로드 | ❌ dcc64/cl/gcc 미설치 → BLOCKED |
-| 산출물 | C 헤더(`.h`) + Delphi import unit(`.pas`) | ✅ 생성 가능(로드 검증만 BLOCKED) |
+| **D14 done-gate** | Delphi(플래그십)/C 호스트가 동일 DLL 로드 | ⚠️ **C만 통과**(MSVC `cl`, 2026-08-29). Delphi는 `dcc64` 미확보 |
+| 산출물 | C 헤더(`.h`) + Delphi import unit(`.pas`) | ✅ 생성. `.h`는 실제 C 호스트가 소비함, `.pas`는 미검증 |
 
 - Rust 오라클은 **테스트 오라클일 뿐** done-gate가 아니다. (Grok 지적)
 

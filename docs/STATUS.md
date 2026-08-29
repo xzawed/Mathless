@@ -7,7 +7,8 @@
 
 - **테스트:** `cargo test --workspace` = **107 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
-  + `ubuntu-latest`(프런트엔드 보험, 수용 테스트는 컴파일되지 않음). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
+  + `ubuntu-latest`(프런트엔드 보험 — 실측 **107개 중 88개 실행**, 나머지 19개는 `cfg(windows)`라
+  컴파일 제외). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
   `error NAME=N` + `fail NAME`, i32 status + out-param, D17/Q13); **지역 변수**(`let` 불변 / `let mut` +

@@ -194,6 +194,15 @@ fn emit_expr(e: &IrExpr) -> String {
             format!("{name}({})", args.join(", "))
         }
         IrExprKind::Cast { to, operand } => {
+            // Backend net for directly-built IR, and this one guards a *silent* failure:
+            // Rust accepts `bool as i32` and yields 0/1, so hand-built IR would compile and
+            // quietly mean something Mathless forbids. (`bool as f64` is a rustc error, so
+            // that half is loud on its own.) Source cannot reach here — typeck rejects it.
+            debug_assert!(
+                operand.ty != IrType::Bool && *to != IrType::Bool,
+                "IrExprKind::Cast involving bool ({:?} as {to:?}): `as` is numeric-only",
+                operand.ty
+            );
             // Rust's `as` truncates toward zero, saturates out-of-range, and maps NaN to 0 —
             // exactly the semantics the SPEC pins. That agreement is why this lowering is one
             // line; it is NOT the reason the semantics were chosen, and a C backend must

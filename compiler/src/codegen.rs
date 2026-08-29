@@ -191,6 +191,17 @@ fn emit_expr(e: &IrExpr) -> String {
             format!("({sym}{})", emit_expr(operand))
         }
         IrExprKind::Binary { op, lhs, rhs } => {
+            // Directly-built IR could put `&&`/`||` on non-bool operands. Note this is a
+            // *weaker* hazard than `IrUnOp::Not` on an integer: Rust's `&&` is bool-only, so
+            // that would fail when the generated crate compiles rather than silently meaning
+            // something else. The assert just moves the failure somewhere legible.
+            debug_assert!(
+                !matches!(op, IrBinOp::And | IrBinOp::Or)
+                    || (lhs.ty == IrType::Bool && rhs.ty == IrType::Bool),
+                "IrBinOp::{op:?} on {:?} and {:?}: logical operators are bool-only",
+                lhs.ty,
+                rhs.ty
+            );
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }
     }

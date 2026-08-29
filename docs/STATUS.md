@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **119 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **122 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
   + `ubuntu-latest`(프런트엔드 보험 — 실측 **107개 중 88개 실행**, 나머지 19개는 `cfg(windows)`라
   컴파일 제외). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
@@ -47,6 +47,8 @@
 - **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.
 - **3b-#4 emit 견고성 (PR #42)** — 스테이지→이동(+롤백), 모듈명 검증. 테스트 94 → 106.
 - **수용 D + 3b-#3 (PR #43)** — 실제 C 호스트가 모듈을 로드·호출. 테스트 106 → 107.
+- **진단 (PR #50)** — `return`/`fail` 뒤 죽은 코드를 "모든 경로 return 안 함"이 아니라 **"unreachable"**로
+  보고한다(기존 메시지는 멀쩡히 있는 `return`을 찾게 만들었다). 테스트 119 → 122.
 - **`while` 슬라이스 (SPEC #48 / 구현 #49)** — 테스트 107 → 119. 호스트 생존성 계약을 `HOST_ABI.md`에
   추가(§5.1) — 이 슬라이스가 들인 **새 위험 등급**이다.
   **Gate D가 찾아낸 실제 결함:** 생성 `.h`/`.pas`가 비-ASCII(em dash)를 담고 있어 MSVC가 코드페이지

@@ -149,3 +149,42 @@ fn the_cli_prints_the_parse_position_on_stderr() {
         "stderr must not be a Debug dump — {stderr}"
     );
 }
+
+#[test]
+fn dead_code_after_return_says_so_instead_of_blaming_the_return() {
+    // The function DOES return on every path — the problem is the statement after it. Saying
+    // "may not return on all paths" sends the reader looking for a missing `return`.
+    for src in [
+        "export fn f() -> i32 { return 1 let x = 2 }",
+        "export fn f() -> i32 { return 1 while true { } }",
+        "export fn f(b: bool) -> i32 { return 1 if b { return 2 } }",
+    ] {
+        let shown = compile_to_ir(src).unwrap_err().to_string();
+        assert!(
+            shown.contains("unreachable"),
+            "should name the dead code — got: {shown}"
+        );
+        assert!(
+            !shown.contains("may not return on all paths"),
+            "and must not blame the return: {shown}"
+        );
+    }
+}
+
+#[test]
+fn a_fallible_fn_reports_dead_code_after_fail_too() {
+    let shown = compile_to_ir("error E = 1\nexport fn f() -> i32! { fail E let x = 2 }")
+        .unwrap_err()
+        .to_string();
+    assert!(shown.contains("unreachable"), "{shown}");
+}
+
+#[test]
+fn a_genuinely_missing_return_still_says_so() {
+    // The other message must survive — this function really can fall off the end.
+    let shown = compile_to_ir("export fn f(b: bool) -> i32 { if b { return 1 } }")
+        .unwrap_err()
+        .to_string();
+    assert!(shown.contains("may not return on all paths"), "{shown}");
+    assert!(!shown.contains("unreachable"), "{shown}");
+}

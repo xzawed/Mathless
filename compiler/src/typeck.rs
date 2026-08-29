@@ -164,6 +164,24 @@ fn check_block(
     for s in stmts {
         out.push(check_stmt(s, &mut scope, ret, fname, fallible, errors)?);
     }
+    // Anything after a `return`/`fail` is dead. Say that, instead of letting the
+    // all-paths-return check below report "may not return on all paths" — which sends the
+    // reader hunting for a missing `return` that is right there in front of them.
+    let last = out.len().saturating_sub(1);
+    if let Some(i) = out[..last]
+        .iter()
+        .position(|s| matches!(s, IrStmt::Return(_) | IrStmt::Fail(_)))
+    {
+        let kw = if matches!(out[i], IrStmt::Fail(_)) {
+            "fail"
+        } else {
+            "return"
+        };
+        return Err(TypeError::new(format!(
+            "function '{fname}': unreachable statement after `{kw}` — everything following it \
+             is dead code"
+        )));
+    }
     Ok(out)
 }
 

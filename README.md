@@ -42,7 +42,7 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **119 green**; CI runs `windows-latest` — the authority, where acceptance A/B/C/D actually execute — plus `ubuntu-latest` for the frontend; toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **122 green**; CI runs `windows-latest` — the authority, where acceptance A/B/C/D actually execute — plus `ubuntu-latest` for the frontend; toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).

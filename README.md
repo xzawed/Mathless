@@ -42,7 +42,7 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **107 green**, CI on `windows-latest`, toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **107 green**; CI runs `windows-latest` — the authority, where acceptance A/B/C/D actually execute — plus `ubuntu-latest` for the frontend; toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
@@ -79,7 +79,7 @@ mlc build discount.mls -o out/
 #  out/discount.pas   Delphi import unit
 ```
 
-A host loads `discount.dll` over the C ABI and calls `mlx_discount(100.0, true) == 90.0` — with no
+A C host loads `discount.dll` over the C ABI and calls `mlx_discount(100.0, true) == 90.0` — with no
 host rebuild.
 
 ## Hosts

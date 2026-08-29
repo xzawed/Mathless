@@ -26,7 +26,7 @@
 | D18 | 모듈 포맷 = **표준 DLL/SO + 버전 export 심볼 + 모듈 전용 접두어**, 컨테이너는 P1 | 2026-08-28 | OS 로더 직접 사용. 선두 헤더는 PE/ELF 매직과 충돌해 로드 불가 |
 | D19 | 코드젠 = **잠정 rustc lowering** (비-Rust IR → `no_std`/`extern"C"`/`repr(C)` Rust → `cargo cdylib`) | 2026-08-28 | 설치된 유일 네이티브 툴, 스모크 E2 통과. Q6 **잠정** 해결(닫지 않음), C-emit 슬롯 유지 |
 | D20 | 컴파일러 구현 언어 = **Rust** | 2026-08-28 | 설치·검증됨, 컴파일러 작성·cdylib/FFI 유리 |
-| D21 | Phase 1 호스트 = **Rust kernel32 오라클(CI)** + D14 done-gate(Delphi/C)는 툴체인 확보 시까지 **보류** | 2026-08-28 | 이 머신에 dcc64/cl/gcc 없음(BLOCKED). 사용자 승인으로 오라클 진행 |
+| D21 | Phase 1 호스트 = **Rust kernel32 오라클(CI)** + D14 done-gate는 **C 쪽 완료**(2026-08-29), **Delphi 보류** | 2026-08-28 (2026-08-29 갱신) | 원래 "툴체인 없음"은 오진(MSVC는 설치돼 있었고 PATH에만 없었음). C 호스트로 수용 D 통과, `dcc64`는 실측 부재 — 상세는 아래 |
 | D22 | 1차 타깃 = **Windows x64** ("msvc"를 D18에 고정하지 않음) | 2026-08-28 | 현재 OS. export/CRT/unwind는 측정 |
 
 ## 확정 상세 (D14~D22)

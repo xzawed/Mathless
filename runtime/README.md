@@ -11,5 +11,7 @@ Thin C-ABI surface for Mathless modules (Phase 1). No VM, no interpreter (D02/D1
 
 - Hosts resolve exports by name via `GetProcAddress` / `dlsym`.
 - `ml_module_abi_version() -> u32`: hosts are **required** to refuse a **major** mismatch. That's a contract on hosts — it is not enforced anywhere in this repo yet; the Rust oracle only asserts the value matches the compiler constant.
-- `ml_abi.h`: C header artifact (DRAFT — the C/Delphi binding is unverified while the
-  D14 host-load gate is BLOCKED; see `docs/phase1/SPEC.md` §3-D).
+- `ml_abi.h`: C header artifact. The **C** binding is verified — a real MSVC-built host
+  loads a module and calls it (acceptance D, `hosts/c-host`). The **Delphi** binding is
+  still unverified: no `dcc64` here, so no generated `.pas` has ever been compiled.
+  See `docs/phase1/SPEC.md` §3-D.

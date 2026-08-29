@@ -1,6 +1,7 @@
 //! D17 error-path slice — acceptance B/C (E2): the oracle loads the packaged fallible
-//! module and calls both paths through the D17 ABI (i32 status + out-param). Real C/Delphi
-//! host load stays D14 BLOCKED — this is the Rust oracle only.
+//! module and calls both paths through the D17 ABI (i32 status + out-param). This is the
+//! Rust oracle only; the same two paths are checked from a real C host in `c_host.rs`
+//! (acceptance D). Delphi remains unverified.
 #![cfg(windows)]
 
 use ml_oracle::{pe, Module};

@@ -1,8 +1,9 @@
 //! Rust kernel32 loader **oracle** — CI verification only.
 //!
-//! Per D21 this is NOT the D14 done-gate. A green test here means the C-ABI module
-//! loads and calls correctly from *a* host; it does **not** mean the flagship Delphi
-//! host (or a C host) works — that gate stays BLOCKED until `dcc64`/`cl`/`gcc` exist.
+//! Per D21 this is NOT the D14 done-gate. A green test here means the C-ABI module loads
+//! and calls correctly from *a* host. The **C** arm of the gate is closed separately by
+//! `tests/c_host.rs` (a real MSVC-built host); the **Delphi** arm is still open — there is
+//! no `dcc64` here, so nothing has compiled the generated `.pas`.
 //!
 //! Dependency-free: uses Win32 `LoadLibraryW`/`GetProcAddress` directly.
 #![cfg(windows)]

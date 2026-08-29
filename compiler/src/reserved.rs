@@ -93,7 +93,7 @@ static PASCAL: &[&str] = &[
     // `raise … at …`). They were missing, so a parameter, local or module named `on`
     // produced a `unit on;` that Delphi would reject. Evidence level E1 — Embarcadero's
     // documented reserved-word list, not something we can compile here (dcc64 absent,
-    // Gate D BLOCKED).
+    // Delphi arm of gate D still open).
     "at",
     "on",
     "begin",

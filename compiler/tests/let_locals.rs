@@ -1,4 +1,4 @@
-//! Local-variables (`let`) slice (SPEC docs/phase1/SPEC-let-locals.md): `let NAME = EXPR`
+//! Local-variables (`let`) slice (SPEC docs/slices/SPEC-let-locals.md): `let NAME = EXPR`
 //! block-scoped, immutable, inferred-typed locals. Internal only — no ABI change. The E2
 //! load/call proof is in `hosts/rust-oracle/tests/let_locals.rs`.
 

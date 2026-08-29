@@ -29,9 +29,9 @@
 
 ## Methodology: SDD + WBS + TDD (mandatory from Phase 1)
 
-1. **SDD (spec-first):** write the spec before code — `docs/phaseN/SPEC*.md` with inputs, outputs,
+1. **SDD (spec-first):** write the spec before code — `docs/slices/SPEC-<name>.md` with inputs, outputs,
    contracts, and measurable acceptance criteria. Get user confirmation before implementing.
-2. **WBS:** break the spec into PR-sized tasks in `docs/phaseN/WBS.md`, in dependency order; each
+2. **WBS:** break the spec into PR-sized tasks in `docs/phaseN/WBS.md` (the phase plan, alongside `docs/phaseN/SPEC.md`), in dependency order; each
    task = one PR with a measurable done-criterion.
 3. **TDD:** write the failing test first (Red → Green → Refactor). Test results are the E2 evidence.
 4. **Grok + measured data (both doing and reviewing):** perform and verify each task with Grok,

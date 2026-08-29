@@ -106,7 +106,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 - C 헤더 소비 및 Delphi/C 호스트 로드 **미검증**.
   → **여전히 미검증(수용 D, BLOCKED).** `.h`/`.pas`는 생성되지만(PR #9) `cl`/`gcc`/`dcc64` 미확보.
 - D16(handle) / D17(status+out-param) **미검증**(범위 밖).
-  → **D17만 해소**: 에러-경로 슬라이스로 구현·실측(SPEC `SPEC-D17-error-abi.md`, PR #14/#15).
+  → **D17만 해소**: 에러-경로 슬라이스로 구현·실측(SPEC [`docs/slices/SPEC-D17-error-abi.md`](../slices/SPEC-D17-error-abi.md), PR #14/#15).
   **D16은 여전히 범위 밖**(후속 슬라이스, SPEC 미작성).
 - target triple·CRT/unwind·정확한 export 집합(`dumpbin /exports` 등) **미측정** → 수용 C에서 측정.
   → **해소.** 자체 PE 리더로 export 집합 측정(PR #8): `mlx_*` + `ml_module_abi_version`만.

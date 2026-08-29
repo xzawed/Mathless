@@ -32,10 +32,10 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 | ID | 작업 | SPEC | 완료 기준 (측정, E2) | PR |
 |----|------|------|----------------------|----|
 | **STEP1** | `mlc build <f.mls> -o <dir>` CLI — `.dll`+`.h`+`.pas`를 디스크로 산출 | (W7 연장) | 실 CLI 실행이 `discount.dll`(9,728 B)+`.h`+`.pas` 생성, 오라클이 그 산출 dll을 로드 | #11 |
-| **W8** | **D17 에러 경로** — 실패 가능 함수 `-> T!`, `error NAME = N`, `fail NAME` → i32 status + out-param | `SPEC-D17-error-abi.md` | 오라클이 성공(`status=0`, out 기록)·실패(`status=1`, out 미변경) **두 경로** assert; export 집합 불변 | #14(SPEC) / #15 |
-| **W9** | **지역 변수 `let`** — 블록 스코프·불변·타입 추론 | `SPEC-let-locals.md` | 재선언/섀도잉/미정의/예약어/`out_value` 부정 케이스 전부 거부; 오라클 로드·호출 통과; **ABI 불변** | #25(SPEC) / #26 |
-| **W10** | **`i32` 타입** — 정수 리터럴·산술·비교, `int32_t`/`Integer` 매핑 | `SPEC-i32.md` | 혼합 연산·`i32 /` 거부; 오라클 로드·호출 통과; ABI 불변 | #29(SPEC) / #31 |
-| **W11** | **가변 지역 변수 `let mut` + 대입문** — `if`가 문이므로 분기 결과를 모으는 수단 | `SPEC-let-mut.md` | 불변 `let`/파라미터/미선언 대입·타입 불일치·대입으로 끝나는 블록·대입식 전부 거부; 오라클 로드·호출 통과; **ABI·크기 불변**(9,728 B 동일) | #32(SPEC) / #39 |
+| **W8** | **D17 에러 경로** — 실패 가능 함수 `-> T!`, `error NAME = N`, `fail NAME` → i32 status + out-param | [`SPEC-D17-error-abi.md`](../slices/SPEC-D17-error-abi.md) | 오라클이 성공(`status=0`, out 기록)·실패(`status=1`, out 미변경) **두 경로** assert; export 집합 불변 | #14(SPEC) / #15 |
+| **W9** | **지역 변수 `let`** — 블록 스코프·불변·타입 추론 | [`SPEC-let-locals.md`](../slices/SPEC-let-locals.md) | 재선언/섀도잉/미정의/예약어/`out_value` 부정 케이스 전부 거부; 오라클 로드·호출 통과; **ABI 불변** | #25(SPEC) / #26 |
+| **W10** | **`i32` 타입** — 정수 리터럴·산술·비교, `int32_t`/`Integer` 매핑 | [`SPEC-i32.md`](../slices/SPEC-i32.md) | 혼합 연산·`i32 /` 거부; 오라클 로드·호출 통과; ABI 불변 | #29(SPEC) / #31 |
+| **W11** | **가변 지역 변수 `let mut` + 대입문** — `if`가 문이므로 분기 결과를 모으는 수단 | [`SPEC-let-mut.md`](../slices/SPEC-let-mut.md) | 불변 `let`/파라미터/미선언 대입·타입 불일치·대입으로 끝나는 블록·대입식 전부 거부; 오라클 로드·호출 통과; **ABI·크기 불변**(9,728 B 동일) | #32(SPEC) / #39 |
 
 ### 하드닝·인프라 (슬라이스 아님, 각 1 PR)
 
@@ -69,7 +69,7 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 ## 범위 밖 (후속 슬라이스, 별도 SPEC)
 
 - ~~D17 정수 status + out-param 에러 경로~~ → **완료**(W8, PR #15)
-- 가변 지역 변수 `let mut` + 대입 — **SPEC 초안 열림**(`SPEC-let-mut.md`, PR #32, 사용자 확인 대기)
+- ~~가변 지역 변수 `let mut` + 대입~~ → **완료**(W11, SPEC #32 / 구현 #39)
 - D16 caller-allocates 반환 / context handle 상태
 - 문자열/구조체 마샬링, 콜백
 - 두 번째 호스트(C#) — ROADMAP Phase 4

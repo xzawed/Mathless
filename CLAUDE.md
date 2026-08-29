@@ -75,7 +75,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Phase 0의 게이트(`OPEN_QUESTIONS.md`의 **Q1~Q5** — 주력 호스트 2개 / 표면 문법 계열 / 메모리 모델 / 에러 모델 / 모듈 파일 포맷)는 **닫혔다(2026-08-28, D14~D18)**. Phase 1 툴체인 결정(D19~D22)도 확정되어 **Phase 1(수직 슬라이스) 구현이 진행 중**이다(현재 상태는 `ROADMAP.md`·`docs/phase1/WBS.md`).
 
-각 **새 슬라이스**는 여전히 SDD 게이트를 지킨다: 먼저 `docs/phaseN/SPEC*.md`를 쓰고 **사용자 확인 후** 구현한다(아래 "개발 방법론"). 스펙 없는 구현은 시작하지 않는다.
+각 **새 슬라이스**는 여전히 SDD 게이트를 지킨다: 먼저 `docs/slices/SPEC-<이름>.md`를 쓰고 **사용자 확인 후** 구현한다(아래 "개발 방법론"). 스펙 없는 구현은 시작하지 않는다. 색인은 `docs/slices/README.md`.
 
 ## Git 워크플로 (PR 기반, 필수)
 
@@ -90,7 +90,8 @@ Phase 0의 게이트(`OPEN_QUESTIONS.md`의 **Q1~Q5** — 주력 호스트 2개 
 
 Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않는다.
 
-1. **SDD (스펙 우선).** 코드 전에 스펙을 먼저 쓴다. 기능마다 `docs/phaseN/SPEC*.md`에 입력·출력·계약·측정 가능한 수용 기준을 정의하고, **사용자 확인 후** 구현한다. 스펙 없는 구현 금지.
+1. **SDD (스펙 우선).** 코드 전에 스펙을 먼저 쓴다. **기능 슬라이스**마다 `docs/slices/SPEC-<이름>.md`에 입력·출력·계약·측정 가능한 수용 기준을 정의하고, **사용자 확인 후** 구현한다. 스펙 없는 구현 금지. 머지 후 `docs/slices/README.md` 색인에 한 줄 추가한다.
+   - **phase(캠페인) 계획**은 다른 층이다: `docs/phaseN/SPEC.md` + `WBS.md`(그 phase의 목표·수용 기준·작업 분해). `ROADMAP.md`의 phase는 제품 캠페인이지 SDD 단위가 아니다.
 2. **WBS (작업 분해).** 스펙을 PR 크기 작업으로 분해해 `docs/phaseN/WBS.md`에 의존 순서와 함께 관리한다. 각 작업 = 1 PR, 측정 가능한 완료 기준을 갖는다.
 3. **TDD (테스트 우선).** 구현 전에 실패하는 테스트를 먼저 쓴다(Red → Green → Refactor). 테스트 결과가 곧 실측 근거(E2)다.
 4. **Grok + 실측 (수행·검토 모두).** 각 작업의 수행과 검토를 Grok과 함께, 실측 데이터(테스트 결과·빌드 산출물·export 덤프·실행 로그) 기반으로 한다. PR 완료 전 `grok_build_verify` 필수.
@@ -100,11 +101,16 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
 
 ## 작업 우선순위
 
-Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 A/B/C는 **완료**다. 현재/다음 (최신 상태는 `docs/phase1/WBS.md`·`docs/ROADMAP.md`):
+Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 A/B/C는 **완료**다.
 
-1. 수용 D 닫기 — 동일 DLL을 실제 Delphi/C 호스트에서 로드(현재 **BLOCKED**, 툴체인 확보 시).
-2. 다음 슬라이스 **D17**(정수 status + out-param 에러 경로): SPEC 먼저 → 사용자 확인 → TDD.
-3. 이후 슬라이스: D16(caller-allocates/context handle), 문자열/구조체 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
+> **우선순위의 정본은 `docs/STATUS.md` §3이다** — 이 목록은 슬라이스마다 낡는다. 착수 전 그 문서를 먼저 읽는다.
+> 완료된 슬라이스 이력은 `docs/slices/README.md` 색인, phase 단위 작업 분해는 `docs/phase1/WBS.md`.
+
+큰 줄기만 적는다:
+
+1. 수용 D 닫기 — 동일 DLL을 실제 Delphi/C 호스트에서 로드(현재 **BLOCKED**; 검증 툴체인은 MSVC Build Tools로 확정, 설치 대기).
+2. 다음 슬라이스는 `docs/STATUS.md` §3에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — D17 에러 경로·`let`·`i32`·`let mut`는 이미 구현 완료다(`docs/slices/README.md`).
+3. 이후 슬라이스 후보: D16(caller-allocates/context handle), 문자열/구조체 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
 
 ## 산출물 규칙
 

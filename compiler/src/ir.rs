@@ -98,11 +98,25 @@ pub enum IrExprKind {
     ConstBool(bool),
     /// Reference to a parameter/local by name.
     Var(String),
+    Unary {
+        op: IrUnOp,
+        operand: Box<IrExpr>,
+    },
     Binary {
         op: IrBinOp,
         lhs: Box<IrExpr>,
         rhs: Box<IrExpr>,
     },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum IrUnOp {
+    /// Arithmetic negation. Overflow wraps, same rule as the rest of i32 arithmetic
+    /// (DP-I4), so `-i32::MIN == i32::MIN`.
+    Neg,
+    /// Logical not. `bool` only — the typechecker guarantees it, because Rust's `!` would
+    /// silently become a bitwise complement on an integer.
+    Not,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -60,12 +60,25 @@ pub enum Stmt {
     Assign { name: String, value: Expr },
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum UnOp {
+    /// `-e` — arithmetic negation (numeric operands only).
+    Neg,
+    /// `!e` — logical not (`bool` only; Rust's `!` is bitwise on integers, so the type rule
+    /// is what keeps the lowering honest).
+    Not,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(f64),
     Int(i64),
     Bool(bool),
     Var(String),
+    Unary {
+        op: UnOp,
+        operand: Box<Expr>,
+    },
     Binary {
         op: BinOp,
         lhs: Box<Expr>,

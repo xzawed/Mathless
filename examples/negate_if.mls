@@ -1,0 +1,6 @@
+// Unary-operator slice: `!` on a bool and `-` on a number. Before this, a negative value
+// could only be spelled `0 - x`, and negation only `b == false`.
+export fn negate_if(x: i32, flip: bool) -> i32 {
+  if !flip { return x }
+  return -x
+}

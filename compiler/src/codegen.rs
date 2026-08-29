@@ -171,6 +171,16 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
+        IrExprKind::Unary { op, operand } => {
+            // Parenthesised like the binary case, so precedence never depends on the target
+            // language's table. Rust's unary binds tighter than `*` anyway; this makes it
+            // explicit and survives a future C backend unchanged.
+            let sym = match op {
+                IrUnOp::Neg => "-",
+                IrUnOp::Not => "!",
+            };
+            format!("({sym}{})", emit_expr(operand))
+        }
         IrExprKind::Binary { op, lhs, rhs } => {
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }

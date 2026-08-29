@@ -42,12 +42,12 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **133 green**; CI runs `windows-latest` — the authority, where acceptance A/B/C/D actually execute — plus `ubuntu-latest` for the frontend; toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **143 green**; CI runs `windows-latest` — the authority, where acceptance A/B/C/D actually execute — plus `ubuntu-latest` for the frontend; toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
 - **Language today** — `f64` / `bool` / `i32`, `if` / `return`, **fallible functions** (`-> T!` = integer
-  status + out-parameter), **locals** — `let` / `let mut` + assignment, **`while` loops**, **unary `-` and `!`**.
+  status + out-parameter), **locals** — `let` / `let mut` + assignment, **`while` loops**, **unary `-` / `!`**, **`&&` / `||`**.
 - **CLI** — `mlc build <file.mls> -o <dir>` produces `<name>.dll` + `<name>.h` (C header) +
   `<name>.pas` (Delphi import unit).
 - **Loaded & called** — a Rust `kernel32` *oracle* loads the compiled module and calls the typed

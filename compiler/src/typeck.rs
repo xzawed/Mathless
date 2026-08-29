@@ -407,6 +407,14 @@ fn check_binop(
     fname: &str,
 ) -> Result<(IrBinOp, IrType), TypeError> {
     match op {
+        // Both sides bool, result bool. Numbers are not truthy — the same stance the `if`
+        // and `while` conditions already take.
+        BinOp::And | BinOp::Or => match (lt, rt) {
+            (IrType::Bool, IrType::Bool) => Ok((map_op(op), IrType::Bool)),
+            _ => Err(TypeError::new(format!(
+                "function '{fname}': operator {op:?} expects two bool operands, found {lt} and {rt}"
+            ))),
+        },
         // Same numeric type on both sides; no implicit i32/f64 mixing (DP-I2).
         BinOp::Add | BinOp::Sub | BinOp::Mul => match (lt, rt) {
             (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
@@ -454,5 +462,7 @@ fn map_op(op: BinOp) -> IrBinOp {
         BinOp::Ge => IrBinOp::Ge,
         BinOp::Eq => IrBinOp::Eq,
         BinOp::Ne => IrBinOp::Ne,
+        BinOp::And => IrBinOp::And,
+        BinOp::Or => IrBinOp::Or,
     }
 }

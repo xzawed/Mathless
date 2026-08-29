@@ -27,12 +27,14 @@
 #include "safe_div.h"
 #include "sum_to.h"
 #include "negate_if.h"
+#include "count_bounded.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
 typedef int32_t (*safe_div_fn)(double, double, double *);
 typedef int32_t (*sum_to_fn)(int32_t);
 typedef int32_t (*negate_if_fn)(int32_t, bool);
+typedef int32_t (*count_bounded_fn)(int32_t, int32_t);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -49,6 +51,8 @@ _Static_assert(_Generic(&mlx_sum_to, sum_to_fn: 1, default: 0),
                "generated mlx_sum_to signature changed");
 _Static_assert(_Generic(&mlx_negate_if, negate_if_fn: 1, default: 0),
                "generated mlx_negate_if signature changed");
+_Static_assert(_Generic(&mlx_count_bounded, count_bounded_fn: 1, default: 0),
+               "generated mlx_count_bounded signature changed");
 
 static int failures = 0;
 
@@ -153,10 +157,22 @@ int main(int argc, char **argv) {
         check(negate_if(7, true) == -7, "negate_if(7, true) == -7 (unary minus)");
     }
 
+    /* --- count_bounded.dll: two conditions in one loop header (`&&`). --- */
+    HMODULE l = load(dir, "count_bounded.dll");
+    if (l == NULL) {
+        return 1;
+    }
+    count_bounded_fn count_bounded = (count_bounded_fn)sym(l, "mlx_count_bounded");
+    if (count_bounded) {
+        check(count_bounded(10, 3) == 3, "count_bounded(10, 3) == 3 (cap stops it)");
+        check(count_bounded(3, 10) == 3, "count_bounded(3, 10) == 3 (n stops it)");
+    }
+
     FreeLibrary(d);
     FreeLibrary(s);
     FreeLibrary(w);
     FreeLibrary(u);
+    FreeLibrary(l);
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

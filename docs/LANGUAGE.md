@@ -66,6 +66,8 @@
 - `if cond { … }` — **`else` 없음**
 - `while cond { … }` — 반복. `break`/`continue`는 아직 없다(함수 탈출은 `return`)
 - **단항 연산자** `-e`(f64/i32) · `!e`(bool). `-`의 오버플로는 wrap — `-i32::MIN == i32::MIN`(측정)
+- **논리 연산자** `a && b` · `a || b` — 양쪽 `bool`, 결과 `bool`. `&&`가 `||`보다 강하게 결합하고
+  둘 다 비교보다 느슨하다. **단락 평가로 명세**했으나 오늘은 관측 수단이 없어 미측정
 - `return expr`
 - **지역 변수** `let NAME = EXPR` — 블록 스코프, 타입 추론, 기본 **불변**
 - **가변 지역 변수** `let mut NAME = EXPR` + **대입문** `NAME = EXPR` — 대입 대상은 `let mut` 지역만
@@ -75,7 +77,7 @@
 아직 아님 (위 "포함" 목록 중 미구현):
 
 - 문자열, struct/record, null 안전 또는 option
-- `&&` / `||`(다음 슬라이스), `for`, `else`, `break`/`continue`
+- `for`, `else`, `break`/`continue`, 복합 대입, 비트 연산자
 - 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향)
 - 복합 대입(`+= -= *=`) — `=`만 구현됨
 - `i32` ↔ `f64` 캐스트, `i32` 나눗셈·나머지, 체크드 오버플로

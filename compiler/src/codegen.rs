@@ -208,6 +208,11 @@ fn op_str(op: IrBinOp) -> &'static str {
         IrBinOp::Ge => ">=",
         IrBinOp::Eq => "==",
         IrBinOp::Ne => "!=",
+        // Rust's `&&`/`||` short-circuit, which is what SPEC-logical-ops DP-B2 specifies.
+        // Nothing in the language can observe that yet (no calls, no trapping operations),
+        // so the SPEC records it as specified-but-unmeasured rather than claiming a test.
+        IrBinOp::And => "&&",
+        IrBinOp::Or => "||",
     }
 }
 

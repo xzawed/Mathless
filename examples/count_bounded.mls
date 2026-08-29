@@ -1,0 +1,9 @@
+// Logical-operator slice: two conditions in one `while` header. Before `&&` this needed a
+// flag variable and a restructured loop — it was the only gap with no workaround.
+export fn count_bounded(n: i32, cap: i32) -> i32 {
+  let mut i = 0
+  while i < n && i < cap {
+    i = i + 1
+  }
+  return i
+}

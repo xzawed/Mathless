@@ -20,10 +20,10 @@
 - 네이티브 출력 (IR → `no_std`/`extern "C"` Rust → `cargo` cdylib) ✅
 - C ABI 로더 (Rust kernel32 오라클) ✅
 - `mlc build` CLI → `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit) 산출 ✅
-- Delphi 또는 C 데모 앱 — **BLOCKED**(툴체인 미확보; 검증 툴체인은 **MSVC Build Tools로 확정**(2026-08-29), 설치 대기)
+- **C 데모 호스트 ✅**(MSVC `cl`, `hosts/c-host/host.c` — 수용 D 통과) · Delphi 데모 앱은 여전히 **BLOCKED**(`dcc64` 미확보)
 
 완료 조건: `discount(price, vip)` 같은 함수를 모듈에서 호출.
-→ 수용 A/B/C 완료(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시). 수용 D(실제 Delphi/C 호스트 로드)는 `cl`/`gcc`/`dcc64` 확보 전까지 **BLOCKED**. 세부는 `docs/phase1/WBS.md`, 현재 상태·잔여 작업은 `docs/STATUS.md`.
+→ 수용 A/B/C/**D 완료**(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시 · **실제 C 호스트 로드**). 수용 D의 Delphi 쪽은 `dcc64` 확보 전까지 미검증 — D14의 플래그십이므로 남은 절반이다. 세부는 `docs/phase1/WBS.md`, 현재 상태·잔여 작업은 `docs/STATUS.md`.
 
 ## Phase 2 — 상태와 계약
 

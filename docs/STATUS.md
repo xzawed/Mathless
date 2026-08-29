@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **106 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **107 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
@@ -14,8 +14,9 @@
 - **파이프라인:** `mlc` = lex → parse → typecheck → 백엔드 독립 IR → codegen(IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib). **CLI** `mlc build <f.mls> -o <dir>` → `.dll`+`.h`+`.pas`.
   **오라클**(Rust kernel32)이 산출 모듈을 로드·호출.
-- **수용:** A(컴파일)·B(오라클 로드/호출)·C(export/strip 프록시) 통과. **D(실제 Delphi/C 호스트
-  로드)는 BLOCKED** — 빌드 머신에 `cl`/`gcc`/`dcc64` 없음.
+- **수용:** A(컴파일)·B(오라클 로드/호출)·C(export/strip 프록시)·**D(실제 C 호스트 로드) 통과**
+  — MSVC `cl`로 빌드한 `hosts/c-host/host.c`가 생성 `.h`를 컴파일하고 LoadLibrary/GetProcAddress로
+  호출. **Delphi는 여전히 미검증**(`dcc64` 없음, `.pas`는 DRAFT 유지).
 - **문서/메타:** README EN/KO + GitHub About 갱신. Q13 닫힘(`OPEN_QUESTIONS` #28), D17 상세
   `DECISIONS`(#30) 반영.
 
@@ -43,11 +44,21 @@
 - **SPEC 재배치 (PR #40)** — 기능 SPEC은 `docs/slices/`(색인 포함), `docs/phaseN/`은 phase 계획만.
 - **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.
 - **3b-#4 emit 견고성 (PR #42)** — 스테이지→이동(+롤백), 모듈명 검증. 테스트 94 → 106.
+- **수용 D + 3b-#3 (PR #43)** — 실제 C 호스트가 모듈을 로드·호출. 테스트 106 → 107.
+  **Gate D가 찾아낸 실제 결함:** 생성 `.h`/`.pas`가 비-ASCII(em dash)를 담고 있어 MSVC가 코드페이지
+  경고(C4819)를 냈고 `/WX`에서 빌드가 깨졌다 — 실제 C 컴파일러에 물려보기 전엔 드러나지 않던 문제.
+  이제 생성물은 ASCII 전용이고 테스트가 이를 고정한다. `dumpbin /exports`로 자체 PE 리더도 교차 확인.
   `discount3.dll` = **9,728 B**로 스칼라 `discount.dll`과 동일 — 가변 지역 변수는 ABI·크기에 영향 없음.
 
 ## 3. 잔여 작업 — 다음 세션 착수
 
 ### 3a. 즉시 재개 (확인/블록 대기)
+- ~~**수용 D (Gate D)**~~ — **닫힘(2026-08-29, C 쪽).** **두 머신에서 확인**: 이 개발 머신과
+  GitHub `windows-latest` 러너(CI가 `MATHLESS_GATE_D=require`로 강제 — skip이면 실패).
+  원인은 툴체인 부재가 아니라 **PATH 미설정**이었다:
+  MSVC Build Tools 2022가 이미 설치돼 있었고(`cl` 19.44 / `dumpbin` / `link`), `vcvars64.bat`으로
+  잡으면 정상 동작한다. `hosts/c-host/host.c`(C11) + `hosts/rust-oracle/tests/c_host.rs`.
+  **남은 것: Delphi(`dcc64`)** — D14의 플래그십이므로 호스트 서사는 아직 절반이다.
 - ~~**PR #32 `let mut`**~~ — **완료.** DP-M1~M4 사용자 승인(2026-08-29) → SPEC 머지(#32) →
   WM1~WM5 TDD 구현(#39). 다음 후보는 `while`(이 대입을 그대로 재사용)이나 복합 대입이지만,
   **STATUS 3b의 잔여(#4/#5)가 먼저다.**
@@ -66,8 +77,10 @@
 2. ~~**`examples/fixture` + `loads_fixture` 제거**~~ — **완료.** 크레이트·테스트·워크스페이스 멤버·
    `Cargo.lock` 항목 삭제. `end_to_end`가 동일한 §3-B 3개 assert를 **컴파일러 산출 DLL**로 이미 덮고
    있어 커버리지 손실 없음. 테스트 **67 → 66**(삭제한 그 1개만 감소), fmt/clippy clean.
-3. **skip-게이트 C(이후 Delphi) 호스트를 `hosts/`에 추가** — `cl`/`gcc`/`dcc64`가 있을 때만 컴파일.
-   수용 D를 “됐다”고 위장하지 않으면서 Gate-D 준비를 이어감(CI green 유지, 툴체인 오는 날 즉시 검증).
+3. ~~**skip-게이트 C 호스트를 `hosts/`에 추가**~~ — **완료(PR #43), 그리고 실제로 수용 D를 닫았다.**
+   MSVC가 없으면 `GATE_D_SKIPPED`를 크게 찍고 넘어가지만, **CI는 `MATHLESS_GATE_D=require`로 돌려
+   툴체인 부재를 실패로 만든다** — skip이 절대 pass로 읽히지 않도록(Grok 권고). Delphi 호스트는
+   `dcc64` 확보 시 같은 골격으로 추가.
 4. ~~**`mlc build` 산출을 원자적으로** + 나쁜 모듈 stem 거부~~ — **완료(PR #42).** 세 산출물을 `out_dir`
    안 스테이지에 모두 만든 뒤 이동하고, 이동 실패 시 밀어냈던 기존 파일까지 되돌린다(강제 실패 테스트 2종).
    모듈명은 진입 즉시 검증 — 식별자 + `reserved.rs` 전 대상. `if.mls`/`my-mod.mls`는 이제 cargo가 아니라

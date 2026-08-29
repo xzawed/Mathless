@@ -40,7 +40,7 @@ Mathless는 둘 다 노린다: 익숙한 타입 표면, 그 아래의 네이티�
 
 ## 현재 상태 — Phase 1 (수직 슬라이스)
 
-Windows에서 실측(`cargo test --workspace` = **106 그린**, CI는 `windows-latest`, 툴체인 핀):
+Windows에서 실측(`cargo test --workspace` = **107 그린**, CI는 `windows-latest`, 툴체인 핀):
 
 - **컴파일러 `mlc`** — lex → parse → typecheck → 백엔드 독립 IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
@@ -51,9 +51,14 @@ Windows에서 실측(`cargo test --workspace` = **106 그린**, CI는 `windows-l
 - **로드·호출** — Rust `kernel32` *오라클*이 컴파일된 모듈을 로드해 타입 함수를 호출한다. strip된
   `no_std` 모듈은 **의도한 심볼만** export(~9.7 KB).
 
-수용 **A**(컴파일) · **B**(오라클 로드·호출) · **C**(export/크기 보호 프록시) 통과. 수용 **D** —
-동일 모듈을 실제 **Delphi 또는 C 호스트**에서 로드 — 는 **아직 미검증**(빌드 머신에 `cl` / `gcc` /
-`dcc64` 없음). `.h` / `.pas`는 생성되지만 DRAFT로 표기된다.
+수용 **A**(컴파일) · **B**(오라클 로드·호출) · **C**(export/크기 보호 프록시) · **D**(실제 **C
+호스트**가 동일 모듈을 로드) 전부 통과. D는 Windows x64 + MSVC `cl` 기준이다:
+[`hosts/c-host/host.c`](hosts/c-host/host.c)가 생성된 `.h`를 컴파일하고 `LoadLibrary`/
+`GetProcAddress`로 export를 찾아 스칼라 경로와 에러 경로를 모두 호출한다. 같은 실행에서 우리
+export 측정을 `dumpbin /exports`와 교차 확인한다.
+
+**Delphi는 여전히 미검증이다.** D는 C 쪽만 닫았고, 이 머신에 `dcc64`가 없어 생성된 `.pas`는 아직
+아무도 컴파일한 적이 없다 — DRAFT 표기를 유지한다.
 
 ## 예제
 
@@ -83,8 +88,9 @@ mlc build discount.mls -o out/
 ## 정직한 한계
 
 - Phase 1은 **Windows x64**(`.dll`) 대상이다. Linux / `.so` 빌드는 이후 목표.
-- Phase 1은 수직 슬라이스다: 작은 표면과 한 개의 실측된 호스트 경로(Rust 오라클). 실제 Delphi/C
-  호스트 로드는 빌드 머신 툴체인 확보 전까지 **BLOCKED**.
+- Phase 1은 수직 슬라이스다: 작은 표면과 **두 개**의 실측된 호스트 경로(Rust 오라클, MSVC로 빌드한
+  C 호스트). **Delphi는 아직 아니다**(`dcc64` 없음) — D14가 Delphi를 플래그십으로 두므로 호스트
+  서사는 절반만 증명됐다.
 - 보호는 **프록시**로만 보고한다 — export 심볼 개수, strip된 바이너리 크기, 산출물 내 소스 부재 —
   결코 "리버싱 난이도"로 환산하지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 이름은 **가칭**이다.

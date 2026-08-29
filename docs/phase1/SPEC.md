@@ -3,7 +3,7 @@
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
 > §4의 DP1~DP4는 **2026-08-28 사용자 승인으로 닫혔고**, `DECISIONS.md` **D19~D22**로 반영되었다(PR #3).
 > 구현: **W0~W7 = PR #4~#9**(+#10 하드닝, #11 `mlc build` CLI). **수용 A/B/C 통과**,
-> **수용 D(실제 Delphi/C 호스트 로드)만 BLOCKED** — 빌드 머신에 `cl`/`gcc`/`dcc64` 없음.
+> **수용 D는 C 호스트로 통과(2026-08-29, MSVC `cl`)**, **Delphi(`dcc64`)만 미검증**.
 > 이 문서는 이제 **설계 기록(design record)**이다. 여기서 닫힌 제안을 다시 열지 않는다 —
 > 범위를 바꾸려면 **새 SPEC**을 쓴다.
 > **근거 수준:** "실측 검증됨(E2)"로 표기한 것만 측정 완료. `main`의 최신 실측은 `docs/STATUS.md`.
@@ -54,9 +54,10 @@ export fn discount(price: f64, vip: bool) -> f64 {
   - `ml_module_abi_version()    == 1`
   - *W1에서는 손수 작성한 fixture DLL로 위 3개를 통과했고, W5에서 **컴파일러 산출물로 대체**되었다(E2, `end_to_end` 테스트). 이후 fixture 크레이트와 `loads_fixture` 테스트는 **삭제**되었다 — ABI 소스가 둘이면 서로 어긋날 수 있고, 매 `cargo test`가 쓰지 않는 cdylib를 빌드했다.*
 - **C. 보호 측정 (D04/D05):** `discount.dll`의 export 목록을 도구로 덤프해 **`mlx_*` + `ml_module_abi_version`만** 노출되고, 소스/디버그 심볼/패닉 문자열이 최소임을 확인한다. `no_std` + strip 지향. **rustc가 자동 보장하지 않으므로 반드시 측정한다.** (Grok 지적)
-- **D. D14 게이트 (별도, 현재 BLOCKED):** 동일 `discount.dll`을 **Delphi(플래그십) 또는 C 호스트**에서 로드·호출. 이 머신에 `dcc64`/`cl`/`gcc` 없음 → **툴체인 확보 전까지 BLOCKED**로 표기. 슬라이스는 C 헤더(`.h`)와 Delphi import unit(`.pas`)을 **산출**하되, 실제 로드 검증은 툴체인 확보 후.
+- **D. D14 게이트 (별도) — C 쪽 통과(2026-08-29), Delphi 미검증:** 동일 `discount.dll`을 **C 호스트**(`hosts/c-host/host.c`, MSVC `cl` 19.44, C11)에서 LoadLibrary/GetProcAddress로 로드·호출해 스칼라·에러 경로를 검증했다. 헤더는 그 호스트가 `/W4 /WX`로 컴파일하며, 함수 포인터 타입은 `_Static_assert`+`_Generic`으로 헤더 선언과 동일함을 컴파일 타임에 강제한다. **Delphi(`dcc64`)는 여전히 미확보** → `.pas`는 DRAFT 유지.
+  - 원인 정정: 이 게이트를 막던 것은 툴체인 부재가 아니라 **PATH 미설정**이었다(Build Tools는 이미 설치돼 있었음).
 
-> Phase 1 "완료"는 A+B+C이며, **D는 D14 정직성을 위해 반드시 별도 게이트**로 남긴다. CI 오라클(Rust) 그린만으로 "Delphi에서 됐다"고 말하지 않는다.
+> Phase 1 "완료"는 A+B+C이며, **D는 D14 정직성을 위해 별도 게이트**로 남긴다. C가 통과했다고 "Delphi에서 됐다"고 말하지 않는다 — D14의 공식 지원 쌍은 Delphi+C이고 지금 증명된 것은 C뿐이다.
 
 ## 4. 결정 제안 (DP1~DP4 — **확인됨 2026-08-28 → D19~D22**)
 
@@ -85,8 +86,8 @@ export fn discount(price: f64, vip: bool) -> f64 {
 | 계층 | 무엇 | 지금 가능? |
 |---|---|---|
 | CI 오라클 | Rust kernel32 로더 호스트 | ✅ E2 검증됨 |
-| **D14 done-gate** | Delphi(플래그십)/C 호스트가 동일 DLL 로드 | ❌ dcc64/cl/gcc 미설치 → BLOCKED |
-| 산출물 | C 헤더(`.h`) + Delphi import unit(`.pas`) | ✅ 생성 가능(로드 검증만 BLOCKED) |
+| **D14 done-gate** | Delphi(플래그십)/C 호스트가 동일 DLL 로드 | ⚠️ **C만 통과**(MSVC `cl`, 2026-08-29). Delphi는 `dcc64` 미확보 |
+| 산출물 | C 헤더(`.h`) + Delphi import unit(`.pas`) | ✅ 생성. `.h`는 실제 C 호스트가 소비함, `.pas`는 미검증 |
 
 - Rust 오라클은 **테스트 오라클일 뿐** done-gate가 아니다. (Grok 지적)
 
@@ -104,11 +105,12 @@ export fn discount(price: f64, vip: bool) -> f64 {
 - `.mls → parse → typecheck → emit` 파이프라인 **아직 없음**(스모크는 손수 쓴 Rust).
   → **해소.** W2~W5로 구현, `mlc build` CLI까지(PR #5~#7, #11). 현재 테스트 수는 `docs/STATUS.md` 참고(여기 적으면 슬라이스마다 낡는다).
 - C 헤더 소비 및 Delphi/C 호스트 로드 **미검증**.
-  → **여전히 미검증(수용 D, BLOCKED).** `.h`/`.pas`는 생성되지만(PR #9) `cl`/`gcc`/`dcc64` 미확보.
+  → **C 쪽 해소(PR #43):** 실제 C11 호스트가 생성 `.h`를 컴파일하고 모듈을 로드·호출한다.
+  **Delphi는 여전히 미검증** — `dcc64` 미확보.
 - D16(handle) / D17(status+out-param) **미검증**(범위 밖).
   → **D17만 해소**: 에러-경로 슬라이스로 구현·실측(SPEC [`docs/slices/SPEC-D17-error-abi.md`](../slices/SPEC-D17-error-abi.md), PR #14/#15).
   **D16은 여전히 범위 밖**(후속 슬라이스, SPEC 미작성).
 - target triple·CRT/unwind·정확한 export 집합(`dumpbin /exports` 등) **미측정** → 수용 C에서 측정.
   → **해소.** 자체 PE 리더로 export 집합 측정(PR #8): `mlx_*` + `ml_module_abi_version`만.
-  `dumpbin`은 여전히 미설치 — 교차 확인은 툴체인 확보 후.
+  **`dumpbin /exports`와의 교차 확인도 완료(PR #43)** — 두 구현이 같은 집합을 보고한다.
 - 이 문서의 어떤 항목도 측정 전까지 "확정"으로 서술하지 않는다.

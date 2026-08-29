@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **154 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **157 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
   + `ubuntu-latest`(프런트엔드 보험 — 실측 **107개 중 88개 실행**, 나머지 19개는 `cfg(windows)`라
   컴파일 제외). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
@@ -49,7 +49,7 @@
 - **수용 D + 3b-#3 (PR #43)** — 실제 C 호스트가 모듈을 로드·호출. 테스트 106 → 107.
 - **진단 (PR #50)** — `return`/`fail` 뒤 죽은 코드를 "모든 경로 return 안 함"이 아니라 **"unreachable"**로
   보고한다(기존 메시지는 멀쩡히 있는 `return`을 찾게 만들었다). 테스트 119 → 122.
-- **내부 함수·호출 (SPEC #56 / 구현 #57)** — 테스트 143 → 154. 헬퍼 비유출을 C 호스트에서 측정.
+- **내부 함수·호출 (SPEC #56 / 구현 #57)** — 테스트 143 → 157. 헬퍼 비유출을 C 호스트에서 측정.
 - **논리 연산자 (SPEC #54 / 구현 #55)** — 테스트 133 → 143. `while` 조건에서 두 조건을 엮을 수 있게 됨.
 - **단항 연산자 (SPEC #51 / 구현 #53)** — 테스트 123 → 133. 실측으로 고름(음수를 못 쓰던 구멍).
   `-i32::MIN == i32::MIN` wrap 측정. C 호스트도 확장.

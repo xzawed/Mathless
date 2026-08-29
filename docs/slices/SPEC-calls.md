@@ -76,6 +76,10 @@ export 집합·시그니처·헤더/유닛의 export 목록은 그대로다. 내
   (`mlx_discount4` + `ml_module_abi_version`)임을 확인한다. `.h`에 `vip_rate`가 **없음**도 확인한다.
 - **D. 수용 D(실제 C 호스트):** `hosts/c-host/host.c`에 추가한다.
 - **부정(타입체크) 케이스:**
+  - **내부 함수 이름의 안전성**(Grok 검증에서 추가): 내부 이름은 `mlx_` 접두어 없이 **그대로** 방출되므로
+    (a) 대상 언어 예약어(`fn type`)와 (b) 예약 접두어 `ml_`/`mlx_`(생성 심볼과 충돌: `fn mlx_foo` +
+    `export fn foo`, `fn ml_panic`)를 **타입체크에서** 거부한다. 그 전에는 `cargo build of generated
+    crate failed`로 죽어 원인을 알 수 없었다.
   - 직접 재귀 `fn f(x: i32) -> i32 { return f(x) }` → **거부**
   - 상호 재귀 `fn a() … b() …` / `fn b() … a() …` → **거부**(사이클 메시지에 경로 표시)
   - 없는 함수 호출 → 명확한 에러

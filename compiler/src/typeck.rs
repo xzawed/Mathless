@@ -75,6 +75,28 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 f.name
             )));
         }
+        // An INTERNAL function's name is emitted raw into the generated Rust — the `mlx_`
+        // prefix that makes exported names safe does not apply to it (Grok verify). So it
+        // needs the same checks a parameter or local gets, plus the reserved namespaces.
+        if !f.exported {
+            let targets = crate::reserved::reserving_targets(&f.name);
+            if !targets.is_empty() {
+                return Err(TypeError::new(format!(
+                    "internal function '{}' is a reserved word in {} — rename it (an internal \
+                     name is emitted as-is, unlike an export which gets the `mlx_` prefix)",
+                    f.name,
+                    targets.join(", ")
+                )));
+            }
+            if f.name.starts_with("ml_") || f.name.starts_with("mlx_") {
+                return Err(TypeError::new(format!(
+                    "internal function '{}' uses a reserved prefix — `ml_` is the runtime \
+                     namespace and `mlx_` is what exports are emitted as (D18), so this can \
+                     collide with a generated symbol",
+                    f.name
+                )));
+            }
+        }
         functions.push(f);
     }
 

@@ -115,3 +115,47 @@ fn an_exported_function_may_also_be_called() {
     )
     .expect("calling an exported fn is allowed");
 }
+
+#[test]
+fn an_internal_function_name_must_be_safe_in_the_target() {
+    // Internal names are emitted RAW into the generated Rust — the `mlx_` prefix that made
+    // exported names safe does not apply to them. Without a frontend check these die as
+    // "cargo build of generated crate failed", which says nothing about the cause.
+    for src in [
+        "fn type(x: i32) -> i32 { return x }\nexport fn f() -> i32 { return type(1) }",
+        "fn match(x: i32) -> i32 { return x }\nexport fn f() -> i32 { return match(1) }",
+    ] {
+        let err = compile_to_ir(src).unwrap_err();
+        assert!(
+            format!("{err:?}").to_lowercase().contains("reserved"),
+            "{src} -> {err:?}"
+        );
+    }
+}
+
+#[test]
+fn an_internal_function_may_not_squat_the_reserved_prefixes() {
+    // `ml_*` is the runtime namespace and `mlx_*` is what exports are emitted as (D18), so an
+    // internal function using either can collide with a generated symbol. `fn mlx_foo` beside
+    // `export fn foo` is a duplicate definition; `fn ml_panic` collides with the emitted
+    // panic handler.
+    for src in [
+        "fn mlx_foo(x: i32) -> i32 { return x }\nexport fn foo(x: i32) -> i32 { return mlx_foo(x) }",
+        "fn ml_module_abi_version(x: i32) -> i32 { return x }\nexport fn f() -> i32 { return ml_module_abi_version(1) }",
+        "fn ml_panic(x: i32) -> i32 { return x }\nexport fn f() -> i32 { return ml_panic(1) }",
+    ] {
+        let err = compile_to_ir(src).unwrap_err();
+        let msg = format!("{err:?}").to_lowercase();
+        assert!(
+            msg.contains("ml_") || msg.contains("reserved") || msg.contains("prefix"),
+            "{src} -> {err:?}"
+        );
+    }
+}
+
+#[test]
+fn an_exported_name_may_still_look_like_a_prefix() {
+    // Exports are emitted as `mlx_<name>`, so `export fn mlx_foo` becomes `mlx_mlx_foo` —
+    // ugly but not a collision. Don't reject what isn't broken.
+    compile_to_rust("export fn mlx_foo(x: i32) -> i32 { return x }").expect("no collision");
+}

@@ -1,10 +1,13 @@
 //! Reserved words across all current codegen targets (Rust, C, Pascal/Delphi).
 //!
-//! A Mathless parameter (and, later, local) name is emitted **raw** into every backend
-//! (Rust codegen, C header, Delphi unit), so a name that collides with a reserved word in
-//! ANY target would produce invalid output. The frontend rejects such names with a clear
-//! error — a single check that protects all backends (WBS hardening). Function names are
-//! safe because they are emitted with the `mlx_` prefix.
+//! A Mathless parameter or local name is emitted **raw** into every backend (Rust codegen,
+//! C header, Delphi unit), so a name that collides with a reserved word in ANY target would
+//! produce invalid output. The frontend rejects such names with a clear error — a single
+//! check that protects all backends (WBS hardening).
+//!
+//! **Exported** function names are safe without this check: they are emitted with the `mlx_`
+//! prefix. **Internal** function names are not — since SPEC-calls they are emitted as-is —
+//! so `typeck` runs them through here too, plus a `ml_`/`mlx_` prefix check (D18).
 
 /// Return the target languages that reserve `name` (empty if the name is safe everywhere).
 /// Rust and C are case-sensitive; Pascal is case-insensitive.

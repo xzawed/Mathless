@@ -113,12 +113,13 @@
   - **남은 것:** 저작권자 표기는 계정명 `xzawed`다. 법인/실명이 필요하면 한 줄 PR.
   - **남은 것:** **Q15**(생성 산출물·`ml_abi.h`의 라이선스 지위) — `OPEN_QUESTIONS.md`에 기록됨.
 - **홈페이지 URL**: About 텍스트는 갱신됨, URL만 미설정.
-- ~~**수용 D 툴체인**~~ — **MSVC Build Tools 확정**(2026-08-29 사용자 결정). 근거: 이 머신의 rustc
-  host triple이 이미 `x86_64-pc-windows-msvc`라 산출 cdylib가 MSVC CRT/링커 계열이고, C 호스트를
-  같은 계열로 맞추면 CRT·링커 불일치 변수를 없앤 상태로 수용 D를 측정할 수 있다. **D22를 바꾸지
-  않는다** — D22는 모듈 *포맷* 결정에 "msvc"를 못박지 않는다는 뜻이고, 이것은 **Gate-D 검증용
-  호스트 툴체인** 선택이다. 설치 전까지는 3b-#3(skip-게이트 호스트)만 진행. 설치되면: 실제 C 호스트
-  로드 테스트 + `dumpbin /exports` 교차 확인(현재 export 측정은 자체 PE 리더 단독).
+- ~~**수용 D 툴체인**~~ — **완료.** MSVC Build Tools로 결정(2026-08-29) → 설치가 **이미 되어 있었음**을
+  발견 → 수용 D 통과(PR #43) → `DECISIONS.md` **D21 갱신**(사용자 확인 후, PR #44).
+- **Delphi(`dcc64`) 확보 여부 — 사용자 결정.** D14의 플래그십이자 남은 절반이다. **부재는 실측으로
+  확인했다**(재조사 불필요): `dcc64`/`fpc` PATH에 없음, 레지스트리의 `Embarcadero\Studio\15.0`은
+  **제거된 설치의 잔재**(`BDS` 키 비어 있고 `C:\Program Files (x86)\Embarcadero` 없음), 디스크 탐색에도
+  Pascal 컴파일러 없음. 설치하면 `hosts/c-host`와 같은 골격으로 Delphi 호스트를 붙일 수 있다
+  (skip-게이트 + CI require 방식 그대로).
 - **D22(SO/ELF) 개시 여부.** (새 SPEC 위치 3b-#8은 `docs/slices/`로 해소됨.)
 
 ### 3d. 하지 말 것 (Grok)

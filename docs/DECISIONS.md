@@ -44,7 +44,11 @@ Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/
 
 - **D19 코드젠(잠정).** 비-Rust 독립 IR → `no_std`+`extern "C"`+`repr(C)` Rust → `cargo build --crate-type cdylib`. **Q6를 닫지 않는다** — C-emit 슬롯 유지, LLVM 이연. IR은 Rust가 아님(Q11 불변). 보호(D04/D05)는 rustc가 자동 보장하지 않으므로 export/심볼을 **측정**한다(Phase 1 SPEC 수용 C).
 - **D20 컴파일러 언어.** Rust. 기각: C++(미설치·무거움), Python(별도 런타임·타입 약함).
-- **D21 Phase 1 호스트.** Rust kernel32 오라클 = **CI 검증 수단**일 뿐. D14 done-gate(Delphi 플래그십/C)는 이 머신에 dcc64/cl/gcc 없어 BLOCKED → 사용자 승인으로 잠정 보류, 오라클로 W0~W6 진행. 슬라이스는 C 헤더+Delphi unit을 산출(실제 로드 검증은 툴체인 확보 후). 오라클 그린을 "Delphi에서 됐다"로 말하지 않는다.
+- **D21 Phase 1 호스트.** Rust kernel32 오라클 = **CI 검증 수단**일 뿐. 원문(2026-08-28)은 D14 done-gate(Delphi 플래그십/C)를 "이 머신에 dcc64/cl/gcc 없어 BLOCKED"로 적고 사용자 승인으로 잠정 보류했다. 그 상태로 W0~W6을 오라클로 진행했다.
+  - **갱신(2026-08-29, 사용자 확인 후): done-gate의 C 쪽은 닫혔다.** MSVC `cl`(19.44)로 빌드한 C11 호스트가 산출 DLL을 `LoadLibrary`/`GetProcAddress`로 로드·호출해 스칼라·D17 에러 경로를 검증한다(수용 D, `hosts/c-host/host.c`, PR #43). 이 개발 머신과 GitHub `windows-latest` 러너 두 곳에서 통과.
+  - **원래의 "툴체인 없음"은 오진이었다.** MSVC Build Tools 2022는 이미 설치돼 있었고 **PATH에만 없었다**(`vswhere`로 확인, `vcvars64.bat`으로 사용 가능). 판단이 `where cl` 한 번에 멈춰 있었다.
+  - **Delphi는 여전히 미확보 — 이번엔 실측으로 확인했다.** `dcc64`/`fpc`가 PATH에 없고, 레지스트리의 `Embarcadero\Studio\15.0` 항목은 **제거된 설치의 잔재**이며(`BDS` 키 비어 있음, `C:\Program Files (x86)\Embarcadero` 부재), 디스크 탐색에도 Pascal 컴파일러가 없다. 따라서 생성 `.pas`는 **아무도 컴파일한 적이 없고** DRAFT를 유지한다.
+  - 결론: **D14의 공식 지원 쌍(Delphi+C) 중 C만 증명됐다.** 오라클 그린도, C 호스트 그린도 "Delphi에서 됐다"로 말하지 않는다.
 - **D22 타깃.** Windows x64 우선. **"msvc"를 D18에 못박지 않는다**(빌드 설정). export 집합·CRT/unwind는 측정.
 
 ## 기각 또는 보류
@@ -59,4 +63,4 @@ Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/
 
 ## 아직 결정 아님
 
-`OPEN_QUESTIONS.md` 참고. Q1~Q5 → D14~D18. Phase 1 툴체인(DP1~DP4) → D19~D22 (Q6는 D19로 **잠정** 해결, C-emit 재검토 여지 유지). **Q13(에러 코드 체계) → D17 상세로 닫힘(2026-08-28, 위 참고).** 남은 것: Q10(확장자), Q12·Q14, Q7~Q9, Q11.
+`OPEN_QUESTIONS.md` 참고. Q1~Q5 → D14~D18. Phase 1 툴체인(DP1~DP4) → D19~D22 (Q6는 D19로 **잠정** 해결, C-emit 재검토 여지 유지). **Q13(에러 코드 체계) → D17 상세로 닫힘(2026-08-28, 위 참고).** 남은 것: Q10(확장자), Q12·Q14, Q15(산출물 라이선스), Q7~Q9, Q11.

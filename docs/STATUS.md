@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **93 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **94 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
@@ -41,7 +41,7 @@
 - **Gate-D 툴체인 (PR #37)** — **MSVC Build Tools 확정**(설치 대기, 수용 D는 계속 BLOCKED).
 - **`let mut` 슬라이스 (SPEC #32 / 구현 #39)** — 가변 지역 변수 + 대입문. 테스트 66 → 86.
 - **SPEC 재배치 (PR #40)** — 기능 SPEC은 `docs/slices/`(색인 포함), `docs/phaseN/`은 phase 계획만.
-- **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 93.
+- **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.
   `discount3.dll` = **9,728 B**로 스칼라 `discount.dll`과 동일 — 가변 지역 변수는 ABI·크기에 영향 없음.
 
 ## 3. 잔여 작업 — 다음 세션 착수

@@ -96,13 +96,13 @@ fn emit_error_does_not_wrap_the_message_in_debug() {
     );
 }
 
-#[test]
-fn the_cli_prints_a_source_position_message_on_stderr() {
-    // The whole point of 3b-#5: what a user actually sees from `mlc build`.
-    let dir = std::env::temp_dir().join(format!("mlc_diag_cli_{}", std::process::id()));
+/// Run the real `mlc build` on `source` and return its stderr, asserting it failed.
+fn cli_stderr_for(tag: &str, source: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("mlc_diag_cli_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("bad.mls");
-    std::fs::write(&src, "export fn f(a: f64) -> f64 { return a < 1.0 }").unwrap();
+    std::fs::write(&src, source).unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_mlc"))
         .args(["build".as_ref(), src.as_os_str()])
@@ -110,17 +110,42 @@ fn the_cli_prints_a_source_position_message_on_stderr() {
         .arg(&dir)
         .output()
         .expect("run mlc");
-
     assert!(!out.status.success(), "the build should fail");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+
+    let _ = std::fs::remove_dir_all(&dir);
+    stderr
+}
+
+#[test]
+fn the_cli_prints_a_type_error_message_on_stderr() {
+    // The whole point of 3b-#5: what a user actually sees from `mlc build`.
+    let stderr = cli_stderr_for("type", "export fn f(a: f64) -> f64 { return a < 1.0 }");
     assert!(
-        stderr.contains("type error:"),
+        stderr.contains("type error:") && stderr.contains("expected f64, found bool"),
         "stderr should carry the real message — {stderr}"
     );
     assert!(
         !stderr.contains("TypeError {") && !stderr.contains("Type("),
         "stderr must not be a Debug dump — {stderr}"
     );
+}
 
-    let _ = std::fs::remove_dir_all(&dir);
+#[test]
+fn the_cli_prints_the_parse_position_on_stderr() {
+    // The position must survive all the way to the binary's stderr, not just the library
+    // (Grok review: the type-error fixture alone never proves line:col reaches the CLI).
+    let stderr = cli_stderr_for("parse", "export fn f(mut: f64) -> f64 { return 0.0 }");
+    assert!(
+        stderr.contains("parse error at 1:13:"),
+        "stderr should carry line:col — {stderr}"
+    );
+    assert!(
+        stderr.contains("keyword `mut`"),
+        "…and the message — {stderr}"
+    );
+    assert!(
+        !stderr.contains("ParseError {") && !stderr.contains("Parse("),
+        "stderr must not be a Debug dump — {stderr}"
+    );
 }

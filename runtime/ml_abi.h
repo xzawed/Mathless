@@ -1,10 +1,10 @@
-/* Mathless module ABI — Phase 1 DRAFT.
+/* Mathless module ABI - Phase 1.
  * See docs/HOST_ABI.md and decisions D18/D19/D21.
  *
- * STATUS: this header is a generated-artifact seed. The C/Delphi binding is NOT yet
- * verified — the D14 host-load gate is BLOCKED (no cl/gcc/dcc64 on the dev machine).
- * Do not treat the boolean/marshalling details below as confirmed until a C or Delphi
- * host actually loads a module (SPEC §3-D).
+ * STATUS: this header is a generated-artifact seed. The C binding IS verified - a C11
+ * host built with MSVC loads a module and calls it (acceptance D, hosts/c-host). The
+ * DELPHI binding is still unverified: there is no dcc64 here, so no generated .pas has
+ * ever been compiled. Treat the Delphi-facing details as unconfirmed (SPEC section 3-D).
  */
 #ifndef ML_ABI_H
 #define ML_ABI_H

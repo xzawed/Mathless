@@ -69,7 +69,7 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
    `cargo test --workspace`를 실행한다. **`windows-latest`가 정본 게이트** — `#![cfg(windows)]`
    수용 테스트를 실제로 돌리며, `MATHLESS_GATE_D=require`로 수용 D(실제 C 호스트)가 조용히
    skip되지 않게 한다. **`ubuntu-latest`는 프런트엔드 보험**(Windows 전용 가정 조기 발견)이지
-   권위가 아니다 — 수용 테스트는 거기서 컴파일되지 않는다(실측: 107개 중 **88개**가 Linux에서 실행,
+   권위가 아니다 — 수용 테스트는 거기서 컴파일되지 않는다(실측: 전체 중 **88개**가 Linux에서 실행,
    19개는 `cfg(windows)`로 제외). 머지 전 둘 다 green 유지.
    (`.so`/ELF **타깃**은 여전히 D22와 함께 이연 — Linux 잡은 D22가 아니다.)
 

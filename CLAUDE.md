@@ -111,7 +111,7 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 
 큰 줄기만 적는다:
 
-1. 수용 D 닫기 — 동일 DLL을 실제 Delphi/C 호스트에서 로드(현재 **BLOCKED**; 검증 툴체인은 MSVC Build Tools로 확정, 설치 대기).
+1. 수용 D — **C 쪽 완료**(MSVC `cl` 호스트, 2026-08-29). 남은 절반은 **Delphi**(`dcc64` 미설치, 실측 확인) — D14의 플래그십이다.
 2. 다음 슬라이스는 `docs/STATUS.md` §3에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — D17 에러 경로·`let`·`i32`·`let mut`는 이미 구현 완료다(`docs/slices/README.md`).
 3. 이후 슬라이스 후보: D16(caller-allocates/context handle), 문자열/구조체 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
 
@@ -124,4 +124,4 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 
 ## 성공 기준 (초기)
 
-호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **Rust 오라클로는 달성**(수용 A/B). **실제 Delphi/C 호스트(수용 D)는 툴체인 확보 전까지 미달성(BLOCKED).**
+호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **달성**: Rust 오라클(수용 A/B)과 **실제 C 호스트**(MSVC `cl`, 수용 D, 2026-08-29). **Delphi는 미달성** — `dcc64`가 없어 생성 `.pas`는 컴파일된 적이 없다. D14의 공식 쌍(Delphi+C) 중 C만 증명됐다.

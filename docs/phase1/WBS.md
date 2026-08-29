@@ -5,10 +5,10 @@
 
 > 진행(2026-08-29 실측): **W0~W7 ✅** · **STEP1 CLI ✅** · **W8~W10 ✅**(D17 에러 경로 · `let` 지역 변수 · `i32`).
 > **수용 A/B/C 완료 + D는 C 호스트로 통과**(2026-08-29). **Delphi(`dcc64`)만 미검증**.
-> `cargo test --workspace` = **107 pass / 0 fail**, `clippy -D warnings`·`fmt` clean, CI `windows-latest`(툴체인 핀 1.97.1).
+> 테스트 수·CI 구성의 정본은 `docs/STATUS.md`다(여기 숫자를 복제하면 곧 낡는다 — 실제로 두 번 낡았다).
 > 잔여 작업 목록의 정본은 `docs/STATUS.md` §3.
 >
-> **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 66), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. (당시) `.h`/`.pas`의 실제 로드는 미검증이었다 — **`.h`는 이후 W12에서 해소**, `.pas`는 여전히 DRAFT.
+> **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 값은 `docs/STATUS.md`), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. (당시) `.h`/`.pas`의 실제 로드는 미검증이었다 — **`.h`는 이후 W12에서 해소**, `.pas`는 여전히 DRAFT.
 >
 > 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll` → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 "모든 경로 return"을 강제(미충족 시 codegen 에러).
 > 수용 C 실측: no_std+strip+lto+opt-z DLL = **9,728 B**(std ~107,008 B 대비 ~11×↓), export = **정확히 `mlx_discount` + `ml_module_abi_version`**(PE 리더로 파싱), 소스 코멘트/파일명 비유출. 프록시만 측정 — "리버싱 난이도" 주장 없음(D05).

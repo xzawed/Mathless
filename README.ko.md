@@ -40,7 +40,7 @@ Mathless는 둘 다 노린다: 익숙한 타입 표면, 그 아래의 네이티�
 
 ## 현재 상태 — Phase 1 (수직 슬라이스)
 
-Windows에서 실측(`cargo test --workspace` = **107 그린**, CI는 `windows-latest`, 툴체인 핀):
+Windows에서 실측(`cargo test --workspace` = **107 그린**; CI는 `windows-latest`(정본 — 수용 A/B/C/D가 실제로 실행되는 곳)와 `ubuntu-latest`(프런트엔드) 두 잡, 툴체인 핀):
 
 - **컴파일러 `mlc`** — lex → parse → typecheck → 백엔드 독립 IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
@@ -77,7 +77,7 @@ mlc build discount.mls -o out/
 #  out/discount.pas   Delphi import unit
 ```
 
-호스트는 `discount.dll`을 C ABI로 로드해 `mlx_discount(100.0, true) == 90.0`을 호출한다 — 호스트
+C 호스트는 `discount.dll`을 C ABI로 로드해 `mlx_discount(100.0, true) == 90.0`을 호출한다 — 호스트
 재빌드 없이.
 
 ## 호스트

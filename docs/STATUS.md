@@ -33,15 +33,15 @@
 ## 2b. 다음 세션(2026-08-29) 진행분
 
 - **3b-#1 문서 정합화 완료 (PR #34)** — 문서 전용(코드 변경 0). 실측 재확인: `cargo test --workspace`
-  **67 pass / 0 fail**, `mlc build examples/discount.mls` → `discount.dll` **9,728 B** + `.h` + `.pas`,
-  `cl`/`gcc`/`dcc64` **여전히 없음**(수용 D BLOCKED 유지).
+  **(당시) 67 pass / 0 fail**, `mlc build examples/discount.mls` → `discount.dll` **9,728 B** + `.h` + `.pas`.
+  *(그 시점의 기록이다. 당시엔 `cl`을 못 찾아 수용 D를 BLOCKED로 봤으나, 이는 오진이었다 — 아래 참고.)*
   Grok verify가 **실제 과대 주장 1건**을 잡음: "ABI major 불일치 시 로드 거부"는 구현되어 있지 않다
   (`Module::load`는 `LoadLibraryW`만, 오라클은 로드 **후** 값 일치를 assert). 리포 전체 4곳을 "호스트
   계약 / 여기서는 미강제"로 수정.
 - **3b-#2 W1 fixture 제거 완료 (PR #35)** — 테스트 67 → 66.
 - **LICENSE (PR #38)** — 처음 MIT로 정한 뒤 판단 요청을 받아 **Apache-2.0 OR MIT 이중**으로 확장
   (Rust 관례, MIT의 상위집합). 파생 질문 **Q15**(생성 산출물의 라이선스 지위) 등록.
-- **Gate-D 툴체인 (PR #37)** — **MSVC Build Tools 확정**(설치 대기, 수용 D는 계속 BLOCKED).
+- **Gate-D 툴체인 (PR #37)** — **MSVC Build Tools 확정**. *(당시엔 설치가 필요하다고 봤으나, 이미 설치돼 있었다 — PR #43에서 확인.)*
 - **`let mut` 슬라이스 (SPEC #32 / 구현 #39)** — 가변 지역 변수 + 대입문. 테스트 66 → 86.
 - **SPEC 재배치 (PR #40)** — 기능 SPEC은 `docs/slices/`(색인 포함), `docs/phaseN/`은 phase 계획만.
 - **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.

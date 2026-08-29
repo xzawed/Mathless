@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **107 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **119 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
   + `ubuntu-latest`(프런트엔드 보험 — 실측 **107개 중 88개 실행**, 나머지 19개는 `cfg(windows)`라
   컴파일 제외). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
@@ -47,6 +47,8 @@
 - **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.
 - **3b-#4 emit 견고성 (PR #42)** — 스테이지→이동(+롤백), 모듈명 검증. 테스트 94 → 106.
 - **수용 D + 3b-#3 (PR #43)** — 실제 C 호스트가 모듈을 로드·호출. 테스트 106 → 107.
+- **`while` 슬라이스 (SPEC #48 / 구현 #49)** — 테스트 107 → 119. 호스트 생존성 계약을 `HOST_ABI.md`에
+  추가(§5.1) — 이 슬라이스가 들인 **새 위험 등급**이다.
   **Gate D가 찾아낸 실제 결함:** 생성 `.h`/`.pas`가 비-ASCII(em dash)를 담고 있어 MSVC가 코드페이지
   경고(C4819)를 냈고 `/WX`에서 빌드가 깨졌다 — 실제 C 컴파일러에 물려보기 전엔 드러나지 않던 문제.
   이제 생성물은 ASCII 전용이고 테스트가 이를 고정한다. `dumpbin /exports`로 자체 PE 리더도 교차 확인.
@@ -55,10 +57,10 @@
 ## 3. 잔여 작업 — 다음 세션 착수
 
 ### 3a. 즉시 재개 (확인/블록 대기)
-- **`while` 슬라이스 SPEC (PR #48) — 사용자 확인 대기.** DP-W1~W4는 Grok 권장안 그대로다.
-  **핵심 결정은 §5.1**: `while`은 "export를 호출하면 언젠가 돌아온다"는 성질을 깨는 첫 구문이고
-  (지금은 호출 문법이 없어 재귀도 불가 → 모든 함수가 종료), MVP가 정직하게 할 수 있는 건 문서화뿐이다.
-  받아들이면 WW1부터 TDD, 받아들이지 않으면 `while`을 넣지 않는다.
+- ~~**`while` 슬라이스**~~ — **완료(SPEC #48 / 구현 #49).** DP-W1~W4는 Grok 권장안 그대로,
+  §5.1의 트레이드오프도 사용자 승인. **`while`은 "export를 호출하면 언젠가 돌아온다"는 성질을 깬
+  첫 구문**이므로(그전엔 호출 문법이 없어 재귀도 불가 → 모든 함수가 종료), 호스트 생존성 계약을
+  `docs/HOST_ABI.md`에 명문화했다. 수용 D의 C 호스트도 루프를 호출하도록 확장.
 - ~~**수용 D (Gate D)**~~ — **닫힘(2026-08-29, C 쪽).** **두 머신에서 확인**: 이 개발 머신과
   GitHub `windows-latest` 러너(CI가 `MATHLESS_GATE_D=require`로 강제 — skip이면 실패).
   원인은 툴체인 부재가 아니라 **PATH 미설정**이었다:

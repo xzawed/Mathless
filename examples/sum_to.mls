@@ -1,0 +1,11 @@
+// `while` slice: the loop `let mut` was built to feed. Written with only what the language
+// has — no compound assignment, no `!`, no `&&`.
+export fn sum_to(n: i32) -> i32 {
+  let mut total = 0
+  let mut i = 1
+  while i <= n {
+    total = total + i
+    i = i + 1
+  }
+  return total
+}

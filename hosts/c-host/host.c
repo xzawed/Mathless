@@ -25,10 +25,12 @@
 
 #include "discount.h"
 #include "safe_div.h"
+#include "sum_to.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
 typedef int32_t (*safe_div_fn)(double, double, double *);
+typedef int32_t (*sum_to_fn)(int32_t);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -41,6 +43,8 @@ _Static_assert(_Generic(&mlx_discount, discount_fn: 1, default: 0),
                "generated mlx_discount signature changed");
 _Static_assert(_Generic(&mlx_safe_div, safe_div_fn: 1, default: 0),
                "generated mlx_safe_div signature changed");
+_Static_assert(_Generic(&mlx_sum_to, sum_to_fn: 1, default: 0),
+               "generated mlx_sum_to signature changed");
 
 static int failures = 0;
 
@@ -122,8 +126,21 @@ int main(int argc, char **argv) {
         check(untouched == 12345.0, "safe_div(1, 0) leaves the out-param untouched");
     }
 
+    /* --- sum_to.dll: a loop. Until the `while` slice every Mathless function terminated
+       trivially; this call is the first one whose return depends on the loop finishing. --- */
+    HMODULE w = load(dir, "sum_to.dll");
+    if (w == NULL) {
+        return 1;
+    }
+    sum_to_fn sum_to = (sum_to_fn)sym(w, "mlx_sum_to");
+    if (sum_to) {
+        check(sum_to(10) == 55, "sum_to(10) == 55 (loop accumulates)");
+        check(sum_to(0) == 0, "sum_to(0) == 0 (body runs zero times)");
+    }
+
     FreeLibrary(d);
     FreeLibrary(s);
+    FreeLibrary(w);
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

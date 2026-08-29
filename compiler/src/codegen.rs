@@ -152,6 +152,16 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
             }
             let _ = writeln!(out, "{pad}}}");
         }
+        IrStmt::While { cond, body } => {
+            // A module export may now fail to return (SPEC-while §5.1). There is nothing to
+            // emit for that: no fuel counter without the VM R01 rejected, no timeout without a
+            // runtime. The contract is documented in HOST_ABI instead.
+            let _ = writeln!(out, "{pad}while {} {{", emit_expr(cond));
+            for st in body {
+                emit_stmt(st, indent + 1, fallible, out);
+            }
+            let _ = writeln!(out, "{pad}}}");
+        }
     }
 }
 

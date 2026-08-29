@@ -187,6 +187,19 @@ fn check_stmt(
             let body = check_block(body, scope, ret, fname, fallible, errors)?;
             Ok(IrStmt::If { cond, body })
         }
+        Stmt::While { cond, body } => {
+            let cond = check_expr(cond, scope, fname)?;
+            if cond.ty != IrType::Bool {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': while condition must be bool, found {}",
+                    cond.ty
+                )));
+            }
+            // Same block scope as `if`: the body sees the enclosing bindings (so it can assign
+            // an outer `let mut` — the point of the slice) and its own locals do not escape.
+            let body = check_block(body, scope, ret, fname, fallible, errors)?;
+            Ok(IrStmt::While { cond, body })
+        }
         Stmt::Return(e) => {
             let e = check_expr(e, scope, fname)?;
             if e.ty != ret {

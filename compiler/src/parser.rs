@@ -8,7 +8,7 @@
 //! param    := ident ':' type
 //! type     := 'f64' | 'bool'
 //! block    := '{' stmt* '}'
-//! stmt     := 'if' expr block | 'return' expr | 'fail' ident
+//! stmt     := 'if' expr block | 'while' expr block | 'return' expr | 'fail' ident
 //!           | 'let' 'mut'? ident '=' expr | ident '=' expr
 //! expr     := compare
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
@@ -196,6 +196,12 @@ impl Parser {
                 let body = self.parse_block()?;
                 Ok(Stmt::If { cond, body })
             }
+            Token::While => {
+                self.pos += 1;
+                let cond = self.parse_expr()?;
+                let body = self.parse_block()?;
+                Ok(Stmt::While { cond, body })
+            }
             Token::Return => {
                 self.pos += 1;
                 let e = self.parse_expr()?;
@@ -233,7 +239,7 @@ impl Parser {
                 Ok(Stmt::Assign { name, value })
             }
             other => self.err(format!(
-                "expected statement (if|return|fail|let|assignment), found {other:?}"
+                "expected statement (if|while|return|fail|let|assignment), found {other:?}"
             )),
         }
     }
@@ -369,6 +375,20 @@ mod tests {
         // One token of lookahead: `x` alone must not be mistaken for an assignment.
         let err = parse(tokenize("export fn f() -> f64 { x return 1.0 }").unwrap()).unwrap_err();
         assert!(format!("{err:?}").contains("expected statement"), "{err:?}");
+    }
+
+    #[test]
+    fn parses_while_as_a_statement_with_a_block_body() {
+        // WW2: same shape as `if` — condition without parens, block body.
+        let m = parse(
+            tokenize("export fn f(b: bool) -> i32 { while b { let x = 1 } return 0 }").unwrap(),
+        )
+        .expect("parse");
+        let body = &m.functions[0].body;
+        assert!(
+            matches!(&body[0], Stmt::While { body, .. } if body.len() == 1),
+            "{body:?}"
+        );
     }
 
     #[test]

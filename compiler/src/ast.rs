@@ -42,6 +42,8 @@ pub enum Type {
 pub enum Stmt {
     /// `if <cond> { <body> }` (no `else` in the MVP subset).
     If { cond: Expr, body: Vec<Stmt> },
+    /// `while <cond> { <body> }`. Not a terminator — the body may run zero times.
+    While { cond: Expr, body: Vec<Stmt> },
     /// `return <expr>`.
     Return(Expr),
     /// `fail <CODE>` — fail with a declared error code (only in a fallible function).

@@ -61,6 +61,12 @@ pub enum IrStmt {
         cond: IrExpr,
         body: Vec<IrStmt>,
     },
+    /// `while <cond> { <body> }`. Deliberately **not** a terminator (see
+    /// [`block_always_returns`]): the body may run zero times.
+    While {
+        cond: IrExpr,
+        body: Vec<IrStmt>,
+    },
     Return(IrExpr),
     /// `fail` with the resolved positive error code (only in a fallible function).
     Fail(i32),
@@ -115,8 +121,12 @@ pub enum IrBinOp {
 
 /// Whether a statement list is guaranteed to exit the function: its last statement is a
 /// `return` or (in a fallible function) a `fail`. An `if` without an `else` can fall through,
-/// so a well-formed body must end in one of these. Shared by the typechecker (frontend error)
-/// and codegen (backend safety net for directly-built IR).
+/// and a `while` may run zero times, so a well-formed body must end in one of these. Shared
+/// by the typechecker (frontend error) and codegen (backend safety net for directly-built IR).
+///
+/// `while true { … }` is NOT special-cased: proving it diverges would need constant folding
+/// plus divergence typing, and `while 1 == 1` would immediately fall outside whatever rule we
+/// wrote (SPEC-while DP-W2).
 pub fn block_always_returns(body: &[IrStmt]) -> bool {
     matches!(body.last(), Some(IrStmt::Return(_) | IrStmt::Fail(_)))
 }

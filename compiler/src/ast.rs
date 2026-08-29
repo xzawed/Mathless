@@ -98,4 +98,8 @@ pub enum BinOp {
     Ge,
     Eq,
     Ne,
+    /// `&&` — short-circuiting conjunction (SPEC-logical-ops DP-B2).
+    And,
+    /// `||` — short-circuiting disjunction.
+    Or,
 }

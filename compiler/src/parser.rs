@@ -10,7 +10,9 @@
 //! block    := '{' stmt* '}'
 //! stmt     := 'if' expr block | 'while' expr block | 'return' expr | 'fail' ident
 //!           | 'let' 'mut'? ident '=' expr | ident '=' expr
-//! expr     := compare
+//! expr     := or
+//! or       := and ('||' and)*
+//! and      := compare ('&&' compare)*
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
 //! mul      := unary (('*'|'/') unary)*
@@ -246,7 +248,38 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        self.parse_compare()
+        self.parse_or()
+    }
+
+    /// `or := and ('||' and)*` — the loosest binding level.
+    fn parse_or(&mut self) -> Result<Expr, ParseError> {
+        let mut lhs = self.parse_and()?;
+        while self.peek() == &Token::OrOr {
+            self.pos += 1;
+            let rhs = self.parse_and()?;
+            lhs = Expr::Binary {
+                op: BinOp::Or,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(lhs)
+    }
+
+    /// `and := compare ('&&' compare)*` — tighter than `||`, looser than comparison, as in
+    /// every C-family language (D15, SPEC-logical-ops DP-B4).
+    fn parse_and(&mut self) -> Result<Expr, ParseError> {
+        let mut lhs = self.parse_compare()?;
+        while self.peek() == &Token::AndAnd {
+            self.pos += 1;
+            let rhs = self.parse_compare()?;
+            lhs = Expr::Binary {
+                op: BinOp::And,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(lhs)
     }
 
     fn parse_compare(&mut self) -> Result<Expr, ParseError> {

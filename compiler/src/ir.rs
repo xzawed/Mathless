@@ -131,6 +131,10 @@ pub enum IrBinOp {
     Ge,
     Eq,
     Ne,
+    /// `&&` — short-circuiting conjunction (SPEC-logical-ops DP-B2).
+    And,
+    /// `||` — short-circuiting disjunction.
+    Or,
 }
 
 /// Whether a statement list is guaranteed to exit the function: its last statement is a

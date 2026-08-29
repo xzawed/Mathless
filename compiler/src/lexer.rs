@@ -44,6 +44,8 @@ pub enum Token {
     Ge,
     EqEq,
     Ne,
+    AndAnd,
+    OrOr,
     Eof,
 }
 
@@ -112,6 +114,19 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
         if c == '-' && i + 1 < chars.len() && chars[i + 1] == '>' {
             out.push(Spanned {
                 tok: Token::Arrow,
+                line: sl,
+                col: sc,
+            });
+            i += 2;
+            col += 2;
+            continue;
+        }
+        // `&&` / `||`. The single-character forms are deliberately NOT tokens: bitwise
+        // operators are out of scope, so `&` and `|` fall through to the error path below,
+        // which names the operator the writer almost certainly meant.
+        if (c == '&' || c == '|') && i + 1 < chars.len() && chars[i + 1] == c {
+            out.push(Spanned {
+                tok: if c == '&' { Token::AndAnd } else { Token::OrOr },
                 line: sl,
                 col: sc,
             });
@@ -252,11 +267,14 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             continue;
         }
 
-        return Err(ParseError::new(
-            format!("unexpected character '{c}'"),
-            sl,
-            sc,
-        ));
+        // `a & b` is the most likely typo now that `&&` exists, and "unexpected character"
+        // is a poor answer to it. Mathless has no bitwise operators (SPEC-logical-ops DP-B1).
+        let msg = match c {
+            '&' => "`&` is not an operator in Mathless — did you mean `&&`?".to_string(),
+            '|' => "`|` is not an operator in Mathless — did you mean `||`?".to_string(),
+            _ => format!("unexpected character '{c}'"),
+        };
+        return Err(ParseError::new(msg, sl, sc));
     }
 
     out.push(Spanned {

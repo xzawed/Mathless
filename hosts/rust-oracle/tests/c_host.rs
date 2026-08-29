@@ -149,6 +149,12 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &work,
     )
     .expect("emit negate_if");
+    let count_bounded = emit_artifacts(
+        include_str!("../../../examples/count_bounded.mls"),
+        "count_bounded",
+        &work,
+    )
+    .expect("emit count_bounded");
 
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -197,7 +203,13 @@ fn a_real_c_host_loads_and_calls_the_module() {
 
     // Cross-check our own PE reader against Microsoft's dumpbin on the same file: until now
     // the export measurement (acceptance C) had exactly one implementation — ours.
-    for dll in [&discount.dll, &safe_div.dll, &sum_to.dll, &negate_if.dll] {
+    for dll in [
+        &discount.dll,
+        &safe_div.dll,
+        &sum_to.dll,
+        &negate_if.dll,
+        &count_bounded.dll,
+    ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();
         let theirs = dumpbin_exports(&vcvars, &work, dll);

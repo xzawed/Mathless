@@ -64,6 +64,7 @@
 - **실패 가능 함수**: `-> T!` 표식 + `error NAME = N` 선언 + `fail NAME` 문
   (D17 lowering = i32 status 반환 + out-param, 실패 시 out 미변경)
 - `if cond { … }` — **`else` 없음**
+- `while cond { … }` — 반복. `break`/`continue`는 아직 없다(함수 탈출은 `return`)
 - `return expr`
 - **지역 변수** `let NAME = EXPR` — 블록 스코프, 타입 추론, 기본 **불변**
 - **가변 지역 변수** `let mut NAME = EXPR` + **대입문** `NAME = EXPR` — 대입 대상은 `let mut` 지역만
@@ -73,7 +74,7 @@
 아직 아님 (위 "포함" 목록 중 미구현):
 
 - 문자열, struct/record, null 안전 또는 option
-- `while` / `for`, `else`
+- `for`, `else`, `break`/`continue`
 - 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향)
 - 복합 대입(`+= -= *=`) — `=`만 구현됨
 - `i32` ↔ `f64` 캐스트, `i32` 나눗셈·나머지, 체크드 오버플로

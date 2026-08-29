@@ -16,6 +16,7 @@ pub enum Token {
     Fail,
     Let,
     Mut,
+    While,
     // atoms
     Ident(String),
     /// A float literal (has a decimal point), e.g. `0.9`.
@@ -61,6 +62,7 @@ impl Token {
             Token::Fail => Some("fail"),
             Token::Let => Some("let"),
             Token::Mut => Some("mut"),
+            Token::While => Some("while"),
             _ => None,
         }
     }
@@ -239,6 +241,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "fail" => Token::Fail,
                 "let" => Token::Let,
                 "mut" => Token::Mut,
+                "while" => Token::While,
                 _ => Token::Ident(s),
             };
             out.push(Spanned {
@@ -307,6 +310,19 @@ mod tests {
         assert_eq!(
             toks("mutable"),
             vec![Token::Ident("mutable".to_string()), Token::Eof]
+        );
+    }
+
+    #[test]
+    fn lexes_while_as_a_keyword_not_an_identifier() {
+        // WW1: `while` starts a loop statement; a name that merely begins with it does not.
+        assert_eq!(
+            toks("while b"),
+            vec![Token::While, Token::Ident("b".to_string()), Token::Eof]
+        );
+        assert_eq!(
+            toks("whilex"),
+            vec![Token::Ident("whilex".to_string()), Token::Eof]
         );
     }
 

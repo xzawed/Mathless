@@ -40,12 +40,12 @@ Mathless는 둘 다 노린다: 익숙한 타입 표면, 그 아래의 네이티�
 
 ## 현재 상태 — Phase 1 (수직 슬라이스)
 
-Windows에서 실측(`cargo test --workspace` = **66 그린**, CI는 `windows-latest`, 툴체인 핀):
+Windows에서 실측(`cargo test --workspace` = **83 그린**, CI는 `windows-latest`, 툴체인 핀):
 
 - **컴파일러 `mlc`** — lex → parse → typecheck → 백엔드 독립 IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
 - **현재 언어** — `f64` / `bool` / `i32`, `if` / `return`, **실패 가능 함수**(`-> T!` = 정수 status +
-  out-param), **지역 변수**(`let`).
+  out-param), **지역 변수** — `let`(불변)과 `let mut` + 대입.
 - **CLI** — `mlc build <file.mls> -o <dir>`가 `<name>.dll` + `<name>.h`(C 헤더) +
   `<name>.pas`(Delphi import unit)를 생성.
 - **로드·호출** — Rust `kernel32` *오라클*이 컴파일된 모듈을 로드해 타입 함수를 호출한다. strip된

@@ -42,12 +42,12 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **66 green**, CI on `windows-latest`, toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **83 green**, CI on `windows-latest`, toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).
 - **Language today** — `f64` / `bool` / `i32`, `if` / `return`, **fallible functions** (`-> T!` = integer
-  status + out-parameter), **local variables** (`let`).
+  status + out-parameter), **locals** — `let` (immutable) and `let mut` + assignment.
 - **CLI** — `mlc build <file.mls> -o <dir>` produces `<name>.dll` + `<name>.h` (C header) +
   `<name>.pas` (Delphi import unit).
 - **Loaded & called** — a Rust `kernel32` *oracle* loads the compiled module and calls the typed

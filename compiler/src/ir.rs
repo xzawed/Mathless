@@ -52,8 +52,15 @@ pub enum IrStmt {
     Return(IrExpr),
     /// `fail` with the resolved positive error code (only in a fallible function).
     Fail(i32),
-    /// `let <name> = <value>` — an immutable local binding.
+    /// `let <name> = <value>` — a local binding; `mutable` lowers to Rust `let mut`.
     Let {
+        name: String,
+        value: IrExpr,
+        mutable: bool,
+    },
+    /// `<name> = <value>` — reassign a mutable local (already checked in scope, mutable,
+    /// and type-compatible by the typechecker).
+    Assign {
         name: String,
         value: IrExpr,
     },

@@ -1,10 +1,12 @@
 # Phase 1 SPEC — Mutable Locals (`let mut`) + Assignment Slice
 
-> **상태: 확정(accepted) — 2026-08-29 사용자 승인.** §4의 DP-M1~M4는 권장안 그대로 닫혔다
-> (`let mut` 키워드 / `let mut` 지역만 대입 대상 / 대입은 문 / 복합 대입 제외).
-> **구현은 WM1~WM5 TDD로 진행**하며, 완료되면 이 배너를 `구현 완료(shipped)`로 바꾸고 PR 번호를 적는다.
-> `DECISIONS.md`는 바꾸지 않는다.
-> **근거 수준:** E0(문서 정합) + 기존 슬라이스(E2)와의 정합. 새 측정값은 구현 후 E2.
+> **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29.
+> §4의 DP-M1~M4는 사용자 승인으로 권장안 그대로 닫혔다(`let mut` 키워드 / `let mut` 지역만 대입 대상 /
+> 대입은 문 / 복합 대입 제외). 구현: **WM1~WM5 = PR #39**(SPEC은 PR #32). `DECISIONS.md`는 바꾸지 않았다.
+> 이 문서는 이제 **설계 기록**이다.
+> **근거 수준:** E2 실측 — `examples/discount3.mls` → `discount3.dll` **9,728 B**(스칼라 `discount.dll`과
+> 동일 크기, 가변 지역 변수는 ABI·크기에 영향 없음), 오라클이 로드해 `mlx_discount3(100,true)=90` /
+> `(100,false)=100`, export = `mlx_discount3` + `ml_module_abi_version` 2개.
 > **선행:** Phase 1(스칼라 f64/bool/i32 + D17 + `let` 지역 변수). 설계 교차검토: Grok.
 
 ## 1. 목표
@@ -76,7 +78,7 @@ export fn discount3(price: f64, vip: bool) -> f64 {
 - 복합 대입(`+= -= *=`), 반복문(`while` — 이 대입을 재사용), 가변 파라미터/참조, 대입식(값 산출).
 - 어떤 항목도 측정 전까지 "확정/동작"으로 서술하지 않는다.
 
-## 6. WBS (이 슬라이스 — 확인 완료, WM1~WM5 TDD 착수)
+## 6. WBS (이 슬라이스 — **WM1~WM5 완료**, PR #39에 한 번에 반영)
 
 | ID | 작업 | 완료 기준(측정) | 의존 |
 |----|------|------------------|------|
@@ -86,4 +88,4 @@ export fn discount3(price: f64, vip: bool) -> f64 {
 | **WM4** | codegen: `let mut x = e;` / `x = e;` 방출 | 생성 Rust 빌드→DLL | WM3 |
 | **WM5** | 오라클: §3-A/B/C 실측(E2) | 로드·호출·export 통과 | WM4 |
 
-> 절차: **이 SPEC 확인 → WBS 확정 → WM1..WM5 각 [실패 테스트 → 구현 → 통과 → Grok 검증] → PR → merge.**
+> 절차(수행됨): SPEC 확인(2026-08-29) → WM1..WM5 [실패 테스트 → 구현 → 통과 → Grok 검증] → **PR #39 merge**.

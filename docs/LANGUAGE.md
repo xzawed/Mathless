@@ -55,7 +55,7 @@
 
 ## 현재 구현된 표면 (2026-08-29 실측, E2)
 
-`cargo test --workspace` = 66 pass / 0 fail 기준. **이 목록에 없는 것은 아직 컴파일되지 않는다.**
+`cargo test --workspace` = 83 pass / 0 fail 기준. **이 목록에 없는 것은 아직 컴파일되지 않는다.**
 
 구현됨:
 
@@ -65,7 +65,9 @@
   (D17 lowering = i32 status 반환 + out-param, 실패 시 out 미변경)
 - `if cond { … }` — **`else` 없음**
 - `return expr`
-- **지역 변수** `let NAME = EXPR` — 블록 스코프, **불변**, 타입 추론
+- **지역 변수** `let NAME = EXPR` — 블록 스코프, 타입 추론, 기본 **불변**
+- **가변 지역 변수** `let mut NAME = EXPR` + **대입문** `NAME = EXPR` — 대입 대상은 `let mut` 지역만
+  (파라미터·불변 `let` 거부). 대입은 **문**이지 식이 아니다(`a = b = c` 불가)
 - 식: 리터럴, 파라미터·지역 변수 참조, `+ - * /`(단 `i32 /`는 미지원), 비교
 
 아직 아님 (위 "포함" 목록 중 미구현):
@@ -73,7 +75,7 @@
 - 문자열, struct/record, null 안전 또는 option
 - `while` / `for`, `else`
 - 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향)
-- 가변 지역 변수 `let mut`·대입 — SPEC 초안 열림(PR #32, 확인 대기)
+- 복합 대입(`+= -= *=`) — `=`만 구현됨
 - `i32` ↔ `f64` 캐스트, `i32` 나눗셈·나머지, 체크드 오버플로
 
 ## 내부 의미 모델 (Delphi 방식의 의미)

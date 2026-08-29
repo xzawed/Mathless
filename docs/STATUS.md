@@ -5,11 +5,12 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **66 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **83 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
-  `error NAME=N` + `fail NAME`, i32 status + out-param, D17/Q13); **불변 지역 변수**(`let`, 블록 스코프).
+  `error NAME=N` + `fail NAME`, i32 status + out-param, D17/Q13); **지역 변수**(`let` 불변 / `let mut` +
+  대입, 블록 스코프).
 - **파이프라인:** `mlc` = lex → parse → typecheck → 백엔드 독립 IR → codegen(IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib). **CLI** `mlc build <f.mls> -o <dir>` → `.dll`+`.h`+`.pas`.
   **오라클**(Rust kernel32)이 산출 모듈을 로드·호출.
@@ -34,12 +35,19 @@
   Grok verify가 **실제 과대 주장 1건**을 잡음: "ABI major 불일치 시 로드 거부"는 구현되어 있지 않다
   (`Module::load`는 `LoadLibraryW`만, 오라클은 로드 **후** 값 일치를 assert). 리포 전체 4곳을 "호스트
   계약 / 여기서는 미강제"로 수정.
-- **3b-#2 W1 fixture 제거 완료** — 테스트 67 → 66.
+- **3b-#2 W1 fixture 제거 완료 (PR #35)** — 테스트 67 → 66.
+- **LICENSE (PR #38)** — 처음 MIT로 정한 뒤 판단 요청을 받아 **Apache-2.0 OR MIT 이중**으로 확장
+  (Rust 관례, MIT의 상위집합). 파생 질문 **Q15**(생성 산출물의 라이선스 지위) 등록.
+- **Gate-D 툴체인 (PR #37)** — **MSVC Build Tools 확정**(설치 대기, 수용 D는 계속 BLOCKED).
+- **`let mut` 슬라이스 (SPEC #32 / 구현 #39)** — 가변 지역 변수 + 대입문. 테스트 66 → 83.
+  `discount3.dll` = **9,728 B**로 스칼라 `discount.dll`과 동일 — 가변 지역 변수는 ABI·크기에 영향 없음.
 
 ## 3. 잔여 작업 — 다음 세션 착수
 
 ### 3a. 즉시 재개 (확인/블록 대기)
-- **PR #32 `let mut`**: 사용자가 DP-M1~M4 확인 → WM1(렉서 `mut`)부터 TDD. (SPEC: `docs/phase1/SPEC-let-mut.md`)
+- ~~**PR #32 `let mut`**~~ — **완료.** DP-M1~M4 사용자 승인(2026-08-29) → SPEC 머지(#32) →
+  WM1~WM5 TDD 구현(#39). 다음 후보는 `while`(이 대입을 그대로 재사용)이나 복합 대입이지만,
+  **STATUS 3b의 잔여(#4/#5)가 먼저다.**
 
 ### 3b. Grok 실측 검토 — fix/improve 우선순위 (다음 세션 권장, 슬라이스와 별개)
 > **#1 완료(2026-08-29).** 21 PR 후 문서가 `main`보다 뒤처져 있었고(“awaiting confirmation” 배너,
@@ -95,4 +103,4 @@
 1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md` → 열린 SPEC(`SPEC-let-mut.md` 등) 순.
 2. 규칙: `CLAUDE.md`·`CONTRIBUTING.md`. 절차 = **SPEC → (사용자 확인) → TDD(Red→Green) → Grok verify → PR → squash-merge**.
 3. `main` 직접 커밋 금지. 각 변경은 CI(`windows-latest`, 툴체인 핀) green + Grok verify 후 머지.
-4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 ✅ → 3b-#4/#5 emit·진단 → PR #32(`let mut`) 확인 → 이후 슬라이스.**
+4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 ✅ → `let mut` 슬라이스 ✅ → 3b-#4/#5 emit·진단 → 3b-#3 skip-게이트 C 호스트 → 이후 슬라이스(`while` 등).**

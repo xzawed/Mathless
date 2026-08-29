@@ -40,7 +40,7 @@ Mathless는 둘 다 노린다: 익숙한 타입 표면, 그 아래의 네이티�
 
 ## 현재 상태 — Phase 1 (수직 슬라이스)
 
-Windows에서 실측(`cargo test --workspace` = **168 그린**; CI는 `windows-latest`(정본 — 수용 A/B/C/D가 실제로 실행되는 곳)와 `ubuntu-latest`(프런트엔드) 두 잡, 툴체인 핀):
+Windows에서 실측(`cargo test --workspace` = **169 그린**; CI는 `windows-latest`(정본 — 수용 A/B/C/D가 실제로 실행되는 곳)와 `ubuntu-latest`(프런트엔드) 두 잡, 툴체인 핀):
 
 - **컴파일러 `mlc`** — lex → parse → typecheck → 백엔드 독립 IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).

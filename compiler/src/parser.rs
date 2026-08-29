@@ -333,7 +333,7 @@ impl Parser {
         Ok(lhs)
     }
 
-    /// `unary := ('-' | '!') unary | primary` — binds tighter than `*` and `/`, and is
+    /// `unary := ('-' | '!') unary | cast` — binds tighter than `*` and `/`, and is
     /// right-recursive so `- -x` and `!!b` parse (SPEC-unary DP-U3).
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         let op = match self.peek() {
@@ -490,6 +490,7 @@ mod tests {
             ("export fn f(mut: f64) -> f64 { return 0.0 }", "mut"),
             ("export fn f(let: f64) -> f64 { return 0.0 }", "let"),
             ("export fn f() -> f64 { let if = 1.0 return 1.0 }", "if"),
+            ("export fn f(as: f64) -> f64 { return 0.0 }", "as"),
         ] {
             let err = parse(tokenize(src).unwrap()).unwrap_err();
             let msg = format!("{err:?}");

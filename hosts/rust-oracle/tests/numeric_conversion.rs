@@ -85,3 +85,42 @@ fn f64_to_i32_truncates_saturates_and_maps_nan_to_zero() {
     drop(m);
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[test]
+fn the_cast_precedence_choice_is_observable_and_pinned() {
+    // Mathless binds `as` tighter than unary (SPEC section 2.1), so `-x as f64` is
+    // `-(x as f64)`. **Rust and C# bind `as` looser**, making it `(-x) as f64` there. The two
+    // agree everywhere except i32::MIN, where they give opposite signs — measured here so the
+    // divergence is a recorded number rather than a footnote. See STATUS section 3c: whether
+    // to switch to the Rust/C# binding is an open decision.
+    let out = std::env::temp_dir().join(format!("mlc_cast_prec_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let arts = emit_artifacts(
+        "export fn ours(x: i32) -> f64 { return -x as f64 }\n\
+         export fn parens(x: i32) -> f64 { return (-x) as f64 }",
+        "prec",
+        &out,
+    )
+    .expect("emit prec");
+
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load prec.dll");
+    let ours: extern "C" fn(i32) -> f64 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_ours\0").unwrap()) };
+    let parens: extern "C" fn(i32) -> f64 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_parens\0").unwrap()) };
+
+    assert_eq!(ours(7), -7.0, "ordinary values agree");
+    assert_eq!(parens(7), -7.0);
+
+    // The one input where the binding is observable.
+    assert_eq!(ours(i32::MIN), 2147483648.0, "-(MIN as f64)");
+    assert_eq!(
+        parens(i32::MIN),
+        -2147483648.0,
+        "(-MIN) as f64 — negation wraps first"
+    );
+
+    drop(m);
+    let _ = std::fs::remove_dir_all(&out);
+}

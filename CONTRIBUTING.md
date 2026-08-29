@@ -69,6 +69,12 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
    `clippy -D warnings` + `cargo test --workspace`를 실행한다 — `#![cfg(windows)]` 수용
    테스트를 실제로 돌리는 정본 게이트. 머지 전 green 유지. (크로스플랫폼 SO/ELF CI는 D22와 함께 이연.)
 
+## 라이선스와 기여
+
+이 저장소는 **Apache-2.0 또는 MIT** 이중 라이선스다(`LICENSE-APACHE` / `LICENSE-MIT`).
+명시적으로 달리 밝히지 않는 한, 제출된 기여는 Apache-2.0이 정의하는 바에 따라 위와 동일하게
+이중 라이선스된다.
+
 ## 대외 표현 규칙
 
 보호를 "리버싱 불가능"으로 표현하지 않는다. 정직한 문구는 **"분석과 변조 비용을 높인다"**

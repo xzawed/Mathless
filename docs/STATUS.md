@@ -69,7 +69,11 @@
    `#25`/`#29`/`#32`를 여기 쌓으면 “Phase 1 완료(단 D)” 가독성이 나빠짐. **← 위치는 사용자 결정 필요.**
 
 ### 3c. 사용자 결정 대기
-- ~~**LICENSE**~~ — **MIT 확정**(2026-08-29 사용자 결정). `LICENSE` 추가, README EN/KO 반영 완료.
+- ~~**LICENSE**~~ — **Apache-2.0 OR MIT 이중 확정**(2026-08-29). 처음 MIT로 정한 뒤, 사용자 요청으로
+  판단해 Rust 생태계 관례인 이중으로 확장(MIT의 상위집합 — 특허 허여 추가, GPLv2 호환 유지).
+  `LICENSE-APACHE`/`LICENSE-MIT`, README EN/KO, CONTRIBUTING 반영 완료.
+  - **남은 것:** 저작권자 표기는 계정명 `xzawed`다. 법인/실명이 필요하면 한 줄 PR.
+  - **남은 것:** **Q15**(생성 산출물·`ml_abi.h`의 라이선스 지위) — `OPEN_QUESTIONS.md`에 기록됨.
 - **홈페이지 URL**: About 텍스트는 갱신됨, URL만 미설정.
 - ~~**수용 D 툴체인**~~ — **MSVC Build Tools 확정**(2026-08-29 사용자 결정). 근거: 이 머신의 rustc
   host triple이 이미 `x86_64-pc-windows-msvc`라 산출 cdylib가 MSVC CRT/링커 계열이고, C 호스트를

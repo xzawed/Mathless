@@ -36,8 +36,8 @@ pub enum EmitError {
 impl std::fmt::Display for EmitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // `CompileError` carries no `Display`; its `Debug` names the failing stage.
-            EmitError::Compile(e) => write!(f, "compile error: {e:?}"),
+            // `CompileError` names its own stage and position, so don't re-prefix it.
+            EmitError::Compile(e) => write!(f, "{e}"),
             EmitError::Io(e) => write!(f, "io error: {e}"),
         }
     }

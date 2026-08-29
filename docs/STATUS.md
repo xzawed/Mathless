@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **86 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **93 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions `windows-latest`, 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
 - **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
 - **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
@@ -40,6 +40,8 @@
   (Rust 관례, MIT의 상위집합). 파생 질문 **Q15**(생성 산출물의 라이선스 지위) 등록.
 - **Gate-D 툴체인 (PR #37)** — **MSVC Build Tools 확정**(설치 대기, 수용 D는 계속 BLOCKED).
 - **`let mut` 슬라이스 (SPEC #32 / 구현 #39)** — 가변 지역 변수 + 대입문. 테스트 66 → 86.
+- **SPEC 재배치 (PR #40)** — 기능 SPEC은 `docs/slices/`(색인 포함), `docs/phaseN/`은 phase 계획만.
+- **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 93.
   `discount3.dll` = **9,728 B**로 스칼라 `discount.dll`과 동일 — 가변 지역 변수는 ABI·크기에 영향 없음.
 
 ## 3. 잔여 작업 — 다음 세션 착수
@@ -67,8 +69,12 @@
    수용 D를 “됐다”고 위장하지 않으면서 Gate-D 준비를 이어감(CI green 유지, 툴체인 오는 날 즉시 검증).
 4. **`mlc build` 산출을 원자적으로**(stage → rename) + `reserved.rs`에 나쁜 모듈 stem 거부. WBS 잔여에
    기록됨: `.h`/`.pas` 기록 실패가 `.dll`만 남길 수 있고, `if.mls`/`my-mod.mls`가 typeck 아닌 cargo에서 죽음.
-5. **`CompileError`에 실제 `Display`** + CLI stderr가 `Debug`가 아니라 소스-위치 메시지임을 단언
-   (`emit.rs`가 이미 gap 표기). `let`/`T!`/`i32`가 늘수록 진단이 썩는다(ROADMAP Phase 3, 스텁은 지금).
+5. ~~**`CompileError`에 실제 `Display`**~~ — **완료.** `CompileError`가 `Display` + `std::error::Error`
+   (`source()`)를 구현하고 실패한 단계에 위임한다. `EmitError::Compile`은 더 이상 `{e:?}`로 감싸지
+   않는다. CLI 실측: `mlc: parse error at 1:13: expected parameter name, found keyword \`mut\` …`
+   (이전에는 `mlc: compile error: Parse(ParseError { … })`). 실제 바이너리를 돌려 stderr를 단언하는
+   테스트 포함. `IrType`에 `Display`를 붙여 진단이 `F64`가 아니라 표면 이름 `f64`를 인용한다.
+   **남은 것:** `TypeError`에는 아직 line/col이 없다(AST에 span이 없음 — 별도 작업, ROADMAP Phase 3).
 6. **`ubuntu-latest` 컴파일 전용 CI 잡** 추가(비-`cfg(windows)` 프런트엔드 `fmt`/`clippy`/`test`).
    lex/parse/typeck·임시경로 코드의 false-green 보험. **D22 아님**(`.so`/ELF 빌드·로드 없음).
 7. **`grok_build_plan`을 착수 게이트에서 내림, `grok_build_verify`는 완료 게이트 유지.** 이번 세션에서

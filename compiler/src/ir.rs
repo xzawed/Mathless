@@ -13,6 +13,18 @@ pub enum IrType {
     I32,
 }
 
+impl std::fmt::Display for IrType {
+    /// The **surface** spelling. Diagnostics quote what the user wrote (`f64`), not the
+    /// Rust variant name (`F64`).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            IrType::F64 => "f64",
+            IrType::Bool => "bool",
+            IrType::I32 => "i32",
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct IrModule {
     pub functions: Vec<IrFunction>,

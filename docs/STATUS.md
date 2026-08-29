@@ -5,7 +5,7 @@
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **122 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
+- **테스트:** `cargo test --workspace` = **123 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
 - **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
   + `ubuntu-latest`(프런트엔드 보험 — 실측 **107개 중 88개 실행**, 나머지 19개는 `cfg(windows)`라
   컴파일 제외). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
@@ -148,4 +148,4 @@
 1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md`(phase 계획) → `docs/slices/README.md`(기능 슬라이스 색인) 순.
 2. 규칙: `CLAUDE.md`·`CONTRIBUTING.md`. 절차 = **SPEC → (사용자 확인) → TDD(Red→Green) → Grok verify → PR → squash-merge**.
 3. `main` 직접 커밋 금지. 각 변경은 CI(`windows-latest`, 툴체인 핀) green + Grok verify 후 머지.
-4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 ✅ → `let mut` 슬라이스 ✅ → 3b-#4/#5 emit·진단 → 3b-#3 skip-게이트 C 호스트 → 이후 슬라이스(`while` 등).**
+4. **STATUS 3b 목록은 전부 닫혔고**(#1~#8), 수용 A/B/C/D도 통과했다. 언어 슬라이스는 `let mut` ✅ → `while` ✅까지 왔다. 다음은 `docs/slices/README.md`의 "열린 SPEC"과 "다음 슬라이스" 절을 본다.

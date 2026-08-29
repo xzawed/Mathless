@@ -42,7 +42,7 @@ Four things hold throughout:
 
 ## Status — Phase 1 (vertical slice)
 
-Measured on Windows (`cargo test --workspace` = **83 green**, CI on `windows-latest`, toolchain pinned):
+Measured on Windows (`cargo test --workspace` = **86 green**, CI on `windows-latest`, toolchain pinned):
 
 - **Compiler `mlc`** — lex → parse → typecheck → backend-independent IR → codegen (IR → `no_std`
   `extern "C"` Rust → `cargo` cdylib).

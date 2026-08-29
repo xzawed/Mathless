@@ -46,6 +46,26 @@ pub enum Token {
     Eof,
 }
 
+impl Token {
+    /// The surface spelling, if this token is a keyword. Lets the parser say "`mut` is a
+    /// keyword" instead of dumping the `Debug` variant name at the user.
+    pub fn keyword_text(&self) -> Option<&'static str> {
+        match self {
+            Token::Export => Some("export"),
+            Token::Fn => Some("fn"),
+            Token::If => Some("if"),
+            Token::Return => Some("return"),
+            Token::True => Some("true"),
+            Token::False => Some("false"),
+            Token::Error => Some("error"),
+            Token::Fail => Some("fail"),
+            Token::Let => Some("let"),
+            Token::Mut => Some("mut"),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Spanned {
     pub tok: Token,

@@ -138,6 +138,31 @@ fn a_mutable_local_declared_in_an_if_does_not_leak_out() {
 }
 
 #[test]
+fn assigning_to_a_mutable_local_declared_in_an_if_is_rejected_outside_it() {
+    // The *assignment* path out of a dead block, not just the read path: `r` is scoped to
+    // the `if`, so `r = 2` after it must be unknown rather than resurrecting the binding.
+    let err =
+        compile_to_ir("export fn f(b: bool) -> i32 { if b { let mut r = 1 } r = 2 return 0 }")
+            .unwrap_err();
+    assert!(
+        format!("{err:?}").to_lowercase().contains("unknown"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn a_sibling_if_cannot_assign_a_mutable_local_from_another_block() {
+    let err = compile_to_ir(
+        "export fn f(b: bool) -> i32 { if b { let mut r = 1 } if b { r = 2 } return 0 }",
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:?}").to_lowercase().contains("unknown"),
+        "{err:?}"
+    );
+}
+
+#[test]
 fn a_fallible_fn_may_use_a_mutable_local() {
     // Positive coverage: `let mut` + assignment interact correctly with the D17 lowering.
     let rust = compile_to_rust(

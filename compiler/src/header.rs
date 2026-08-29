@@ -81,7 +81,9 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
 
     let _ = writeln!(s, "uint32_t ml_module_abi_version(void);");
-    for f in &module.functions {
+    // Bindings describe the module's SURFACE: internal functions are not callable by a host
+    // and must not appear here (SPEC-calls section 2.3).
+    for f in module.functions.iter().filter(|f| f.exported) {
         let _ = writeln!(s, "{}", c_signature(f));
     }
     s.push('\n');
@@ -154,7 +156,7 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
         s,
         "function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;"
     );
-    for f in &module.functions {
+    for f in module.functions.iter().filter(|f| f.exported) {
         let _ = writeln!(s, "{} cdecl; external ML_MODULE;", delphi_signature(f));
     }
     s.push('\n');

@@ -46,6 +46,9 @@ pub struct IrFunction {
     pub ret: IrType,
     /// Fallible (`-> T!`): lowers to `int32 status` return + a `*mut T` out-param (D17).
     pub fallible: bool,
+    /// Exported to hosts. Internal functions are emitted as plain Rust functions, so they
+    /// stay out of the export table and out of the generated bindings.
+    pub exported: bool,
     pub body: Vec<IrStmt>,
 }
 
@@ -98,6 +101,12 @@ pub enum IrExprKind {
     ConstBool(bool),
     /// Reference to a parameter/local by name.
     Var(String),
+    /// A call to another function in this module. The typechecker has already resolved the
+    /// callee, checked arity and argument types, and proved the call graph acyclic.
+    Call {
+        name: String,
+        args: Vec<IrExpr>,
+    },
     Unary {
         op: IrUnOp,
         operand: Box<IrExpr>,

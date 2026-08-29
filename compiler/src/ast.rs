@@ -22,6 +22,9 @@ pub struct Function {
     pub ret: Type,
     /// `-> T!` — the function may `fail`; it lowers to the D17 ABI (i32 status + out-param).
     pub fallible: bool,
+    /// `export fn` — reachable by hosts. A bare `fn` is internal: it is emitted as a plain
+    /// Rust function, so it never appears in the export table or the generated bindings.
+    pub exported: bool,
     pub body: Vec<Stmt>,
 }
 
@@ -75,6 +78,11 @@ pub enum Expr {
     Int(i64),
     Bool(bool),
     Var(String),
+    /// `NAME(arg, …)` — a call to another function in this module.
+    Call {
+        name: String,
+        args: Vec<Expr>,
+    },
     Unary {
         op: UnOp,
         operand: Box<Expr>,

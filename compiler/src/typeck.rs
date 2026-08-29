@@ -75,13 +75,143 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 f.name
             )));
         }
-        functions.push(check_function(f, &error_table)?);
+        functions.push(f);
     }
-    Ok(IrModule { functions, errors })
+
+    // First pass: every signature, so calls resolve regardless of declaration order (DP-C4).
+    let mut sigs: Sigs = HashMap::new();
+    for f in &module.functions {
+        sigs.insert(
+            f.name.clone(),
+            Sig {
+                params: f.params.iter().map(|p| ir_type(p.ty)).collect(),
+                ret: ir_type(f.ret),
+                fallible: f.fallible,
+            },
+        );
+    }
+    // Before checking bodies: the call graph must be acyclic (DP-C2).
+    reject_recursion(module)?;
+
+    let mut checked = Vec::with_capacity(functions.len());
+    for f in functions {
+        checked.push(check_function(f, &error_table, &sigs)?);
+    }
+    Ok(IrModule {
+        functions: checked,
+        errors,
+    })
 }
 
 /// Error-code name → resolved positive code.
 type Scope2 = HashMap<String, i32>;
+
+/// A callable function's shape, gathered in a first pass so declaration order does not
+/// matter (DP-C4).
+struct Sig {
+    params: Vec<IrType>,
+    ret: IrType,
+    fallible: bool,
+}
+
+type Sigs = HashMap<String, Sig>;
+
+/// Every function name called anywhere in `body`, in encounter order.
+fn collect_calls(body: &[Stmt], out: &mut Vec<String>) {
+    fn expr(e: &Expr, out: &mut Vec<String>) {
+        match e {
+            Expr::Call { name, args } => {
+                out.push(name.clone());
+                for a in args {
+                    expr(a, out);
+                }
+            }
+            Expr::Unary { operand, .. } => expr(operand, out),
+            Expr::Binary { lhs, rhs, .. } => {
+                expr(lhs, out);
+                expr(rhs, out);
+            }
+            Expr::Number(_) | Expr::Int(_) | Expr::Bool(_) | Expr::Var(_) => {}
+        }
+    }
+    for s in body {
+        match s {
+            Stmt::If { cond, body } | Stmt::While { cond, body } => {
+                expr(cond, out);
+                collect_calls(body, out);
+            }
+            Stmt::Return(e) | Stmt::Let { value: e, .. } | Stmt::Assign { value: e, .. } => {
+                expr(e, out)
+            }
+            Stmt::Fail(_) => {}
+        }
+    }
+}
+
+/// Reject direct and mutual recursion (DP-C2, SPEC-calls section 5.1).
+///
+/// Unlike `while` non-termination — which is the halting problem, and therefore documented
+/// as a host contract rather than prevented — a cycle in the call graph is *decidable*, and
+/// its consequence is worse: infinite recursion overflows the stack and kills the host
+/// process. What can be prevented is prevented.
+fn reject_recursion(module: &ast::Module) -> Result<(), TypeError> {
+    let mut graph: HashMap<&str, Vec<String>> = HashMap::new();
+    for f in &module.functions {
+        let mut calls = Vec::new();
+        collect_calls(&f.body, &mut calls);
+        graph.insert(f.name.as_str(), calls);
+    }
+
+    // Iterative DFS with an explicit "on the current path" set, so the reported cycle is the
+    // actual path rather than just the fact that one exists.
+    #[derive(PartialEq, Clone, Copy)]
+    enum Mark {
+        Doing,
+        Done,
+    }
+    let mut mark: HashMap<String, Mark> = HashMap::new();
+    let mut path: Vec<String> = Vec::new();
+
+    fn walk(
+        name: &str,
+        graph: &HashMap<&str, Vec<String>>,
+        mark: &mut HashMap<String, Mark>,
+        path: &mut Vec<String>,
+    ) -> Result<(), TypeError> {
+        match mark.get(name) {
+            Some(Mark::Done) => return Ok(()),
+            Some(Mark::Doing) => {
+                let start = path.iter().position(|n| n == name).unwrap_or(0);
+                let mut cycle: Vec<String> = path[start..].to_vec();
+                cycle.push(name.to_string());
+                return Err(TypeError::new(format!(
+                    "recursion is not supported: {} — a recursive call can overflow the stack \
+                     and kill the host process, so the call graph must be acyclic",
+                    cycle.join(" -> ")
+                )));
+            }
+            None => {}
+        }
+        mark.insert(name.to_string(), Mark::Doing);
+        path.push(name.to_string());
+        if let Some(callees) = graph.get(name) {
+            for callee in callees {
+                // Unknown callees are reported by the type checker with a better message.
+                if graph.contains_key(callee.as_str()) {
+                    walk(callee, graph, mark, path)?;
+                }
+            }
+        }
+        path.pop();
+        mark.insert(name.to_string(), Mark::Done);
+        Ok(())
+    }
+
+    for f in &module.functions {
+        walk(&f.name, &graph, &mut mark, &mut path)?;
+    }
+    Ok(())
+}
 
 fn ir_type(t: Type) -> IrType {
     match t {
@@ -91,7 +221,11 @@ fn ir_type(t: Type) -> IrType {
     }
 }
 
-fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, TypeError> {
+fn check_function(
+    f: &ast::Function,
+    errors: &Scope2,
+    sigs: &Sigs,
+) -> Result<IrFunction, TypeError> {
     let mut scope: Scope = HashMap::new();
     // Parameter names must be unique case-insensitively: distinct in C/Rust, but the
     // (case-insensitive) Delphi import unit would see `x` and `X` as the same param.
@@ -130,7 +264,7 @@ fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, Type
         )));
     }
     let ret = ir_type(f.ret);
-    let body = check_block(&f.body, &scope, ret, &f.name, f.fallible, errors)?;
+    let body = check_block(&f.body, &scope, ret, &f.name, f.fallible, errors, sigs)?;
     // Every path must exit with a value (or `fail`); an `if` without `else` can fall through.
     // Caught here (frontend) as well as in codegen (backend safety net for directly-built IR).
     if !block_always_returns(&body) {
@@ -145,6 +279,7 @@ fn check_function(f: &ast::Function, errors: &Scope2) -> Result<IrFunction, Type
         params,
         ret,
         fallible: f.fallible,
+        exported: f.exported,
         body,
     })
 }
@@ -156,13 +291,16 @@ fn check_block(
     fname: &str,
     fallible: bool,
     errors: &Scope2,
+    sigs: &Sigs,
 ) -> Result<Vec<IrStmt>, TypeError> {
     // Block scope (DP-L5): locals declared here extend a private copy of the scope and do not
     // leak to the parent block. Nested `if` bodies get their own copy the same way.
     let mut scope = parent_scope.clone();
     let mut out = Vec::with_capacity(stmts.len());
     for s in stmts {
-        out.push(check_stmt(s, &mut scope, ret, fname, fallible, errors)?);
+        out.push(check_stmt(
+            s, &mut scope, ret, fname, fallible, errors, sigs,
+        )?);
     }
     // Anything after a `return`/`fail` is dead. Say that, instead of letting the
     // all-paths-return check below report "may not return on all paths" — which sends the
@@ -192,21 +330,22 @@ fn check_stmt(
     fname: &str,
     fallible: bool,
     errors: &Scope2,
+    sigs: &Sigs,
 ) -> Result<IrStmt, TypeError> {
     match s {
         Stmt::If { cond, body } => {
-            let cond = check_expr(cond, scope, fname)?;
+            let cond = check_expr(cond, scope, fname, sigs)?;
             if cond.ty != IrType::Bool {
                 return Err(TypeError::new(format!(
                     "function '{fname}': if condition must be bool, found {}",
                     cond.ty
                 )));
             }
-            let body = check_block(body, scope, ret, fname, fallible, errors)?;
+            let body = check_block(body, scope, ret, fname, fallible, errors, sigs)?;
             Ok(IrStmt::If { cond, body })
         }
         Stmt::While { cond, body } => {
-            let cond = check_expr(cond, scope, fname)?;
+            let cond = check_expr(cond, scope, fname, sigs)?;
             if cond.ty != IrType::Bool {
                 return Err(TypeError::new(format!(
                     "function '{fname}': while condition must be bool, found {}",
@@ -215,11 +354,11 @@ fn check_stmt(
             }
             // Same block scope as `if`: the body sees the enclosing bindings (so it can assign
             // an outer `let mut` — the point of the slice) and its own locals do not escape.
-            let body = check_block(body, scope, ret, fname, fallible, errors)?;
+            let body = check_block(body, scope, ret, fname, fallible, errors, sigs)?;
             Ok(IrStmt::While { cond, body })
         }
         Stmt::Return(e) => {
-            let e = check_expr(e, scope, fname)?;
+            let e = check_expr(e, scope, fname, sigs)?;
             if e.ty != ret {
                 return Err(TypeError::new(format!(
                     "function '{fname}': return type mismatch: expected {ret}, found {}",
@@ -264,7 +403,7 @@ fn check_stmt(
                     )))
                 }
             }
-            let value = check_expr(value, scope, fname)?;
+            let value = check_expr(value, scope, fname, sigs)?;
             if value.ty != ty {
                 return Err(TypeError::new(format!(
                     "function '{fname}': cannot assign {} to '{name}' of type {ty} — type mismatch",
@@ -282,7 +421,7 @@ fn check_stmt(
             mutable,
         } => {
             // Check the RHS in the CURRENT scope first, so `let x = x` is use-before-def.
-            let value = check_expr(value, scope, fname)?;
+            let value = check_expr(value, scope, fname, sigs)?;
             // Local names honour the same reserved-word policy as parameters (all targets).
             let targets = crate::reserved::reserving_targets(name);
             if !targets.is_empty() {
@@ -323,7 +462,7 @@ fn check_stmt(
     }
 }
 
-fn check_expr(e: &Expr, scope: &Scope, fname: &str) -> Result<IrExpr, TypeError> {
+fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExpr, TypeError> {
     match e {
         Expr::Number(n) => Ok(IrExpr {
             ty: IrType::F64,
@@ -354,8 +493,49 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str) -> Result<IrExpr, TypeError>
                 "function '{fname}': unknown variable '{name}'"
             ))),
         },
+        Expr::Call { name, args } => {
+            let Some(sig) = sigs.get(name) else {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': unknown function '{name}'"
+                )));
+            };
+            // A fallible callee lowers to `int32 status` + an out-param, so it is not a value
+            // and cannot sit in an expression (DP-C1).
+            if sig.fallible {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': '{name}' is fallible (`-> T!`) and cannot be called in \
+                     an expression yet — it returns a status and writes through an out-param"
+                )));
+            }
+            if args.len() != sig.params.len() {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': '{name}' expects {} argument(s), found {}",
+                    sig.params.len(),
+                    args.len()
+                )));
+            }
+            let mut checked = Vec::with_capacity(args.len());
+            for (i, (arg, want)) in args.iter().zip(sig.params.iter()).enumerate() {
+                let arg = check_expr(arg, scope, fname, sigs)?;
+                if arg.ty != *want {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': '{name}' argument {} expects {want}, found {}",
+                        i + 1,
+                        arg.ty
+                    )));
+                }
+                checked.push(arg);
+            }
+            Ok(IrExpr {
+                ty: sig.ret,
+                kind: IrExprKind::Call {
+                    name: name.clone(),
+                    args: checked,
+                },
+            })
+        }
         Expr::Unary { op, operand } => {
-            let operand = check_expr(operand, scope, fname)?;
+            let operand = check_expr(operand, scope, fname, sigs)?;
             let (ir_op, ty) = match op {
                 ast::UnOp::Neg => {
                     if !matches!(operand.ty, IrType::F64 | IrType::I32) {
@@ -385,8 +565,8 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str) -> Result<IrExpr, TypeError>
             })
         }
         Expr::Binary { op, lhs, rhs } => {
-            let lhs = check_expr(lhs, scope, fname)?;
-            let rhs = check_expr(rhs, scope, fname)?;
+            let lhs = check_expr(lhs, scope, fname, sigs)?;
+            let rhs = check_expr(rhs, scope, fname, sigs)?;
             let (irop, ty) = check_binop(*op, lhs.ty, rhs.ty, fname)?;
             Ok(IrExpr {
                 ty,

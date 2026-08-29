@@ -59,6 +59,7 @@ fn lowers_discount_to_typed_ir() {
             ],
             ret: IrType::F64,
             fallible: false,
+            exported: true,
             body: vec![
                 IrStmt::If {
                     cond: IrExpr {

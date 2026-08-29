@@ -61,6 +61,9 @@
 
 - 타입: `f64`, `bool`, `i32`
 - `export fn NAME(params) -> T { … }` — 자유 함수, 모듈 export
+- **`fn NAME(params) -> T { … }`** — `export` 없는 **내부 함수**. 호출식 `NAME(args)`로 부른다.
+  export되지 않으므로 export 심볼 집합이 늘지 않는다(실측). **재귀는 금지**(직접·상호) — 스택
+  오버플로가 호스트 프로세스를 죽이기 때문이며, `while`의 비종료와 달리 정적으로 판정 가능하다
 - **실패 가능 함수**: `-> T!` 표식 + `error NAME = N` 선언 + `fail NAME` 문
   (D17 lowering = i32 status 반환 + out-param, 실패 시 out 미변경)
 - `if cond { … }` — **`else` 없음**
@@ -78,7 +81,7 @@
 
 - 문자열, struct/record, null 안전 또는 option
 - `for`, `else`, `break`/`continue`, 복합 대입, 비트 연산자
-- 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향)
+- 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향), 재귀, 실패 가능 함수 호출
 - 복합 대입(`+= -= *=`) — `=`만 구현됨
 - `i32` ↔ `f64` 캐스트, `i32` 나눗셈·나머지, 체크드 오버플로
 

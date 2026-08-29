@@ -28,6 +28,7 @@
 #include "sum_to.h"
 #include "negate_if.h"
 #include "count_bounded.h"
+#include "discount4.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
@@ -35,6 +36,7 @@ typedef int32_t (*safe_div_fn)(double, double, double *);
 typedef int32_t (*sum_to_fn)(int32_t);
 typedef int32_t (*negate_if_fn)(int32_t, bool);
 typedef int32_t (*count_bounded_fn)(int32_t, int32_t);
+typedef double (*discount4_fn)(double, bool);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -53,6 +55,8 @@ _Static_assert(_Generic(&mlx_negate_if, negate_if_fn: 1, default: 0),
                "generated mlx_negate_if signature changed");
 _Static_assert(_Generic(&mlx_count_bounded, count_bounded_fn: 1, default: 0),
                "generated mlx_count_bounded signature changed");
+_Static_assert(_Generic(&mlx_discount4, discount4_fn: 1, default: 0),
+               "generated mlx_discount4 signature changed");
 
 static int failures = 0;
 
@@ -168,11 +172,26 @@ int main(int argc, char **argv) {
         check(count_bounded(3, 10) == 3, "count_bounded(3, 10) == 3 (n stops it)");
     }
 
+    /* --- discount4.dll: an internal helper decides the rate. The helper is NOT exported, so
+       GetProcAddress must fail for it - that is the D04/D05 claim, checked from the host. --- */
+    HMODULE h4 = load(dir, "discount4.dll");
+    if (h4 == NULL) {
+        return 1;
+    }
+    discount4_fn discount4 = (discount4_fn)sym(h4, "mlx_discount4");
+    if (discount4) {
+        check(discount4(100.0, true) == 90.0, "discount4(100, true) == 90 (helper picked 0.9)");
+        check(discount4(100.0, false) == 100.0, "discount4(100, false) == 100");
+    }
+    check(GetProcAddress(h4, "vip_rate") == NULL, "the internal helper is not exported");
+    check(GetProcAddress(h4, "mlx_vip_rate") == NULL, "...not under the mlx_ prefix either");
+
     FreeLibrary(d);
     FreeLibrary(s);
     FreeLibrary(w);
     FreeLibrary(u);
     FreeLibrary(l);
+    FreeLibrary(h4);
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

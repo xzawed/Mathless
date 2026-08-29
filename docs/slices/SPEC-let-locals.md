@@ -1,4 +1,4 @@
-# Phase 1 SPEC — Local Variables (`let`) Slice
+# Slice SPEC — Local variables (`let`)
 
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
 > §4의 DP-L1~L5는 **사용자 승인으로 닫혔다**(전부 Grok 권장안대로: 추론 전용 · 섀도잉 거부 ·

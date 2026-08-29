@@ -104,6 +104,7 @@ Delphi-only.
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions (D14–D22) and rejected alternatives |
 | [docs/STATUS.md](docs/STATUS.md) | Measured state of `main` and the remaining work (session handoff) |
+| [docs/slices/](docs/slices/README.md) | Per-feature SPECs (the SDD unit) and their status |
 
 ## Contributing
 

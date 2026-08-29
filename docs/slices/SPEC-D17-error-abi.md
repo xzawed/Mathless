@@ -1,4 +1,4 @@
-# Phase 1 SPEC — Error-Path Slice (D17: integer status + out-param)
+# Slice SPEC — Error path (D17: integer status + out-param)
 
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
 > §5의 DP-E1~E3는 **2026-08-28 사용자 승인으로 닫혔다**(DP-E1 = `fail`/`error` + **명시적 `-> T!` 표식**).

@@ -100,6 +100,7 @@ mlc build discount.mls -o out/
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → 확장 |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | 확정 결정(D14–D22)과 기각된 대안 |
 | [docs/STATUS.md](docs/STATUS.md) | `main`의 실측 상태와 잔여 작업 (세션 핸드오프) |
+| [docs/slices/](docs/slices/README.md) | 기능 슬라이스 SPEC(= SDD 단위)과 그 상태 |
 
 ## 기여
 

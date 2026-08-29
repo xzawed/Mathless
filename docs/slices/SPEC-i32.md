@@ -1,4 +1,4 @@
-# Phase 1 SPEC — Integer Type (`i32`) Slice
+# Slice SPEC — Integer type (`i32`)
 
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
 > §4의 DP-I1~I4는 **사용자 승인으로 닫혔다**(권장안 그대로: 소수점 유무로 리터럴 구분 · 혼합 에러 ·

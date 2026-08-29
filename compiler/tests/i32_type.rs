@@ -1,4 +1,4 @@
-//! Integer-type (`i32`) slice (SPEC docs/phase1/SPEC-i32.md): signed 32-bit integers.
+//! Integer-type (`i32`) slice (SPEC docs/slices/SPEC-i32.md): signed 32-bit integers.
 //! Integer literal (no `.`) is `i32`; decimal literal is `f64`; no implicit mixing; `i32 /`
 //! is rejected this slice. The E2 load/call proof is in `hosts/rust-oracle/tests/i32_type.rs`.
 

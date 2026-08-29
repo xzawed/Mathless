@@ -1,4 +1,4 @@
-# Phase 1 SPEC — Mutable Locals (`let mut`) + Assignment Slice
+# Slice SPEC — Mutable locals (`let mut`) + assignment
 
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29.
 > §4의 DP-M1~M4는 사용자 승인으로 권장안 그대로 닫혔다(`let mut` 키워드 / `let mut` 지역만 대입 대상 /

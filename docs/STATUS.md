@@ -1,7 +1,7 @@
 # STATUS — 세션 핸드오프 (현재 상태 · 잔여 작업)
 
 > **스냅샷: 2026-08-29.** 다음 세션은 이 문서를 먼저 읽는다. 측정값은 그 시점 `main` 기준이며,
-> `git log`·`docs/phase1/*`·각 SPEC이 정본이다. 이 문서가 오래되면 갱신하거나 폐기한다.
+> `git log`·`docs/phase1/*`(phase 계획)·`docs/slices/*`(기능 SPEC)이 정본이다. 이 문서가 오래되면 갱신하거나 폐기한다.
 
 ## 1. 현재 상태 (실측, `main`)
 
@@ -73,8 +73,11 @@
    lex/parse/typeck·임시경로 코드의 false-green 보험. **D22 아님**(`.so`/ELF 빌드·로드 없음).
 7. **`grok_build_plan`을 착수 게이트에서 내림, `grok_build_verify`는 완료 게이트 유지.** 이번 세션에서
    plan 도구가 반복적으로 얇았음 — 다음 세션을 여기서 멈추지 말 것. verify 실패는 보고(임의 대체 금지).
-8. **새 언어 SPEC를 `docs/phase1/`에서 이동**(phase1.5 / `docs/lang/` / Phase 2). Phase 1 A/B/C는 끝났고
-   `#25`/`#29`/`#32`를 여기 쌓으면 “Phase 1 완료(단 D)” 가독성이 나빠짐. **← 위치는 사용자 결정 필요.**
+8. ~~**새 언어 SPEC를 `docs/phase1/`에서 이동**~~ — **완료.** 기능 슬라이스 SPEC 4종을
+   **`docs/slices/`**로 옮기고, `docs/phase1/`에는 phase(캠페인) 문서인 `SPEC.md` + `WBS.md`만 남겼다.
+   Grok 교차검토도 `docs/slices/` 지지(`docs/lang/`은 다음 슬라이스들이 ABI 작업이라 즉시
+   `docs/abi/`를 요구하고, phase 번호는 다시 개명해야 함). Grok의 반론("평평한 폴더는 결국 같은
+   더미가 된다")에 따라 **`docs/slices/README.md` 색인**을 함께 둔다 — 슬라이스마다 갱신할 것.
 
 ### 3c. 사용자 결정 대기
 - ~~**LICENSE**~~ — **Apache-2.0 OR MIT 이중 확정**(2026-08-29). 처음 MIT로 정한 뒤, 사용자 요청으로
@@ -89,7 +92,7 @@
   않는다** — D22는 모듈 *포맷* 결정에 "msvc"를 못박지 않는다는 뜻이고, 이것은 **Gate-D 검증용
   호스트 툴체인** 선택이다. 설치 전까지는 3b-#3(skip-게이트 호스트)만 진행. 설치되면: 실제 C 호스트
   로드 테스트 + `dumpbin /exports` 교차 확인(현재 export 측정은 자체 PE 리더 단독).
-- **새 SPEC 위치**(3b-#8), **D22(SO/ELF) 개시 여부**.
+- **D22(SO/ELF) 개시 여부.** (새 SPEC 위치 3b-#8은 `docs/slices/`로 해소됨.)
 
 ### 3d. 하지 말 것 (Grok)
 - 위 문서 정합(#1)과 emit 버그 2건(#4)이 닫히기 전에는 **D16 / 문자열·구조체 / 콜백 / 두 번째 호스트**를
@@ -100,7 +103,7 @@
 
 ## 4. 다음 세션 재개 방법
 
-1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md` → 열린 SPEC(`SPEC-let-mut.md` 등) 순.
+1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md`(phase 계획) → `docs/slices/README.md`(기능 슬라이스 색인) 순.
 2. 규칙: `CLAUDE.md`·`CONTRIBUTING.md`. 절차 = **SPEC → (사용자 확인) → TDD(Red→Green) → Grok verify → PR → squash-merge**.
 3. `main` 직접 커밋 금지. 각 변경은 CI(`windows-latest`, 툴체인 핀) green + Grok verify 후 머지.
 4. 권장 다음 순서: **3b-#1 문서 정합 ✅ → 3b-#2 fixture 제거 ✅ → `let mut` 슬라이스 ✅ → 3b-#4/#5 emit·진단 → 3b-#3 skip-게이트 C 호스트 → 이후 슬라이스(`while` 등).**

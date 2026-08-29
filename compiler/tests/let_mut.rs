@@ -1,4 +1,4 @@
-//! Mutable-locals (`let mut`) + assignment slice (SPEC docs/phase1/SPEC-let-mut.md):
+//! Mutable-locals (`let mut`) + assignment slice (SPEC docs/slices/SPEC-let-mut.md):
 //! `let mut NAME = EXPR` declares a mutable local, `NAME = EXPR` reassigns one. Internal
 //! only — no ABI change. The E2 load/call proof is in `hosts/rust-oracle/tests/let_mut.rs`.
 

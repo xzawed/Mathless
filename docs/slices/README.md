@@ -1,0 +1,39 @@
+# Slices — 기능 단위 SPEC 색인
+
+**슬라이스**는 이 저장소의 SDD 단위다: 하나의 기능을 표면 문법 → 타입체크 → IR → codegen →
+바인딩 → 오라클 실측까지 세로로 관통해 끝내는 작업 묶음. 각 슬라이스는 **SPEC 먼저 → 사용자 확인 →
+TDD 구현 → Grok 검증 → PR** 순서를 따른다(`CLAUDE.md` "개발 방법론").
+
+## 여기 있는 것 vs `docs/phaseN/`에 있는 것
+
+| 위치 | 무엇 | 왜 |
+|------|------|-----|
+| `docs/slices/SPEC-*.md` | **기능 슬라이스** SPEC (이 폴더) | 기능은 로드맵의 phase 경계를 따르지 않는다. 슬라이스는 표면 문법일 수도 ABI일 수도 있고, 대개 둘 다다 |
+| `docs/phaseN/SPEC.md` · `WBS.md` | **phase(캠페인)** 계획 — 그 phase의 목표·수용 기준·작업 분해 | `ROADMAP.md`의 phase는 제품 캠페인(수직 슬라이스 / struct·import / DX / 두 번째 호스트)이지 SDD 단위가 아니다 |
+
+`docs/lang/`이 아닌 이유: 다음 슬라이스들(D16 caller-allocates·context handle, 문자열·구조체
+마샬링, 콜백)은 **언어가 아니라 ABI·메모리** 작업이다. `docs/lang/`은 즉시 `docs/abi/`를 함께
+요구하게 된다. 이미 있는 D17도 언어이자 ABI다.
+
+`docs/phase1.5/`가 아닌 이유: phase 번호는 다시 이름을 바꿔야 한다.
+
+## 색인
+
+> **이 표를 슬라이스마다 갱신한다.** 이 폴더가 그냥 쌓이기만 하면 옮긴 의미가 없다(Grok 지적).
+> 현재 상태·다음 작업의 정본은 언제나 `docs/STATUS.md`.
+
+| 슬라이스 | 상태 | 무엇을 더했나 | SPEC / 구현 PR |
+|---------|------|--------------|----------------|
+| [D17 에러 경로](SPEC-D17-error-abi.md) | ✅ 구현 완료 | 실패 가능 함수 `-> T!`, `error NAME = N`, `fail NAME` → i32 status + out-param | #14 / #15 |
+| [지역 변수 `let`](SPEC-let-locals.md) | ✅ 구현 완료 | 블록 스코프·불변·타입 추론 지역 변수 | #25 / #26 |
+| [`i32` 타입](SPEC-i32.md) | ✅ 구현 완료 | 부호 있는 32비트 정수(`int32_t`/`Integer` 매핑), `i32 /`는 범위 밖 | #29 / #31 |
+| [가변 지역 변수 `let mut`](SPEC-let-mut.md) | ✅ 구현 완료 | `let mut` + 대입문(문이지 식이 아님) | #32 / #39 |
+
+## 다음 슬라이스 (SPEC 미작성)
+
+`docs/STATUS.md` §3이 우선순위의 정본이다. 후보: `while`(`let mut` 대입을 그대로 재사용),
+복합 대입(`+= -= *=`), D16 caller-allocates 반환 / context handle, 문자열·구조체 마샬링,
+1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
+
+**스펙 없는 구현은 시작하지 않는다.** 새 슬라이스는 이 폴더에 `SPEC-<이름>.md`를 쓰고 사용자
+확인을 받은 뒤 착수하며, 머지 후 위 색인에 한 줄을 추가한다.

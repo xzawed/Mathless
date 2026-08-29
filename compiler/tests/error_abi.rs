@@ -1,4 +1,4 @@
-//! D17 error-path slice (SPEC docs/phase1/SPEC-D17-error-abi.md, PR #14): a fallible
+//! D17 error-path slice (SPEC docs/slices/SPEC-D17-error-abi.md, PR #14): a fallible
 //! function `-> T!` lowers to the D17 ABI (i32 status + out-param), `fail CODE` returns a
 //! module-defined positive code, `return e` succeeds. Q13 = flat i32.
 //!

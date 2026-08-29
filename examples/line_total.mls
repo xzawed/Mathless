@@ -1,0 +1,6 @@
+// Numeric-conversion slice: `qty as f64` lets a count meet a price. Before this, `each * qty`
+// was a type error and a subtotal had to be computed with a loop that added the price qty
+// times — measured, not hypothetical.
+export fn line_total(each: f64, qty: i32) -> f64 {
+  return each * (qty as f64)
+}

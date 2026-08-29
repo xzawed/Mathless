@@ -16,7 +16,8 @@
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
 //! mul      := unary (('*'|'/') unary)*
-//! unary    := ('-'|'!') unary | primary
+//! unary    := ('-'|'!') unary | cast
+//! cast     := primary ('as' type)*
 //! primary  := number | 'true' | 'false' | ident | ident '(' args? ')' | '(' expr ')'
 //! ```
 
@@ -332,13 +333,13 @@ impl Parser {
         Ok(lhs)
     }
 
-    /// `unary := ('-' | '!') unary | primary` — binds tighter than `*` and `/`, and is
+    /// `unary := ('-' | '!') unary | cast` — binds tighter than `*` and `/`, and is
     /// right-recursive so `- -x` and `!!b` parse (SPEC-unary DP-U3).
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         let op = match self.peek() {
             Token::Minus => UnOp::Neg,
             Token::Bang => UnOp::Not,
-            _ => return self.parse_primary(),
+            _ => return self.parse_cast(),
         };
         self.pos += 1;
         let operand = self.parse_unary()?;
@@ -346,6 +347,21 @@ impl Parser {
             op,
             operand: Box::new(operand),
         })
+    }
+
+    /// `cast := primary ('as' type)*` — binds tighter than unary, so `-x as f64` is
+    /// `-(x as f64)`. Left-associative, so `x as i32 as f64` chains.
+    fn parse_cast(&mut self) -> Result<Expr, ParseError> {
+        let mut e = self.parse_primary()?;
+        while self.peek() == &Token::As {
+            self.pos += 1;
+            let to = self.parse_type()?;
+            e = Expr::Cast {
+                to,
+                operand: Box::new(e),
+            };
+        }
+        Ok(e)
     }
 
     fn parse_mul(&mut self) -> Result<Expr, ParseError> {
@@ -474,6 +490,7 @@ mod tests {
             ("export fn f(mut: f64) -> f64 { return 0.0 }", "mut"),
             ("export fn f(let: f64) -> f64 { return 0.0 }", "let"),
             ("export fn f() -> f64 { let if = 1.0 return 1.0 }", "if"),
+            ("export fn f(as: f64) -> f64 { return 0.0 }", "as"),
         ] {
             let err = parse(tokenize(src).unwrap()).unwrap_err();
             let msg = format!("{err:?}");

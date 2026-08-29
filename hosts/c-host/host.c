@@ -29,6 +29,7 @@
 #include "negate_if.h"
 #include "count_bounded.h"
 #include "discount4.h"
+#include "line_total.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
@@ -37,6 +38,7 @@ typedef int32_t (*sum_to_fn)(int32_t);
 typedef int32_t (*negate_if_fn)(int32_t, bool);
 typedef int32_t (*count_bounded_fn)(int32_t, int32_t);
 typedef double (*discount4_fn)(double, bool);
+typedef double (*line_total_fn)(double, int32_t);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -57,6 +59,8 @@ _Static_assert(_Generic(&mlx_count_bounded, count_bounded_fn: 1, default: 0),
                "generated mlx_count_bounded signature changed");
 _Static_assert(_Generic(&mlx_discount4, discount4_fn: 1, default: 0),
                "generated mlx_discount4 signature changed");
+_Static_assert(_Generic(&mlx_line_total, line_total_fn: 1, default: 0),
+               "generated mlx_line_total signature changed");
 
 static int failures = 0;
 
@@ -186,12 +190,24 @@ int main(int argc, char **argv) {
     check(GetProcAddress(h4, "vip_rate") == NULL, "the internal helper is not exported");
     check(GetProcAddress(h4, "mlx_vip_rate") == NULL, "...not under the mlx_ prefix either");
 
+    /* --- line_total.dll: a cast lets a count meet a price. --- */
+    HMODULE lt = load(dir, "line_total.dll");
+    if (lt == NULL) {
+        return 1;
+    }
+    line_total_fn line_total = (line_total_fn)sym(lt, "mlx_line_total");
+    if (line_total) {
+        check(line_total(2.5, 4) == 10.0, "line_total(2.5, 4) == 10 (qty as f64)");
+        check(line_total(2.5, 0) == 0.0, "line_total(2.5, 0) == 0");
+    }
+
     FreeLibrary(d);
     FreeLibrary(s);
     FreeLibrary(w);
     FreeLibrary(u);
     FreeLibrary(l);
     FreeLibrary(h4);
+    FreeLibrary(lt);
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

@@ -148,7 +148,7 @@ fn collect_calls(body: &[Stmt], out: &mut Vec<String>) {
                     expr(a, out);
                 }
             }
-            Expr::Unary { operand, .. } => expr(operand, out),
+            Expr::Unary { operand, .. } | Expr::Cast { operand, .. } => expr(operand, out),
             Expr::Binary { lhs, rhs, .. } => {
                 expr(lhs, out);
                 expr(rhs, out);
@@ -582,6 +582,33 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                 ty,
                 kind: IrExprKind::Unary {
                     op: ir_op,
+                    operand: Box::new(operand),
+                },
+            })
+        }
+        Expr::Cast { to, operand } => {
+            let operand = check_expr(operand, scope, fname, sigs)?;
+            let to = ir_type(*to);
+            // Numeric only. `bool` is neither a source nor a target: numbers are not truthy
+            // and truth is not numeric, which is the stance conditions already take.
+            let ok = matches!(
+                (operand.ty, to),
+                (IrType::I32, IrType::F64)
+                    | (IrType::F64, IrType::I32)
+                    | (IrType::I32, IrType::I32)
+                    | (IrType::F64, IrType::F64)
+            );
+            if !ok {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': cannot cast {} to {to} — `as` converts between f64 \
+                     and i32 only, and bool is not convertible",
+                    operand.ty
+                )));
+            }
+            Ok(IrExpr {
+                ty: to,
+                kind: IrExprKind::Cast {
+                    to,
                     operand: Box::new(operand),
                 },
             })

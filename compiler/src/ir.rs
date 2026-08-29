@@ -111,6 +111,14 @@ pub enum IrExprKind {
         op: IrUnOp,
         operand: Box<IrExpr>,
     },
+    /// `e as T`. The value semantics are a **Mathless rule**, not "whatever the target's
+    /// cast does": `f64 -> i32` truncates toward zero, saturates at the bounds, and maps NaN
+    /// to 0 (SPEC-numeric-conversion section 2.3). Rust's `as` happens to match, but C's cast
+    /// is UB out of range — a C backend has to implement this deliberately.
+    Cast {
+        to: IrType,
+        operand: Box<IrExpr>,
+    },
     Binary {
         op: IrBinOp,
         lhs: Box<IrExpr>,

@@ -161,6 +161,12 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &work,
     )
     .expect("emit discount4");
+    let line_total = emit_artifacts(
+        include_str!("../../../examples/line_total.mls"),
+        "line_total",
+        &work,
+    )
+    .expect("emit line_total");
 
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -216,6 +222,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &negate_if.dll,
         &count_bounded.dll,
         &discount4.dll,
+        &line_total.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

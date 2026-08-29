@@ -53,7 +53,9 @@
 ## 3. 잔여 작업 — 다음 세션 착수
 
 ### 3a. 즉시 재개 (확인/블록 대기)
-- ~~**수용 D (Gate D)**~~ — **닫힘(2026-08-29, C 쪽).** 원인은 툴체인 부재가 아니라 **PATH 미설정**이었다:
+- ~~**수용 D (Gate D)**~~ — **닫힘(2026-08-29, C 쪽).** **두 머신에서 확인**: 이 개발 머신과
+  GitHub `windows-latest` 러너(CI가 `MATHLESS_GATE_D=require`로 강제 — skip이면 실패).
+  원인은 툴체인 부재가 아니라 **PATH 미설정**이었다:
   MSVC Build Tools 2022가 이미 설치돼 있었고(`cl` 19.44 / `dumpbin` / `link`), `vcvars64.bat`으로
   잡으면 정상 동작한다. `hosts/c-host/host.c`(C11) + `hosts/rust-oracle/tests/c_host.rs`.
   **남은 것: Delphi(`dcc64`)** — D14의 플래그십이므로 호스트 서사는 아직 절반이다.

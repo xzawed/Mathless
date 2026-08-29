@@ -354,6 +354,36 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str) -> Result<IrExpr, TypeError>
                 "function '{fname}': unknown variable '{name}'"
             ))),
         },
+        Expr::Unary { op, operand } => {
+            let operand = check_expr(operand, scope, fname)?;
+            let (ir_op, ty) = match op {
+                ast::UnOp::Neg => {
+                    if !matches!(operand.ty, IrType::F64 | IrType::I32) {
+                        return Err(TypeError::new(format!(
+                            "function '{fname}': unary `-` needs f64 or i32, found {}",
+                            operand.ty
+                        )));
+                    }
+                    (IrUnOp::Neg, operand.ty)
+                }
+                ast::UnOp::Not => {
+                    if operand.ty != IrType::Bool {
+                        return Err(TypeError::new(format!(
+                            "function '{fname}': unary `!` needs bool, found {}",
+                            operand.ty
+                        )));
+                    }
+                    (IrUnOp::Not, IrType::Bool)
+                }
+            };
+            Ok(IrExpr {
+                ty,
+                kind: IrExprKind::Unary {
+                    op: ir_op,
+                    operand: Box::new(operand),
+                },
+            })
+        }
         Expr::Binary { op, lhs, rhs } => {
             let lhs = check_expr(lhs, scope, fname)?;
             let rhs = check_expr(rhs, scope, fname)?;

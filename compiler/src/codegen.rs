@@ -171,6 +171,25 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
+        IrExprKind::Unary { op, operand } => {
+            // Backend safety net for directly-built IR, in the same spirit as
+            // `block_always_returns`: Rust's `!` is a *bitwise* complement on integers, so
+            // emitting `Not` on a non-bool would silently mean something else. Source can't
+            // get here — typeck rejects it — but the IR is a public type (Grok verify).
+            debug_assert!(
+                !matches!(op, IrUnOp::Not) || operand.ty == IrType::Bool,
+                "IrUnOp::Not on {:?}: Rust's `!` is bitwise on integers",
+                operand.ty
+            );
+            // Parenthesised like the binary case, so precedence never depends on the target
+            // language's table. Rust's unary binds tighter than `*` anyway; this makes it
+            // explicit and survives a future C backend unchanged.
+            let sym = match op {
+                IrUnOp::Neg => "-",
+                IrUnOp::Not => "!",
+            };
+            format!("({sym}{})", emit_expr(operand))
+        }
         IrExprKind::Binary { op, lhs, rhs } => {
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }

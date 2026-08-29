@@ -26,11 +26,13 @@
 #include "discount.h"
 #include "safe_div.h"
 #include "sum_to.h"
+#include "negate_if.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
 typedef int32_t (*safe_div_fn)(double, double, double *);
 typedef int32_t (*sum_to_fn)(int32_t);
+typedef int32_t (*negate_if_fn)(int32_t, bool);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -45,6 +47,8 @@ _Static_assert(_Generic(&mlx_safe_div, safe_div_fn: 1, default: 0),
                "generated mlx_safe_div signature changed");
 _Static_assert(_Generic(&mlx_sum_to, sum_to_fn: 1, default: 0),
                "generated mlx_sum_to signature changed");
+_Static_assert(_Generic(&mlx_negate_if, negate_if_fn: 1, default: 0),
+               "generated mlx_negate_if signature changed");
 
 static int failures = 0;
 
@@ -138,9 +142,21 @@ int main(int argc, char **argv) {
         check(sum_to(0) == 0, "sum_to(0) == 0 (body runs zero times)");
     }
 
+    /* --- negate_if.dll: unary `-` and `!`. --- */
+    HMODULE u = load(dir, "negate_if.dll");
+    if (u == NULL) {
+        return 1;
+    }
+    negate_if_fn negate_if = (negate_if_fn)sym(u, "mlx_negate_if");
+    if (negate_if) {
+        check(negate_if(7, false) == 7, "negate_if(7, false) == 7 (!flip)");
+        check(negate_if(7, true) == -7, "negate_if(7, true) == -7 (unary minus)");
+    }
+
     FreeLibrary(d);
     FreeLibrary(s);
     FreeLibrary(w);
+    FreeLibrary(u);
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

@@ -13,7 +13,8 @@
 //! expr     := compare
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
-//! mul      := primary (('*'|'/') primary)*
+//! mul      := unary (('*'|'/') unary)*
+//! unary    := ('-'|'!') unary | primary
 //! primary  := number | 'true' | 'false' | ident | '(' expr ')'
 //! ```
 
@@ -290,8 +291,24 @@ impl Parser {
         Ok(lhs)
     }
 
+    /// `unary := ('-' | '!') unary | primary` — binds tighter than `*` and `/`, and is
+    /// right-recursive so `- -x` and `!!b` parse (SPEC-unary DP-U3).
+    fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        let op = match self.peek() {
+            Token::Minus => UnOp::Neg,
+            Token::Bang => UnOp::Not,
+            _ => return self.parse_primary(),
+        };
+        self.pos += 1;
+        let operand = self.parse_unary()?;
+        Ok(Expr::Unary {
+            op,
+            operand: Box::new(operand),
+        })
+    }
+
     fn parse_mul(&mut self) -> Result<Expr, ParseError> {
-        let mut lhs = self.parse_primary()?;
+        let mut lhs = self.parse_unary()?;
         loop {
             let op = match self.peek() {
                 Token::Star => BinOp::Mul,
@@ -299,7 +316,7 @@ impl Parser {
                 _ => break,
             };
             self.pos += 1;
-            let rhs = self.parse_primary()?;
+            let rhs = self.parse_unary()?;
             lhs = Expr::Binary {
                 op,
                 lhs: Box::new(lhs),

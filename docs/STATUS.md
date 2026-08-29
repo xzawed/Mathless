@@ -1,187 +1,132 @@
-# STATUS — 세션 핸드오프 (현재 상태 · 잔여 작업)
+# STATUS — 세션 핸드오프 (현재 상태 · 다음 작업)
 
-> **스냅샷: 2026-08-29.** 다음 세션은 이 문서를 먼저 읽는다. 측정값은 그 시점 `main` 기준이며,
-> `git log`·`docs/phase1/*`(phase 계획)·`docs/slices/*`(기능 SPEC)이 정본이다. 이 문서가 오래되면 갱신하거나 폐기한다.
+> **스냅샷: 2026-08-30.** 새 세션은 이 문서를 **먼저** 읽는다. 측정값은 그 시점 `main` 기준이며,
+> `git log`·`docs/slices/README.md`·각 SPEC이 정본이다. 이 문서가 오래되면 갱신하거나 폐기한다.
+>
+> 이 문서는 **현재와 다음**만 담는다. 지난 작업의 서사는 §8의 색인과 `git log`로 간다.
 
 ## 1. 현재 상태 (실측, `main`)
 
-- **테스트:** `cargo test --workspace` = **169 pass / 0 fail**. `clippy -D warnings` clean, `fmt` clean.
-- **CI:** GitHub Actions — `windows-latest`(정본: 수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`)
-  + `ubuntu-latest`(프런트엔드 보험 — 실측 **107개 중 88개 실행**, 나머지 19개는 `cfg(windows)`라
-  컴파일 제외). 툴체인 핀 `rust-toolchain.toml` = 1.97.1.
-- **코드:** ~3,308 LOC Rust. `src`에 TODO/FIXME 없음.
-- **언어(surface):** 타입 `f64` / `bool` / `i32`; `if`(else 없음)/`return`; **실패 가능 함수**(`-> T!`,
-  `error NAME=N` + `fail NAME`, i32 status + out-param, D17/Q13); **지역 변수**(`let` 불변 / `let mut` +
-  대입, 블록 스코프).
-- **파이프라인:** `mlc` = lex → parse → typecheck → 백엔드 독립 IR → codegen(IR → `no_std`
-  `extern "C"` Rust → `cargo` cdylib). **CLI** `mlc build <f.mls> -o <dir>` → `.dll`+`.h`+`.pas`.
-  **오라클**(Rust kernel32)이 산출 모듈을 로드·호출.
-- **수용:** A(컴파일)·B(오라클 로드/호출)·C(export/strip 프록시)·**D(실제 C 호스트 로드) 통과**
-  — MSVC `cl`로 빌드한 `hosts/c-host/host.c`가 생성 `.h`를 컴파일하고 LoadLibrary/GetProcAddress로
-  호출. **Delphi는 여전히 미검증**(`dcc64` 없음, `.pas`는 DRAFT 유지).
-- **문서/메타:** README EN/KO + GitHub About 갱신. Q13 닫힘(`OPEN_QUESTIONS` #28), D17 상세
-  `DECISIONS`(#30) 반영.
+- **테스트:** `cargo test --workspace` = **169 pass / 0 fail**. `clippy -D warnings`·`fmt` clean.
+- **CI 두 잡:** `windows-latest`가 **정본**(수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`로 skip 금지),
+  `ubuntu-latest`는 프런트엔드 보험(수용 테스트는 `cfg(windows)`라 거기선 컴파일되지 않는다).
+  툴체인 핀 `rust-toolchain.toml` = 1.97.1.
+- **코드:** ~3,700 LOC(Rust + C 호스트). `src`에 TODO/FIXME 없음.
+- **수용 A/B/C/D 전부 통과.** **단 D는 C 쪽만이다** — MSVC로 빌드한 C11 호스트가 산출 DLL을
+  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **체크 20개**).
+  **Delphi는 미검증**(`dcc64` 부재를 실측 확인) → 생성 `.pas`는 DRAFT 유지. D14의 공식 쌍 중 **C만 증명됨**.
+- **산출물:** `mlc build <f.mls> -o <dir>` → `.dll` + `.h` + `.pas`. `discount.dll` = **9,728 B**,
+  export는 **정확히 2개**(`mlx_*` + `ml_module_abi_version`, 자체 PE 리더 + `dumpbin` 교차 확인).
+- **라이선스:** Apache-2.0 OR MIT 이중.
 
-## 2. 이번 세션 요약
+## 2. 오늘 컴파일되는 언어
 
-- **머지: PR #11~#31 (21건).** 하드닝(예약어/`out_value`/중복 함수·파라미터/비유한 리터럴/abi 단일소스/
-  all-paths-return을 typeck로/parser peek 경계/PE 음성 테스트/workdir 격리), CI + 툴체인 핀, `mlc build`
-  CLI, D17 에러-경로 슬라이스, `let` 지역 변수, `i32` 타입, README/About.
-- **열린 PR: #32** — `let mut`(가변 지역 변수) + 대입 슬라이스 **SPEC 초안, 설계 확인 대기**.
-- 방식: 각 슬라이스 SDD(SPEC→사용자 확인)·TDD(Red→Green)·Grok(plan+verify)·CI green·PR.
+정본은 `docs/LANGUAGE.md`의 "현재 구현된 표면". 요약:
 
-## 2b. 다음 세션(2026-08-29) 진행분
+- 타입 `f64` / `bool` / `i32`, 명시적 변환 `e as T`(암시적 혼합은 여전히 금지)
+- `export fn` / **`fn`(내부 함수)** + 호출식 — **재귀는 금지**(직접·상호)
+- 실패 가능 함수 `-> T!` + `error NAME = N` + `fail NAME`(D17: i32 status + out-param)
+- `if`(**`else` 없음**) / `while` / `return`
+- `let`(불변) / `let mut` + 대입문
+- 단항 `-` `!`, 이항 `+ - * /`(**`i32 /`는 미지원**), 비교, `&&` `||`
 
-- **3b-#1 문서 정합화 완료 (PR #34)** — 문서 전용(코드 변경 0). 실측 재확인: `cargo test --workspace`
-  **(당시) 67 pass / 0 fail**, `mlc build examples/discount.mls` → `discount.dll` **9,728 B** + `.h` + `.pas`.
-  *(그 시점의 기록이다. 당시엔 `cl`을 못 찾아 수용 D를 BLOCKED로 봤으나, 이는 오진이었다 — 아래 참고.)*
-  Grok verify가 **실제 과대 주장 1건**을 잡음: "ABI major 불일치 시 로드 거부"는 구현되어 있지 않다
-  (`Module::load`는 `LoadLibraryW`만, 오라클은 로드 **후** 값 일치를 assert). 리포 전체 4곳을 "호스트
-  계약 / 여기서는 미강제"로 수정.
-- **3b-#2 W1 fixture 제거 완료 (PR #35)** — 테스트 67 → 66.
-- **LICENSE (PR #38)** — 처음 MIT로 정한 뒤 판단 요청을 받아 **Apache-2.0 OR MIT 이중**으로 확장
-  (Rust 관례, MIT의 상위집합). 파생 질문 **Q15**(생성 산출물의 라이선스 지위) 등록.
-- **Gate-D 툴체인 (PR #37)** — **MSVC Build Tools 확정**. *(당시엔 설치가 필요하다고 봤으나, 이미 설치돼 있었다 — PR #43에서 확인.)*
-- **`let mut` 슬라이스 (SPEC #32 / 구현 #39)** — 가변 지역 변수 + 대입문. 테스트 66 → 86.
-- **SPEC 재배치 (PR #40)** — 기능 SPEC은 `docs/slices/`(색인 포함), `docs/phaseN/`은 phase 계획만.
-- **3b-#5 진단 (PR #41)** — `CompileError: Display` + `IrType: Display`. 테스트 86 → 94.
-- **3b-#4 emit 견고성 (PR #42)** — 스테이지→이동(+롤백), 모듈명 검증. 테스트 94 → 106.
-- **수용 D + 3b-#3 (PR #43)** — 실제 C 호스트가 모듈을 로드·호출. 테스트 106 → 107.
-- **진단 (PR #50)** — `return`/`fail` 뒤 죽은 코드를 "모든 경로 return 안 함"이 아니라 **"unreachable"**로
-  보고한다(기존 메시지는 멀쩡히 있는 `return`을 찾게 만들었다). 테스트 119 → 122.
-- **수치 변환 `as` (SPEC #58 / 구현 #59)** — 테스트 157 → 169. 경계 4종 측정.
-- **내부 함수·호출 (SPEC #56 / 구현 #57)** — 테스트 143 → 157. 헬퍼 비유출을 C 호스트에서 측정.
-- **논리 연산자 (SPEC #54 / 구현 #55)** — 테스트 133 → 143. `while` 조건에서 두 조건을 엮을 수 있게 됨.
-- **단항 연산자 (SPEC #51 / 구현 #53)** — 테스트 123 → 133. 실측으로 고름(음수를 못 쓰던 구멍).
-  `-i32::MIN == i32::MIN` wrap 측정. C 호스트도 확장.
-- **`while` 슬라이스 (SPEC #48 / 구현 #49)** — 테스트 107 → 119. 호스트 생존성 계약을 `HOST_ABI.md`에
-  추가(§5.1) — 이 슬라이스가 들인 **새 위험 등급**이다.
-  **Gate D가 찾아낸 실제 결함:** 생성 `.h`/`.pas`가 비-ASCII(em dash)를 담고 있어 MSVC가 코드페이지
-  경고(C4819)를 냈고 `/WX`에서 빌드가 깨졌다 — 실제 C 컴파일러에 물려보기 전엔 드러나지 않던 문제.
-  이제 생성물은 ASCII 전용이고 테스트가 이를 고정한다. `dumpbin /exports`로 자체 PE 리더도 교차 확인.
-  `discount3.dll` = **9,728 B**로 스칼라 `discount.dll`과 동일 — 가변 지역 변수는 ABI·크기에 영향 없음.
+**없는 것:** `i32` 나눗셈·나머지, `else`, `break`/`continue`, 복합 대입(`+=`), `for`,
+문자열, struct, 호스트 함수 import, 재귀.
 
-## 3. 잔여 작업 — 다음 세션 착수
+## 3. 다음 작업 — 여기서 시작한다
 
-### 3a. 즉시 재개 (확인/블록 대기)
-- ~~**수치 변환(`as`)**~~ — **완료(SPEC #58 / 구현 #59).** 실제 업무 규칙을 써 보다 찾은 구멍이었고,
-  이제 그 규칙이 루프 없이 컴파일된다. 경계 4종은 실제 모듈에서 측정됨.
-  **다음 후보: `i32` 나눗셈·나머지** — `/0`이 호스트를 죽이므로 자체 위험 설계가 필요하고(실패 가능
-  나눗셈? 정의된 결과?), **단락 평가 부채를 갚을 유력 후보**이기도 하다(트랩 가능한 첫 연산).
-- ~~**내부 함수·호출**~~ — **완료(SPEC #56 / 구현 #57).** 로직을 나눌 수 있게 됐고, **헬퍼가
-  export로 새지 않음을 실제 C 호스트에서 측정**했다(`GetProcAddress` NULL). 재귀는 §5.1대로
-  타입체크에서 거부(경로 표시). **다음 후보:** `else` · `break`/`continue` · 복합 대입, 그리고
-  더 큰 것으로 D16(caller-allocates) · 문자열/구조체 · 콜백 · 두 번째 호스트.
-- ~~**논리 연산자 `&&`/`||`**~~ — **완료(SPEC #54 / 구현 #55).** 승인하신 "단항 → `&&`" 순서를 마쳤다.
-  DP-B2대로 **단락 평가는 명세하되 미측정**으로 남겼다 — 관측 가능한 구문(호출·실패 가능 연산)이
-  생기는 슬라이스에서 그때 측정한다. **이 부채를 잊지 말 것.**
-- ~~**단항 연산자 슬라이스**~~ — **완료(SPEC #51 / 구현 #53).** 실측으로 고른 슬라이스였다:
-  그전엔 **음수를 쓸 수 없었다**(`return -5` → 파스 에러). 사용자는 **단항 → `&&`/`||` 순서로 둘 다**
-  진행하기로 결정 → **다음은 `&&`/`||` SPEC**(우회 수단이 아예 없는 유일한 부류, Grok 지적).
-- ~~**`while` 슬라이스**~~ — **완료(SPEC #48 / 구현 #49).** DP-W1~W4는 Grok 권장안 그대로,
-  §5.1의 트레이드오프도 사용자 승인. **`while`은 "export를 호출하면 언젠가 돌아온다"는 성질을 깬
-  첫 구문**이므로(그전엔 호출 문법이 없어 재귀도 불가 → 모든 함수가 종료), 호스트 생존성 계약을
-  `docs/HOST_ABI.md`에 명문화했다. 수용 D의 C 호스트도 루프를 호출하도록 확장.
-- ~~**수용 D (Gate D)**~~ — **닫힘(2026-08-29, C 쪽).** **두 머신에서 확인**: 이 개발 머신과
-  GitHub `windows-latest` 러너(CI가 `MATHLESS_GATE_D=require`로 강제 — skip이면 실패).
-  원인은 툴체인 부재가 아니라 **PATH 미설정**이었다:
-  MSVC Build Tools 2022가 이미 설치돼 있었고(`cl` 19.44 / `dumpbin` / `link`), `vcvars64.bat`으로
-  잡으면 정상 동작한다. `hosts/c-host/host.c`(C11) + `hosts/rust-oracle/tests/c_host.rs`.
-  **남은 것: Delphi(`dcc64`)** — D14의 플래그십이므로 호스트 서사는 아직 절반이다.
-- ~~**PR #32 `let mut`**~~ — **완료.** DP-M1~M4 사용자 승인(2026-08-29) → SPEC 머지(#32) →
-  WM1~WM5 TDD 구현(#39). 다음 후보는 `while`(이 대입을 그대로 재사용)이나 복합 대입이지만,
-  **STATUS 3b의 잔여(#4/#5)가 먼저다.**
+### 3a. 권장: `i32` 나눗셈·나머지 슬라이스
 
-### 3b. Grok 실측 검토 — fix/improve 우선순위 (다음 세션 권장, 슬라이스와 별개)
-> **#1 완료(2026-08-29).** 21 PR 후 문서가 `main`보다 뒤처져 있었고(“awaiting confirmation” 배너,
-> README 58 → 실제 67, `LANGUAGE.md` MVP가 while/for/string을 미래로 나열, `OPEN_QUESTIONS`의 Q13
-> “DECISIONS pending” 잔여) 다음 SDD 사이클이 닫힌 작업을 재논의할 위험이 있었다 → 한 문서 PR로 해소.
-> **다음 우선순위는 #2(fixture 제거).**
+세 가지가 한 번에 걸려 있어서 다음으로 권한다.
 
-1. ~~**문서 정합화 (최우선)**~~ — **완료(문서 정합 PR).** 출시된 SPEC 4종을 `상태: 확정 · 구현 완료`로
-   전환(승인·구현 PR 번호 명기), W7 이후 작업(STEP1/W8~W10 + 하드닝 9건)을 WBS에 기록, `LANGUAGE.md`를
-   “MVP 목표(제안)” vs “현재 구현된 표면(E2)”으로 분리, README EN/KO 테스트 수 58→67 및 `i32` 반영,
-   `OPEN_QUESTIONS` Q13 잔여 문구 정리, `ARCHITECTURE`(실제 레이아웃)·`HOST_ABI`(현재 구현된 경계)·
-   `SECURITY`(P0 실측 프록시) 보강. **`DECISIONS.md`는 건드리지 않음**(규칙 8).
-2. ~~**`examples/fixture` + `loads_fixture` 제거**~~ — **완료.** 크레이트·테스트·워크스페이스 멤버·
-   `Cargo.lock` 항목 삭제. `end_to_end`가 동일한 §3-B 3개 assert를 **컴파일러 산출 DLL**로 이미 덮고
-   있어 커버리지 손실 없음. 테스트 **67 → 66**(삭제한 그 1개만 감소), fmt/clippy clean.
-3. ~~**skip-게이트 C 호스트를 `hosts/`에 추가**~~ — **완료(PR #43), 그리고 실제로 수용 D를 닫았다.**
-   MSVC가 없으면 `GATE_D_SKIPPED`를 크게 찍고 넘어가지만, **CI는 `MATHLESS_GATE_D=require`로 돌려
-   툴체인 부재를 실패로 만든다** — skip이 절대 pass로 읽히지 않도록(Grok 권고). Delphi 호스트는
-   `dcc64` 확보 시 같은 골격으로 추가.
-4. ~~**`mlc build` 산출을 원자적으로** + 나쁜 모듈 stem 거부~~ — **완료(PR #42).** 세 산출물을 `out_dir`
-   안 스테이지에 모두 만든 뒤 이동하고, 이동 실패 시 밀어냈던 기존 파일까지 되돌린다(강제 실패 테스트 2종).
-   모듈명은 진입 즉시 검증 — 식별자 + `reserved.rs` 전 대상. `if.mls`/`my-mod.mls`는 이제 cargo가 아니라
-   `mlc`가 파일명을 짚어 거부한다. **Grok 검토로 추가로 닫은 것 3건:**
-   (a) 롤백 실패 시 스테이지를 지워 **이전 산출물이 영구 손실**될 수 있었다 → 복원 못 한 백업을 보고하고
-   그 경우에만 스테이지를 남긴다. (b) 이름이 생성 `Cargo.toml`에 그대로 보간되므로 따옴표 섞인 stem이
-   TOML 문자열을 탈출할 수 있었다. (c) `reserved.rs`의 PASCAL 목록에 **`at`·`on`이 빠져 있었다**
-   (모듈명뿐 아니라 파라미터·지역 변수명에도 뚫려 있던 구멍 — `on.mls`는 빌드에 성공해 `unit on;`을
-   내보냈다. 근거 E1, dcc64 없음). Windows 예약 장치명(`nul` 등)도 거부.
-5. ~~**`CompileError`에 실제 `Display`**~~ — **완료.** `CompileError`가 `Display` + `std::error::Error`
-   (`source()`)를 구현하고 실패한 단계에 위임한다. `EmitError::Compile`은 더 이상 `{e:?}`로 감싸지
-   않는다. CLI 실측: `mlc: parse error at 1:13: expected parameter name, found keyword \`mut\` …`
-   (이전에는 `mlc: compile error: Parse(ParseError { … })`). 실제 바이너리를 돌려 stderr를 단언하는
-   테스트 포함. `IrType`에 `Display`를 붙여 진단이 `F64`가 아니라 표면 이름 `f64`를 인용한다.
-   **남은 것:** `TypeError`에는 아직 line/col이 없다(AST에 span이 없음 — 별도 작업, ROADMAP Phase 3).
-6. ~~**`ubuntu-latest` 컴파일 전용 CI 잡**~~ — **완료(PR #45).** 비-`cfg(windows)` 프런트엔드에
-   `fmt`/`clippy -D warnings`/`test`를 두 번째 OS에서 돌린다. lex/parse/typeck·생성기·CLI·임시경로
-   코드에 Windows 전용 가정이 스며드는 것을 잡는 **보험**이며 권위는 windows 잡에 있다(수용 테스트는
-   전부 `cfg(windows)`라 여기선 컴파일되지 않는다). **D22 아님** — `.so`/ELF 빌드·로드 없음.
-7. ~~**`grok_build_plan`을 착수 게이트에서 내림**~~ — **완료(PR #46, `CLAUDE.md`).** 다만 원안보다
-   정확하게: plan은 **설계·구성 선택에서는 유용했고**(`docs/slices/` 결정을 실제로 바꿈) 일상적 구현에서만
-   얇았다 → 조건부 착수 게이트. verify는 필수 완료 게이트로 유지하되 **좁게** 써야 한다(넓은 프롬프트는
-   540초·600초 두 번 타임아웃, 쪼개면 매번 완료). verify의 지적은 코드로 재확인 후 반영한다.
-8. ~~**새 언어 SPEC를 `docs/phase1/`에서 이동**~~ — **완료.** 기능 슬라이스 SPEC 4종을
-   **`docs/slices/`**로 옮기고, `docs/phase1/`에는 phase(캠페인) 문서인 `SPEC.md` + `WBS.md`만 남겼다.
-   Grok 교차검토도 `docs/slices/` 지지(`docs/lang/`은 다음 슬라이스들이 ABI 작업이라 즉시
-   `docs/abi/`를 요구하고, phase 번호는 다시 개명해야 함). Grok의 반론("평평한 폴더는 결국 같은
-   더미가 된다")에 따라 **`docs/slices/README.md` 색인**을 함께 둔다 — 슬라이스마다 갱신할 것.
+1. **실제 구멍이다.** `cents / 100` 같은 정수 산술이 안 된다(DP-I3가 미뤄 둠).
+2. **자체 위험 설계가 필요하다.** `i32 /0`은 `no_std`+`panic=abort` 모듈에서 **호스트를 죽인다** —
+   재귀 금지와 같은 등급이다. 다만 재귀와 달리 **정적으로는 판정 불가**하고 **런타임에는 판정 가능**하다.
+   선택지: 실패 가능 나눗셈(`-> T!`, D17 재사용) / 정의된 결과(`x/0 = 0`) / 호출자 사전 검사 강제.
+   **어느 쪽이든 "문서화만"으로 끝내지 말 것** — 막을 수 있으면 막는다는 것이 이 저장소의 선례다.
+3. **부채를 갚을 유력 후보다.** 트랩 가능한 첫 연산이 생기므로 `&&`의 단락 평가를 **처음으로 관측**할 수
+   있다(§5-1).
 
-### 3c. 사용자 결정 대기
-- **`as`의 결합 우선순위 — 실측된 Rust/C# 차이.** 우리는 `as`를 단항보다 **강하게** 묶어
-  `-x as f64` = `-(x as f64)`로 읽는다(SPEC-numeric-conversion §2.1, 승인됨). 그런데 `as`라는
-  **철자를 쓰는 언어는 전부 반대다** — Rust·C#·Kotlin은 `as`가 단항보다 느슨해 `(-x) as f64`다.
-  C/C++엔 `as`가 없고 캐스트가 단항 레벨이라 우리와 같다.
-  - **측정:** 두 규칙은 `i32::MIN`에서만 갈리고 **부호가 반대다** — `2147483648`(우리) vs
-    `-2147483648`(Rust 규칙). 오라클 테스트가 이 값을 고정한다.
-  - **제안:** Rust 결합으로 바꾼다. 표면이 이미 Rust 계열(`fn`/`let mut`/`->`/`T!`)이고 `as`도
-    거기서 빌려왔으므로, 조용한 차이는 함정이다. 파서 한 줄(`cast`를 `unary` 위로).
-  - **반론:** 승인된 DP를 뒤집는 것이고, 지금 동작은 문서화·측정되어 있다. 그래서 임의로 바꾸지 않았다.
-- **예약어 검사의 범위 — 실측된 불편.** 실제 업무 규칙을 써 보다가 **내부 함수의 파라미터 `unit`이
-  "Pascal 예약어"로 거부**됐다. 그 이름은 Delphi 유닛에 **절대 나가지 않는다**(내부 함수는 바인딩에서
-  제외된다). Pascal 예약어에는 `unit`·`type`·`set`·`file`·`string`·`record`·`to`·`in`·`at`·`on`·`end`
-  처럼 흔한 단어가 많아 **지역 변수·내부 함수 파라미터에서 특히 아프다**.
-  - **제안:** 이름이 **실제로 도달하는 대상만** 검사한다 — export 함수의 파라미터는 전 대상(헤더·유닛에
-    나감), **내부 함수의 파라미터와 모든 지역 변수는 Rust만**(거기에만 방출됨).
-  - **반론:** D19가 열어 둔 C-emit 백엔드가 생기면 내부 이름도 C에 나간다. 그때 규칙을 다시 좁혀야 한다.
-  - SPEC-calls DP-C5가 "불편하면 나중에 완화(가산적)"로 열어 둔 항목이다. 결정해 주시면 반영한다.
-- ~~**LICENSE**~~ — **Apache-2.0 OR MIT 이중 확정**(2026-08-29). 처음 MIT로 정한 뒤, 사용자 요청으로
-  판단해 Rust 생태계 관례인 이중으로 확장(MIT의 상위집합 — 특허 허여 추가, GPLv2 호환 유지).
-  `LICENSE-APACHE`/`LICENSE-MIT`, README EN/KO, CONTRIBUTING 반영 완료.
-  - **남은 것:** 저작권자 표기는 계정명 `xzawed`다. 법인/실명이 필요하면 한 줄 PR.
-  - **남은 것:** **Q15**(생성 산출물·`ml_abi.h`의 라이선스 지위) — `OPEN_QUESTIONS.md`에 기록됨.
-- **홈페이지 URL**: About 텍스트는 갱신됨, URL만 미설정.
-- ~~**수용 D 툴체인**~~ — **완료.** MSVC Build Tools로 결정(2026-08-29) → 설치가 **이미 되어 있었음**을
-  발견 → 수용 D 통과(PR #43) → `DECISIONS.md` **D21 갱신**(사용자 확인 후, PR #44).
-- **Delphi(`dcc64`) 확보 여부 — 사용자 결정.** D14의 플래그십이자 남은 절반이다. **부재는 실측으로
-  확인했다**(재조사 불필요): `dcc64`/`fpc` PATH에 없음, 레지스트리의 `Embarcadero\Studio\15.0`은
-  **제거된 설치의 잔재**(`BDS` 키 비어 있고 `C:\Program Files (x86)\Embarcadero` 없음), 디스크 탐색에도
-  Pascal 컴파일러 없음. 설치하면 `hosts/c-host`와 같은 골격으로 Delphi 호스트를 붙일 수 있다
-  (skip-게이트 + CI require 방식 그대로).
-- **D22(SO/ELF) 개시 여부.** (새 SPEC 위치 3b-#8은 `docs/slices/`로 해소됨.)
+SPEC부터 쓴다: `docs/slices/SPEC-i32-division.md` → 사용자 확인 → TDD.
 
-### 3d. 하지 말 것 (Grok)
-- 위 문서 정합(#1)과 emit 버그 2건(#4)이 닫히기 전에는 **D16 / 문자열·구조체 / 콜백 / 두 번째 호스트**를
-  시작하지 않는다.
-- **`packager/`·빈 `backend/`·`host/delphi` 크레이트 생성 금지** — D18은 아직 평범한 DLL + export 심볼,
-  지금 크레이트는 조기 경계.
-- **D22(`.so`/ELF) 미개시** — 명시적 “D22 개시” 결정 필요. Linux 컴파일 전용 잡은 D22가 아니다.
+### 3b. 다른 후보 (모두 우회 수단이 있어 급하지 않다)
 
-## 4. 다음 세션 재개 방법
+`else`(`if c { } if !c { }`로 우회) · `break`/`continue`(플래그) · 복합 대입(`i = i + 1`) · `for`.
 
-1. 이 문서 → `README.md`(문서 지도) → `docs/phase1/WBS.md`(phase 계획) → `docs/slices/README.md`(기능 슬라이스 색인) 순.
-2. 규칙: `CLAUDE.md`·`CONTRIBUTING.md`. 절차 = **SPEC → (사용자 확인) → TDD(Red→Green) → Grok verify → PR → squash-merge**.
-3. `main` 직접 커밋 금지. 각 변경은 CI(`windows-latest`, 툴체인 핀) green + Grok verify 후 머지.
-4. **STATUS 3b 목록은 전부 닫혔고**(#1~#8), 수용 A/B/C/D도 통과했다. 언어 슬라이스는 `let mut` ✅ → `while` ✅까지 왔다. 다음은 `docs/slices/README.md`의 "열린 SPEC"과 "다음 슬라이스" 절을 본다.
+그다음의 큰 것들: **D16**(caller-allocates 반환 / context handle) · **문자열·구조체 마샬링**(Q12
+소유권 결정 필요) · **1단계 콜백** · **두 번째 호스트(C#)**. ROADMAP Phase 2의 내용이며, 각각 자체
+SPEC이 필요하다.
+
+## 4. 사용자 결정 대기
+
+측정은 끝났고 판단만 남은 것들이다. **혼자 정하지 않았다.**
+
+1. **`as`의 결합 우선순위.** 우리는 단항보다 **강하게** 묶어 `-x as f64` = `-(x as f64)`(승인된
+   DP-N1/§2.1). 그런데 `as`를 쓰는 언어(Rust·C#·Kotlin)는 전부 **느슨하게** 묶는다.
+   **측정:** `i32::MIN`에서만 갈리고 **부호가 반대** — `2147483648`(우리) vs `-2147483648`.
+   오라클이 두 값을 고정한다. **권고: Rust 결합으로 전환**(표면이 Rust 계열이라 조용한 차이는 함정).
+   파서 한 줄. **반론:** 승인된 DP를 뒤집는 것이고 현재 동작은 문서화·측정되어 있다.
+2. **예약어 검사 범위.** 내부 함수의 파라미터 `unit`이 "Pascal 예약어"로 거부된다 — 내부 이름은
+   Delphi 유닛에 나가지 않는데도. Pascal은 `unit`·`type`·`set`·`file`·`string`·`record`·`to`·`in`·
+   `at`·`on`·`end` 같은 흔한 말을 예약한다. **권고:** 이름이 **실제 도달하는 대상만** 검사(export
+   파라미터=전 대상, 내부 파라미터·지역 변수=Rust만). **반론:** C-emit 백엔드가 생기면 다시 좁혀야 한다.
+   (SPEC-calls DP-C5가 열어 둔 항목.)
+3. **Q15 — 생성 산출물의 라이선스 지위.** 저장소는 이중 라이선스지만 `mlc`가 **생성하는** 것들(생성
+   Rust, 템플릿에서 나온 `.h`/`.pas`, 사용자 프로젝트로 복사되는 `ml_abi.h`)은 미정이다. D04(소스 미배포로
+   알고리즘 보호)와 직결된다. `OPEN_QUESTIONS.md` Q15. *라이선스 작업은 급하지 않다고 하셨다.*
+4. **LICENSE 저작권자 표기** — 현재 계정명 `xzawed`. 법인·실명이면 한 줄 PR.
+5. **홈페이지 URL** — About 텍스트는 갱신됨, URL만 미설정.
+6. **D22(`.so`/ELF) 개시 여부** — 명시적 결정 필요. Linux CI 잡은 D22가 **아니다**.
+7. **Delphi(`dcc64`) 확보 여부** — D14의 나머지 절반. **부재는 실측 확인됐다(재조사 불필요)**:
+   PATH·디스크·레지스트리 모두 없음(`Embarcadero\Studio\15.0`은 제거된 설치의 잔재). 설치하면
+   `hosts/c-host`와 같은 골격(skip-게이트 + CI require)으로 Delphi 호스트를 붙일 수 있다.
+
+## 5. 기록된 부채 — 조용히 사라지면 안 되는 것
+
+1. **`&&`/`||`의 단락 평가는 명세됐지만 측정되지 않았다.** 관측 수단이 없다(호출 식은 부작용이 없고,
+   `f64` 0나눗셈은 inf, `i32` 나눗셈 없음). "Rust `&&`로 내려가니 증명됐다"는 **백엔드 E1이지 표면
+   E2가 아니다.** → §3a 슬라이스가 갚을 후보. (SPEC-logical-ops §2.3/§5)
+2. **`while`은 호스트 스레드를 정지시킬 수 있다.** MVP가 막을 수 없어 `HOST_ABI.md`의 **생존성 계약**으로
+   다뤘다. `SECURITY.md`에는 넣지 않았다(그 문서의 위협 모델은 배포된 알고리즘). **우회 가능한 반쪽
+   방어를 넣고 안전하다고 쓰지 말 것.** (SPEC-while §5.1)
+3. **재귀는 금지다.** 정적으로 판정 가능하고 결과가 프로세스 종료이기 때문이다. **조용히 완화하지 말 것** —
+   푸는 것은 가산적 변경이며 SPEC 갱신이 따라야 한다. (SPEC-calls §5.1)
+
+## 6. 하지 말 것
+
+- **`packager/`·빈 `backend/`·`host/delphi` 크레이트 생성 금지** — 아직 조기 경계다. `hosts/c-host`처럼
+  **실제로 쓰이는 것**만 만든다.
+- **D22(`.so`/ELF) 미개시** — 명시적 결정 필요.
+- **수용 D를 언어보다 뒤처지게 두지 말 것** — 새 구문을 넣으면 `hosts/c-host/host.c`에도 추가한다.
+  지금까지 모든 슬라이스가 그렇게 했다(체크 20개).
+- **`DECISIONS.md`는 사용자 확인 없이 바꾸지 않는다**(규칙 8).
+- **생성 산출물은 ASCII로 유지** — 비-ASCII는 MSVC에서 C4819를 내고 `/WX` 빌드를 깬다(실측). 테스트가 고정.
+
+## 7. 작업 방식 (효과가 확인된 것)
+
+- **다음 슬라이스는 실측으로 고른다.** 후보를 나열하지 말고 **실제 업무 규칙을 오늘의 언어로 써 보고**
+  어디서 깨지는지 본다. "단가 × 수량이 안 된다"(곱셈을 루프로 흉내내야 했다)는 이렇게 나왔고,
+  기능 목록을 비교하는 것보다 훨씬 나은 근거였다.
+- **절차:** SPEC(`docs/slices/SPEC-*.md`) → **사용자 확인** → TDD(Red→Green) → **`grok_build_verify`** →
+  PR → squash-merge. `main` 직접 커밋 금지. 머지 후 `docs/slices/README.md` 색인에 한 줄 추가.
+- **Grok:** `grok_build_verify`는 필수 완료 게이트이고 **좁게** 써야 한다(2~3개 검증 가능한 주장 +
+  분량 상한 + REVIEW ONLY). 넓은 프롬프트는 반복해서 타임아웃했다. `grok_build_plan`은 **설계·구성
+  선택**에서 값을 했지만(그래서 `docs/slices/`와 단항→`&&` 순서가 정해졌다) 자주 비어서 돌아온다 —
+  거기서 멈추지 않는다. **verify의 지적은 코드로 재확인한 뒤 반영한다** — 기존 동작을 새 회귀로
+  오인한 사례가 있었다.
+- **주장은 측정에 묶는다.** 없는 측정을 테스트로 만들지 않는다(§5-1이 그 예다).
+
+## 8. 이력
+
+- **슬라이스 색인:** `docs/slices/README.md` — 각 슬라이스의 상태·내용·SPEC/구현 PR 번호.
+- **phase 계획:** `docs/phase1/SPEC.md` + `WBS.md`(W0~W17).
+- **2026-08-29~30 세션:** PR #34~#59(40 커밋). 문서 정합, W1 fixture 제거, emit 원자화·모듈명 검증,
+  진단(`CompileError: Display`, unreachable), SPEC 재배치(`docs/slices/`), 이중 라이선스,
+  **수용 D 종료(C)**, Linux CI 잡, 그리고 언어 슬라이스 `let mut` → `while` → 단항 → `&&`/`||` →
+  내부 함수·호출 → `as`. 서사는 `git log`가 정본이다.
+
+## 9. 새 세션 시작 절차
+
+1. 이 문서 → `README.md`(문서 지도) → `docs/slices/README.md`(슬라이스 색인) → `CLAUDE.md`(규칙).
+2. 실측부터 한다: `MATHLESS_GATE_D=require cargo test --workspace --locked`.
+3. §4에 사용자 결정이 쌓여 있으면 먼저 묻는다. 없으면 §3a로 간다.

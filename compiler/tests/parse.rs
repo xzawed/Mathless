@@ -24,6 +24,7 @@ fn parses_discount_example() {
             ],
             ret: Type::F64,
             fallible: false,
+            exported: true,
             body: vec![
                 Stmt::If {
                     cond: Expr::Var("vip".into()),
@@ -58,11 +59,14 @@ fn rejects_unknown_type() {
 
 #[test]
 fn trailing_garbage_is_not_ignored() {
-    // Tokens after the last function must not be silently dropped: parse_module
-    // loops to EOF, so `bogus` is treated as a (failed) next `export fn`.
+    // Tokens after the last function must not be silently dropped: parse_module loops to
+    // EOF, so `bogus` is treated as a (failed) next function declaration. Since `export`
+    // became optional (internal `fn`), the expected token there is `fn` rather than
+    // `export` — a more accurate message for the same rejection.
     let err = parse("export fn f() -> f64 { return 0 } bogus").unwrap_err();
+    assert!(err.message.contains("fn"), "message was: {}", err.message);
     assert!(
-        err.message.contains("export"),
+        err.message.contains("bogus"),
         "message was: {}",
         err.message
     );

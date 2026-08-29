@@ -1,0 +1,11 @@
+// Calls slice: `vip_rate` is an INTERNAL helper — declared without `export`, so it never
+// reaches the module's export table. Before this slice every function had to be exported
+// and none could call another, so logic could not be factored at all.
+fn vip_rate(vip: bool) -> f64 {
+  if vip { return 0.9 }
+  return 1.0
+}
+
+export fn discount4(price: f64, vip: bool) -> f64 {
+  return price * vip_rate(vip)
+}

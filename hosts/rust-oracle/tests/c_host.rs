@@ -155,6 +155,12 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &work,
     )
     .expect("emit count_bounded");
+    let discount4 = emit_artifacts(
+        include_str!("../../../examples/discount4.mls"),
+        "discount4",
+        &work,
+    )
+    .expect("emit discount4");
 
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -209,6 +215,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &sum_to.dll,
         &negate_if.dll,
         &count_bounded.dll,
+        &discount4.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

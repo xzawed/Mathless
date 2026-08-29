@@ -75,6 +75,24 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         .map(|p| format!("{}: {}", p.name, rust_type(p.ty)))
         .collect();
 
+    // An internal function is a plain Rust `fn`: no `#[no_mangle]`, no `extern "C"`, no
+    // `mlx_` prefix. That is what keeps it out of the export table — measured in acceptance
+    // C, not asserted here (SPEC-calls section 2.3).
+    if !f.exported {
+        let _ = writeln!(
+            out,
+            "fn {}({}) -> {} {{",
+            f.name,
+            params.join(", "),
+            rust_type(f.ret)
+        );
+        for s in &f.body {
+            emit_stmt(s, 1, false, out);
+        }
+        out.push_str("}\n");
+        return Ok(());
+    }
+
     // `write!` into a String is infallible; the `_ =` documents that.
     out.push_str("#[no_mangle]\n");
     if f.fallible {
@@ -171,6 +189,10 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
+        IrExprKind::Call { name, args } => {
+            let args: Vec<String> = args.iter().map(emit_expr).collect();
+            format!("{name}({})", args.join(", "))
+        }
         IrExprKind::Unary { op, operand } => {
             // Backend safety net for directly-built IR, in the same spirit as
             // `block_always_returns`: Rust's `!` is a *bitwise* complement on integers, so
@@ -307,6 +329,7 @@ mod tests {
                 }],
                 ret: IrType::F64,
                 fallible: false,
+                exported: true,
                 body: vec![IrStmt::If {
                     cond: IrExpr {
                         ty: IrType::Bool,

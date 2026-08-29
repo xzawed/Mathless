@@ -3,7 +3,7 @@
 //! Grammar (informal):
 //! ```text
 //! module   := function*
-//! function := 'export' 'fn' ident '(' params? ')' '->' type block
+//! function := 'export'? 'fn' ident '(' params? ')' '->' type block
 //! params   := param (',' param)*
 //! param    := ident ':' type
 //! type     := 'f64' | 'bool'
@@ -17,7 +17,7 @@
 //! add      := mul (('+'|'-') mul)*
 //! mul      := unary (('*'|'/') unary)*
 //! unary    := ('-'|'!') unary | primary
-//! primary  := number | 'true' | 'false' | ident | '(' expr ')'
+//! primary  := number | 'true' | 'false' | ident | ident '(' args? ')' | '(' expr ')'
 //! ```
 
 use crate::ast::*;
@@ -121,7 +121,14 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
-        self.eat(&Token::Export, "'export'")?;
+        // `export fn …` is visible to hosts; a bare `fn …` is internal to the module and
+        // never reaches the export table (SPEC-calls section 2.3).
+        let exported = if self.peek() == &Token::Export {
+            self.pos += 1;
+            true
+        } else {
+            false
+        };
         self.eat(&Token::Fn, "'fn'")?;
         let name = self.ident("function name")?;
         self.eat(&Token::LParen, "'('")?;
@@ -156,6 +163,7 @@ impl Parser {
             params,
             ret,
             fallible,
+            exported,
             body,
         })
     }
@@ -379,6 +387,23 @@ impl Parser {
             }
             Token::Ident(s) => {
                 self.pos += 1;
+                // `name(` is a call; a bare `name` is a variable.
+                if self.peek() == &Token::LParen {
+                    self.pos += 1;
+                    let mut args = Vec::new();
+                    if self.peek() != &Token::RParen {
+                        loop {
+                            args.push(self.parse_expr()?);
+                            if self.peek() == &Token::Comma {
+                                self.pos += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                    self.eat(&Token::RParen, "')' to close the argument list")?;
+                    return Ok(Expr::Call { name: s, args });
+                }
                 Ok(Expr::Var(s))
             }
             Token::LParen => {

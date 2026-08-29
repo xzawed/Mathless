@@ -63,6 +63,7 @@ fn compile_error_display_reports_codegen_errors() {
             params: vec![],
             ret: IrType::F64,
             fallible: false,
+            exported: true,
             body: vec![], // falls off the end
         }],
         errors: vec![],

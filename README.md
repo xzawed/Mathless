@@ -112,4 +112,14 @@ PR-first — no direct commits to `main`; each change is test-driven and gated b
 
 ## License
 
-[MIT](LICENSE).
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. This is the Rust ecosystem's conventional dual license: MIT keeps things simple and
+GPLv2-compatible, Apache-2.0 adds an explicit patent grant. Take whichever you prefer.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
+this work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any
+additional terms or conditions.

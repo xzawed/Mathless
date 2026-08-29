@@ -108,4 +108,13 @@ PR 우선 — `main`에 직접 커밋 금지. 모든 변경은 테스트 주도�
 
 ## 라이선스
 
-[MIT](LICENSE).
+다음 중 **하나를 선택**해 사용할 수 있다:
+
+- Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT ([LICENSE-MIT](LICENSE-MIT))
+
+Rust 생태계의 관례적 이중 라이선스다. MIT는 단순하고 GPLv2와 호환되며, Apache-2.0은 명시적
+특허 허여를 더한다. 편한 쪽을 고르면 된다.
+
+명시적으로 달리 밝히지 않는 한, 이 저장소에 제출된 기여는 Apache-2.0이 정의하는 바에 따라
+위와 동일하게 이중 라이선스된다.

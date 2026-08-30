@@ -1,11 +1,11 @@
 //! STEP 1 (Gate-D prep): `emit_artifacts` packages a `.mls` module into the three
 //! consumable files on disk — `<name>.dll` + `<name>.h` + `<name>.pas`.
 //!
-//! Honesty (Grok cross-check): what this test may assert is E2 — the files exist, the
-//! `.dll` is a real PE, and the `.h`/`.pas` match the text contract. Actually *compiling
-//! and loading* the `.h` from a C host or the `.pas` from Delphi stays BLOCKED (no
-//! `cl`/`gcc`/`dcc64`); this test does NOT claim that. Building the DLL needs `cargo`, so
-//! the test is Windows-gated like the other acceptance tests.
+//! What this test asserts is E2: the files exist, the `.dll` is a real PE, and the
+//! `.h`/`.pas` match the text contract. It does NOT itself compile or load them. A real C
+//! host does that in `hosts/rust-oracle/tests/c_host.rs` (acceptance D); the `.pas` has
+//! never been compiled, because there is no `dcc64` here. Building the DLL needs `cargo`,
+//! so the test is Windows-gated like the other acceptance tests.
 #![cfg(windows)]
 
 use std::path::Path;

@@ -82,7 +82,7 @@ Phase 0의 게이트(`OPEN_QUESTIONS.md`의 **Q1~Q5** — 주력 호스트 2개 
 
 ## Git 워크플로 (PR 기반, 필수)
 
-- 저장소: **GitHub Private — `xzawed/Mathless`**. 원격은 `origin`.
+- 저장소: **GitHub — `xzawed/Mathless`**. 원격은 `origin`. (공개 여부는 바뀔 수 있으니 여기 적지 않는다.)
 - **모든 변경은 PR로만 반영한다. `main`에 직접 커밋/푸시 금지.**
 - 브랜치 접두어: `docs/*`(문서), `feat/*`(구현), `fix/*`(버그), `chore/*`(도구·메타).
 - PR은 한 관심사로 좁히고, 관련 결정/질문 번호(예: `D16`, `Q12`)를 본문에 명시한다.

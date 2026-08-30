@@ -1,7 +1,8 @@
 //! STEP 1 E2 (Grok cross-check #3): the oracle loads the DLL that `mlc build` actually
 //! packages into the output directory — not just the compiler's internal build artifact —
 //! and calls the typed function through it. This proves the *packaged* module is a real,
-//! loadable C-ABI module. It does NOT touch the C/Delphi host-load gate (still BLOCKED).
+//! loadable C-ABI module. It is not itself acceptance D — a real C host does that in
+//! `c_host.rs`, and the Delphi arm still has no host.
 #![cfg(windows)]
 
 use ml_oracle::{pe, Module};

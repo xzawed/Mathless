@@ -1,6 +1,7 @@
 //! W7 acceptance (WBS W7): generate a C header + Delphi import unit that match the
-//! module's D18 ABI. NOTE: real host load (acceptance D) stays BLOCKED (no cl/gcc/dcc64),
-//! so these tests check the generated text, not an actual C/Delphi load.
+//! module's D18 ABI. These tests check the generated *text*. The C header is separately
+//! compiled and used for real by `hosts/rust-oracle/tests/c_host.rs` (acceptance D); the
+//! Delphi unit still has no host — there is no `dcc64` here.
 
 use mlc::compile_to_ir;
 use mlc::header::{emit_c_header, emit_delphi_unit};

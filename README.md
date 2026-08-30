@@ -19,17 +19,19 @@ source is not acceptable either.
 surface syntax, and the compiler turns them into a native module at compile time. Your
 application loads that module over a plain **C ABI**. What you ship is the binary.
 
-It is built for native hosts: Delphi, C, C++, C#.
+It is built for native hosts: Delphi, C, C++, C#. Today the path that has actually been proven
+end to end is C — see Status below.
 
 한국어 → **[README.ko.md](README.ko.md)**
 
 ## How it works
 
 ```
-.mls  →  parse / typecheck  →  typed IR  →  native codegen  →  module (.dll/.so)  →  [ C ABI ]  →  host
+.mls  →  parse / typecheck  →  typed IR  →  native codegen  →  module (.dll)  →  [ C ABI ]  →  host
 ```
 
-All of that happens at compile time. Nothing interprets anything at runtime, and there is no
+All of that happens at compile time. Today the module is a Windows `.dll`; a Linux `.so` is a
+target we have not taken on yet. Nothing interprets anything at runtime, and there is no
 bytecode VM. The host loads native code and calls it like any other library.
 
 ## Why

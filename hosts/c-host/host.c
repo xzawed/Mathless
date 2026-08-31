@@ -38,6 +38,7 @@
 #include "deduction.h"
 #include "pack.h"
 #include "vat.h"
+#include "carrier.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
@@ -55,6 +56,8 @@ typedef int32_t (*commission_checked_fn)(double, int32_t *, double *);
 typedef double (*vat_rate_fn)(const char *);
 typedef int32_t (*issuer_of_fn)(const char *);
 typedef bool (*is_export_item_fn)(const char *);
+typedef int32_t (*carrier_name_fn)(const char *, char *, int32_t, int32_t *);
+typedef int32_t (*carrier_label_fn)(const char *, int32_t *, char *, int32_t, int32_t *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -99,6 +102,14 @@ _Static_assert(_Generic(&mlx_issuer_of, issuer_of_fn: 1, default: 0),
                "generated mlx_issuer_of signature changed");
 _Static_assert(_Generic(&mlx_is_export_item, is_export_item_fn: 1, default: 0),
                "generated mlx_is_export_item signature changed");
+/* The Q12 buffer triple must reach C as `char*, int32_t, int32_t*` and the function must
+   return the STATUS, not the string. Getting any of the three slots wrong is the kind of
+   defect that still compiles and still produces a plausible number, so it is pinned here at
+   compile time rather than discovered by reading bytes. */
+_Static_assert(_Generic(&mlx_carrier_name, carrier_name_fn: 1, default: 0),
+               "generated mlx_carrier_name signature changed");
+_Static_assert(_Generic(&mlx_carrier_label, carrier_label_fn: 1, default: 0),
+               "generated mlx_carrier_label signature changed");
 
 static int failures = 0;
 
@@ -379,6 +390,90 @@ int main(int argc, char **argv) {
         check(is_export_item("EXP") == true, "is_export_item(\"EXP\") == true");
     }
 
+    /* --- carrier.dll: the Q12 caller-allocates protocol (SPEC-string-return section 3-D).
+       A C host is where this one belongs: the host owns the buffer, and the two-call probe is
+       an idiom a C author already knows from GetUserNameA / snprintf. Note the buffers are
+       ZEROED before every call - DP-T2 chose "the module writes nothing on failure" over the
+       Annex K fail-safe, so a correct host does not read a buffer it did not initialise. That
+       is the habit this example is here to show. --- */
+    HMODULE cr = load(dir, "carrier.dll");
+    if (cr == NULL) {
+        return 1;
+    }
+    carrier_name_fn carrier_name = (carrier_name_fn)sym(cr, "mlx_carrier_name");
+    carrier_label_fn carrier_label = (carrier_label_fn)sym(cr, "mlx_carrier_label");
+    if (carrier_name && carrier_label) {
+        char buf[64];
+        int32_t needed;
+        int32_t st;
+
+        /* Section 3-B: the ordinary call. `needed` counts the NUL, so "UPS Ground" is 11. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = carrier_name("UPSN", buf, (int32_t)sizeof buf, &needed);
+        check(st == 0, "carrier_name(\"UPSN\") status == 0");
+        check(strcmp(buf, "UPS Ground") == 0, "carrier_name(\"UPSN\") writes \"UPS Ground\"");
+        check(needed == 11, "needed == 11 (10 characters + the NUL)");
+
+        /* Section 3-B2: truncation is a FAILURE, and nothing is written. The canary here is
+           the zero fill: a partial copy would leave "UPS" in the buffer. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = carrier_name("UPSN", buf, 4, &needed);
+        check(st == ML_ST_INSUFFICIENT_BUFFER, "cap = 4 -> ML_ST_INSUFFICIENT_BUFFER");
+        check(buf[0] == '\0', "a truncated call writes nothing");
+        check(needed == 11, "and reports the exact size to allocate");
+
+        /* Section 3-B3: the probe. `ml_buf` may be NULL exactly when `ml_cap` is 0 (DP-T7),
+           and the answer is in the same unit as the capacity, so the retry always fits. */
+        needed = -7;
+        st = carrier_name("UPSN", NULL, 0, &needed);
+        check(st == ML_ST_INSUFFICIENT_BUFFER, "probe (NULL, 0) does not crash");
+        check(needed == 11, "probe reports 11");
+        char *exact = (char *)malloc((size_t)needed);
+        if (exact != NULL) {
+            memset(exact, 0, (size_t)needed); /* same habit: never read what you did not write */
+            int32_t again = -7;
+            st = carrier_name("UPSN", exact, needed, &again);
+            check(st == 0, "the probed size is enough (converges in two calls)");
+            check(strcmp(exact, "UPS Ground") == 0, "and the second call fills it");
+            free(exact);
+        }
+
+        /* Section 3-B4: exact fit is success; one less is truncation. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        check(carrier_name("UPSN", buf, 11, &needed) == 0, "cap == needed is success");
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        check(carrier_name("UPSN", buf, 10, &needed) == ML_ST_INSUFFICIENT_BUFFER,
+              "cap == needed - 1 is truncation (the NUL does not fit)");
+
+        /* Section 3-B5: an empty result is a value. `needed` is 1, never 0. */
+        memset(buf, 0xAA, sizeof buf);
+        needed = -7;
+        st = carrier_name("NONE", buf, 1, &needed);
+        check(st == 0, "an empty result is a success");
+        check(buf[0] == '\0' && needed == 1, "empty means one byte: the NUL");
+
+        /* Section 3-B6: a domain error touches neither the buffer nor needed (DP-T8). */
+        memset(buf, 0xAA, sizeof buf);
+        needed = -7;
+        st = carrier_name("ZZ99", buf, (int32_t)sizeof buf, &needed);
+        check(st == ML_ERR_E_UNKNOWN_SCAC, "an unknown code is a positive D17 status");
+        check((unsigned char)buf[0] == 0xAA, "a failed call writes no bytes");
+        check(needed == -7, "and leaves *ml_needed alone");
+
+        /* DP-O1: a declared out comes before the triple. */
+        memset(buf, 0, sizeof buf);
+        int32_t tier = -7;
+        needed = -7;
+        st = carrier_label("UPSN", &tier, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && tier == 1, "carrier_label writes the declared out first");
+        check(strcmp(buf, "UPS Ground") == 0, "...and the string into the triple");
+    }
+
+    FreeLibrary(cr);
     FreeLibrary(vt);
     FreeLibrary(dd);
     FreeLibrary(cm);

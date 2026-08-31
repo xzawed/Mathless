@@ -386,16 +386,32 @@ fn check_function(
             f.name
         )));
     }
-    // SPEC-string-input section 2.5: a string may only be a PARAMETER. Returning one asks
-    // where the bytes live, and the answer is the Q12 protocol (host buffer + capacity) —
-    // a separate slice.
+    // SPEC-string-return: a returned string uses the Q12 caller-allocates protocol, which
+    // means the module ALWAYS has a status to report — truncation is possible on every call.
+    // So `!` is mandatory (DP-T1): the surface's one mark for "check the status" must not
+    // come apart from the C-level `int32_t` return.
     if f.ret == Type::Str {
-        return Err(TypeError::new(format!(
-            "function '{}' returns `string`, which is not supported — a string can only be a \
-             parameter (it is borrowed for the call). Returning one needs the caller-allocates \
-             buffer protocol (Q12), which is a later slice",
-            f.name
-        )));
+        if !f.fallible {
+            return Err(TypeError::new(format!(
+                "function '{}' returns `string`, so it must be declared `-> string!` — the host \
+                 supplies the buffer (Q12), and a buffer too small is reported as a negative \
+                 status, so every call returns one. Write `-> string!` and the header will \
+                 declare `int32_t mlx_{}(…, char* ml_buf, int32_t ml_cap, int32_t* ml_needed)`",
+                f.name, f.name
+            )));
+        }
+        // Export-only, exactly as `-> T!` is (DP-O5 / SPEC-calls section 5.3): D17 and the
+        // buffer triple are host-boundary conventions, and there is no internal calling
+        // convention for either. The generic fallible check above already rejects an internal
+        // `-> T!`, so this is unreachable today; it stays as a guard because the two rules
+        // have different reasons and the other one could be relaxed first.
+        if !f.exported {
+            return Err(TypeError::new(format!(
+                "function '{}' returns `string!`, which must be `export`ed — the caller-allocates \
+                 buffer protocol is a host-boundary convention with no internal counterpart",
+                f.name
+            )));
+        }
     }
     let ret = ir_type(f.ret);
     let body = check_block(&f.body, &scope, ret, &f.name, f.fallible, errors, sigs)?;
@@ -553,6 +569,21 @@ fn check_stmt(
                 return Err(TypeError::new(format!(
                     "function '{fname}': return type mismatch: expected {ret}, found {}",
                     e.ty
+                )));
+            }
+            // DP-T5: v1 may return a string LITERAL or a `string` parameter, nothing else.
+            // The restriction is what keeps DP-S2 ("opaque bytes") literally true — every
+            // returned byte is either an ASCII byte from the source (DP-S4) or a byte the
+            // host itself handed in. The moment the module *produces* bytes (concatenation,
+            // number formatting) that justification is gone, and DP-S2 has to be reopened.
+            if ret == IrType::Str
+                && !matches!(e.kind, IrExprKind::ConstStr(_) | IrExprKind::Var { .. })
+            {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': only a string literal or a `string` parameter may be \
+                     returned — building a new string (concatenation, formatting) is a later \
+                     slice, because the module has no allocator and every returned byte must \
+                     come from the source or from the host"
                 )));
             }
             Ok(IrStmt::Return(e))

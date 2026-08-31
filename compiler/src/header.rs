@@ -74,6 +74,34 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     let _ = writeln!(s, "#include <stdint.h>");
     let _ = writeln!(s, "#include <stdbool.h>");
     s.push('\n');
+    // DP-T6: the truncation status lives OUTSIDE the `ML_ERR_` namespace. That namespace is
+    // the module's own (and Q14 already records that it is emitted without a module prefix,
+    // so two modules can collide); this one is a runtime-wide band, identical in every module
+    // by construction, so the `#ifndef` makes two generated headers in one translation unit
+    // benign rather than a redefinition error.
+    if module
+        .functions
+        .iter()
+        .any(|f| f.exported && f.ret == IrType::Str)
+    {
+        let _ = writeln!(
+            s,
+            "/* Q12 caller-allocates protocol: a buffer too small to hold the"
+        );
+        let _ = writeln!(
+            s,
+            " * result, NUL included. Truncation is a FAILURE, not a short"
+        );
+        let _ = writeln!(
+            s,
+            " * success - nothing is written, and *ml_needed is the exact size"
+        );
+        let _ = writeln!(s, " * to allocate, in the same unit as ml_cap. */");
+        let _ = writeln!(s, "#ifndef ML_ST_INSUFFICIENT_BUFFER");
+        let _ = writeln!(s, "#define ML_ST_INSUFFICIENT_BUFFER (-1)");
+        let _ = writeln!(s, "#endif");
+        s.push('\n');
+    }
     // D17 error codes (module-defined, positive i32). Constants — not exported symbols.
     if !module.errors.is_empty() {
         for e in &module.errors {
@@ -115,7 +143,15 @@ fn c_signature(f: &IrFunction) -> String {
             }
         })
         .collect();
-    if f.fallible {
+    if f.ret == IrType::Str {
+        // SPEC-string-return DP-T1/T4: the Q12 triple IS the return value, so it comes last
+        // (DP-O1 unchanged). `ml_cap` and `*ml_needed` are total bytes INCLUDING the NUL, on
+        // every path — so the host's retry is exactly `ml_cap = *ml_needed`.
+        parts.push("char* ml_buf".to_string());
+        parts.push("int32_t ml_cap".to_string());
+        parts.push("int32_t* ml_needed".to_string());
+        format!("int32_t mlx_{}({});", f.name, join_c_params(parts))
+    } else if f.fallible {
         // D17: i32 status return + a `T*` out-param.
         parts.push(format!("{}* out_value", c_type(f.ret)));
         format!("int32_t mlx_{}({});", f.name, join_c_params(parts))
@@ -219,7 +255,20 @@ fn delphi_signature(f: &IrFunction) -> String {
             }
         })
         .collect();
-    if f.fallible {
+    if f.ret == IrType::Str {
+        // DP-T3: `PByte`, deliberately NOT `PAnsiChar`. Both silent Delphi misspellings that
+        // the string-INPUT slice could only warn about — `PAnsiChar(S)` on a UnicodeString and
+        // `PAnsiChar(Pointer(S))` — become COMPILE ERRORS against a `PByte` parameter. Loud
+        // beats documented.
+        //
+        // `ml_buf` is a VALUE parameter, never `out ml_buf: PByte`: that spelling passes a
+        // `PByte*`, and the module would write the answer's first bytes over the host's
+        // pointer variable instead of into the buffer.
+        parts.push("ml_buf: PByte".to_string());
+        parts.push("ml_cap: Integer".to_string());
+        parts.push("out ml_needed: Integer".to_string());
+        format!("function mlx_{}({}): Integer;", f.name, parts.join("; "))
+    } else if f.fallible {
         // D17: Integer status return + an `out` param (Delphi `out` == C `T*` for f64/bool).
         parts.push(format!("out out_value: {}", delphi_type(f.ret)));
         format!("function mlx_{}({}): Integer;", f.name, parts.join("; "))

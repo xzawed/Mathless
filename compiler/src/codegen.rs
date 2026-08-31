@@ -50,6 +50,7 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
     );
 
     emit_string_helper(module, &mut out);
+    emit_strout_helper(module, &mut out);
     emit_rounding_helpers(module, &mut out);
 
     for f in &module.functions {
@@ -108,7 +109,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
             rust_type(f.ret)
         );
         for s in &f.body {
-            emit_stmt(s, 1, false, out);
+            emit_stmt(s, 1, RetAbi::Plain, out);
         }
         out.push_str("}\n");
         return Ok(());
@@ -116,7 +117,33 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
 
     // `write!` into a String is infallible; the `_ =` documents that.
     out.push_str("#[no_mangle]\n");
-    if f.fallible {
+    let abi = if f.ret == IrType::Str {
+        RetAbi::StringBuffer
+    } else if f.fallible {
+        RetAbi::Status
+    } else {
+        RetAbi::Plain
+    };
+    if abi == RetAbi::StringBuffer {
+        // SPEC-string-return: the Q12 triple IS the return value, so it goes last — DP-O1
+        // unchanged, the return value is simply three slots wide instead of one.
+        //
+        // `ml_buf` is `*mut u8`, NOT `*mut *const u8`: the module copies bytes into the
+        // host's buffer, it does not hand back a pointer. Returning a pointer to module
+        // memory would work in every test and be wrong the moment the module is unloaded.
+        //
+        // The `ml_` prefix is not decoration — it is already reserved for compiler-generated
+        // identifiers (#85), so a user parameter can never shadow the capacity.
+        params.push("ml_buf: *mut u8".to_string());
+        params.push("ml_cap: i32".to_string());
+        params.push("ml_needed: *mut i32".to_string());
+        let _ = writeln!(
+            out,
+            "pub extern \"C\" fn mlx_{}({}) -> i32 {{",
+            f.name,
+            params.join(", ")
+        );
+    } else if f.fallible {
         // D17: a fallible fn returns an `i32` status and delivers its value through a
         // `*mut T` out-param appended after the declared parameters.
         params.push(format!("out_value: *mut {}", rust_type(f.ret)));
@@ -136,7 +163,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         );
     }
     for s in &f.body {
-        emit_stmt(s, 1, f.fallible, out);
+        emit_stmt(s, 1, abi, out);
     }
     out.push_str("}\n");
     Ok(())
@@ -152,21 +179,45 @@ fn rust_type(t: IrType) -> &'static str {
     }
 }
 
-fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
+/// How a function delivers its result to the caller. Three shapes, and `return` lowers
+/// differently under each — keeping them in one enum is what stops a new one being added
+/// as a second bool that some call site forgets to thread through.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RetAbi {
+    /// Infallible: the value IS the C return.
+    Plain,
+    /// D17 fallible scalar: `i32` status + `out_value: *mut T`.
+    Status,
+    /// SPEC-string-return: `i32` status + the Q12 triple `(ml_buf, ml_cap, ml_needed)`.
+    StringBuffer,
+}
+
+fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
     let pad = "    ".repeat(indent);
     match s {
-        IrStmt::Return(e) => {
-            if fallible {
-                // Success: write the value through the out-param, return status 0 (D17).
+        IrStmt::Return(e) => match abi {
+            // The helper does everything the Q12 table promises and returns the status, so
+            // `return` here is a tail call: success 0, truncation negative, and on truncation
+            // it has written nothing (DP-T2 — the fail-safe was considered and rejected).
+            RetAbi::StringBuffer => {
+                let _ = writeln!(
+                    out,
+                    "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
+                    emit_expr(e)
+                );
+            }
+            // Success: write the value through the out-param, return status 0 (D17).
+            RetAbi::Status => {
                 let _ = writeln!(
                     out,
                     "{pad}unsafe {{ *out_value = {}; }} return 0;",
                     emit_expr(e)
                 );
-            } else {
+            }
+            RetAbi::Plain => {
                 let _ = writeln!(out, "{pad}return {};", emit_expr(e));
             }
-        }
+        },
         IrStmt::Fail(code) => {
             // Failure: return the positive domain code; the out-param is left untouched.
             let _ = writeln!(out, "{pad}return {code};");
@@ -196,7 +247,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
         IrStmt::If { cond, body } => {
             let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond));
             for st in body {
-                emit_stmt(st, indent + 1, fallible, out);
+                emit_stmt(st, indent + 1, abi, out);
             }
             let _ = writeln!(out, "{pad}}}");
         }
@@ -206,7 +257,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
             // runtime. The contract is documented in HOST_ABI instead.
             let _ = writeln!(out, "{pad}while {} {{", emit_expr(cond));
             for st in body {
-                emit_stmt(st, indent + 1, fallible, out);
+                emit_stmt(st, indent + 1, abi, out);
             }
             let _ = writeln!(out, "{pad}}}");
         }
@@ -321,6 +372,61 @@ fn emit_expr(e: &IrExpr) -> String {
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }
     }
+}
+
+/// Copy a NUL-terminated string into the host's buffer, per the Q12 protocol
+/// (SPEC-string-return section 2).
+///
+/// Every hazard this slice has lives in these fifteen lines, so each rule is written down
+/// next to the code that keeps it:
+///
+/// - **Two passes.** The length is counted BEFORE anything is copied, because Q12 says a
+///   truncated call leaves `buf` untouched — and with no allocator there is nowhere to stage
+///   a partial result. DP-T2 confirmed that table unchanged, so this is load-bearing, not a
+///   convenience.
+/// - **One unit everywhere.** `cap` and `*needed` are total bytes INCLUDING the NUL, on every
+///   path (DP-T4). That makes the host's retry exactly `cap = *needed`, and it makes
+///   `*needed == 0` impossible — so 0 can never be confused with an empty string, which is 1.
+/// - **`cap < n` covers `cap == 0` and `cap < 0`.** `n` is at least 1 (an empty string still
+///   needs its NUL), so a zero or negative capacity is truncation by the same comparison as
+///   any other. Nothing is reinterpreted as unsigned — MSVC documents exactly that overrun
+///   for `_snprintf` with a negative count.
+/// - **`buf` is only dereferenced after that check**, which is what makes the `cap == 0`
+///   probe safe with a NULL buffer (DP-T7). The probe is the documented way to learn the
+///   length, so it must be safe, not merely tolerated.
+/// - **No slicing, no indexing, no bounds check.** Raw `ptr::add` only. A panic in a
+///   generated module enters `ml_panic`'s `loop {}` and hangs the calling host thread rather
+///   than crashing (STATUS section 5-4), so the goal is code that cannot panic at all.
+fn emit_strout_helper(module: &IrModule, out: &mut String) {
+    if !module
+        .functions
+        .iter()
+        .any(|f| f.exported && f.ret == IrType::Str)
+    {
+        return;
+    }
+    out.push_str(
+        "fn ml_strout(src: *const u8, buf: *mut u8, cap: i32, needed: *mut i32) -> i32 {\n\
+         \x20   // Pass 1: count to the NUL, inclusive. `n` ends at >= 1 for every string.\n\
+         \x20   let mut n: i32 = 0;\n\
+         \x20   loop {\n\
+         \x20       let b = unsafe { *src.add(n as usize) };\n\
+         \x20       n += 1;\n\
+         \x20       if b == 0 { break; }\n\
+         \x20   }\n\
+         \x20   unsafe { *needed = n; }\n\
+         \x20   // Truncation is a FAILURE, not a short success (Q12). Nothing has been\n\
+         \x20   // written, and nothing will be.\n\
+         \x20   if cap < n { return -1; }\n\
+         \x20   // Pass 2: copy, terminator included.\n\
+         \x20   let mut i: i32 = 0;\n\
+         \x20   while i < n {\n\
+         \x20       unsafe { *buf.add(i as usize) = *src.add(i as usize); }\n\
+         \x20       i += 1;\n\
+         \x20   }\n\
+         \x20   0\n\
+         }\n\n",
+    );
 }
 
 /// Does this module compare strings anywhere? Only then is the helper emitted.

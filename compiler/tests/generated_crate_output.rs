@@ -64,6 +64,17 @@ fn a_failing_generated_crate_reports_what_rustc_said() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+// Windows-only, and the reason is worth stating: `build_cdylib` looks for
+// `target/release/<name>.dll`, so on Linux it builds the crate fine and then fails to find
+// the artifact — cargo produced `lib<name>.so`. That is not a bug to fix here. Making the
+// backend platform-aware IS D22, which is deliberately unstarted (STATUS section 6), and
+// starting it from a test would be the back door the Linux CI job's own comment warns about.
+//
+// This test is what made that assumption visible: every other build-touching test is already
+// `#![cfg(windows)]`, so nothing had ever exercised `build_cdylib` on Linux before. The
+// failure-path test above stays ungated — it never reaches the artifact lookup, and the error
+// behaviour it pins is platform-independent.
+#[cfg(windows)]
 #[test]
 fn a_successful_build_still_produces_a_dll() {
     // The capture must not break the happy path.

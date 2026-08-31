@@ -54,6 +54,14 @@ enum Binding {
 
 type Scope = HashMap<String, (IrType, Binding)>;
 
+/// The built-in rounding functions (SPEC-rounding). All `f64 -> f64`, all matching C's
+/// `<math.h>` exactly — signed zero, NaN and infinities included (DP-R3).
+///
+/// They exist because `f64::floor` and friends are **not in `core`**, so a module that needs
+/// to round had only `(x) as i32 as f64`, which saturates at `i32::MAX` and silently returns
+/// 2,147,483,647 for any larger amount (measured).
+pub const BUILTIN_ROUNDERS: &[&str] = &["floor", "ceil", "round", "trunc"];
+
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
     let mut error_table: Scope2 = HashMap::new();
@@ -124,7 +132,29 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
 
     // First pass: every signature, so calls resolve regardless of declaration order (DP-C4).
     let mut sigs: Sigs = HashMap::new();
+    // Builtins go in first, so a user function of the same name collides below rather than
+    // silently shadowing one. DP-R1: these are signatures, NOT lexer keywords — `let round = 1`
+    // stays legal, because calls and variables are separate namespaces.
+    for name in BUILTIN_ROUNDERS {
+        sigs.insert(
+            (*name).to_string(),
+            Sig {
+                params: vec![IrType::F64],
+                ret: IrType::F64,
+                fallible: false,
+            },
+        );
+    }
     for f in &module.functions {
+        if BUILTIN_ROUNDERS.contains(&f.name.as_str()) {
+            return Err(TypeError::new(format!(
+                "function '{}' collides with the built-in `{}` — rename it (the built-ins are \
+                 {}, all f64 -> f64)",
+                f.name,
+                f.name,
+                BUILTIN_ROUNDERS.join(", ")
+            )));
+        }
         sigs.insert(
             f.name.clone(),
             Sig {

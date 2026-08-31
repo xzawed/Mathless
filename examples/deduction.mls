@@ -1,0 +1,15 @@
+// rounding slice: payroll deduction, floored to the won.
+//
+// Before this slice the only way to floor was `(x) as i32 as f64`, which saturates: the 4.5%
+// deduction on 50,000,000,000 came back as 2,147,483,647 instead of 2,250,000,000 — silent,
+// plausible, wrong. Above i32::MAX it could not be expressed at all.
+
+export fn deduction(gross: f64) -> f64 {
+  return floor(gross * 0.045)
+}
+
+// The four builtins, so the oracle can compare each against C/std bit-for-bit.
+export fn fl(x: f64) -> f64 { return floor(x) }
+export fn ce(x: f64) -> f64 { return ceil(x) }
+export fn ro(x: f64) -> f64 { return round(x) }
+export fn tr(x: f64) -> f64 { return trunc(x) }

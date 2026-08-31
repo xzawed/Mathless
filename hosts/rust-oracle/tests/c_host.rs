@@ -169,6 +169,12 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &work,
     )
     .expect("emit commission");
+    let deduction = emit_artifacts(
+        include_str!("../../../examples/deduction.mls"),
+        "deduction",
+        &work,
+    )
+    .expect("emit deduction");
     let line_total = emit_artifacts(
         include_str!("../../../examples/line_total.mls"),
         "line_total",
@@ -233,6 +239,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &line_total.dll,
         &pack.dll,
         &commission.dll,
+        &deduction.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

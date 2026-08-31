@@ -49,6 +49,8 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
         crate::abi::ML_MODULE_ABI_VERSION
     );
 
+    emit_rounding_helpers(module, &mut out);
+
     for f in &module.functions {
         emit_function(f, &mut out)?;
         out.push('\n');
@@ -216,7 +218,14 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::Var(name) => name.clone(),
         IrExprKind::Call { name, args } => {
             let args: Vec<String> = args.iter().map(emit_expr).collect();
-            format!("{name}({})", args.join(", "))
+            // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). The
+            // prefix is already reserved for the runtime namespace, so it cannot collide with
+            // anything the user wrote.
+            if crate::typeck::BUILTIN_ROUNDERS.contains(&name.as_str()) {
+                format!("ml_{name}({})", args.join(", "))
+            } else {
+                format!("{name}({})", args.join(", "))
+            }
         }
         IrExprKind::Cast { to, operand } => {
             // Backend net for directly-built IR, and this one guards a *silent* failure:
@@ -291,6 +300,104 @@ fn emit_expr(e: &IrExpr) -> String {
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }
     }
+}
+
+/// Which built-in rounders this module actually calls, so an unused one is not emitted.
+fn used_rounders(module: &IrModule) -> Vec<&'static str> {
+    fn walk_expr(e: &IrExpr, found: &mut Vec<&'static str>) {
+        match &e.kind {
+            IrExprKind::Call { name, args } => {
+                if let Some(b) = crate::typeck::BUILTIN_ROUNDERS
+                    .iter()
+                    .find(|b| **b == name.as_str())
+                {
+                    if !found.contains(b) {
+                        found.push(b);
+                    }
+                }
+                for a in args {
+                    walk_expr(a, found);
+                }
+            }
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                walk_expr(operand, found)
+            }
+            IrExprKind::Binary { lhs, rhs, .. } => {
+                walk_expr(lhs, found);
+                walk_expr(rhs, found);
+            }
+            IrExprKind::ConstF64(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => {}
+        }
+    }
+    fn walk_stmts(body: &[IrStmt], found: &mut Vec<&'static str>) {
+        for s in body {
+            match s {
+                IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                    walk_expr(cond, found);
+                    walk_stmts(body, found);
+                }
+                IrStmt::Return(e)
+                | IrStmt::Let { value: e, .. }
+                | IrStmt::Assign { value: e, .. }
+                | IrStmt::AssignOut { value: e, .. } => walk_expr(e, found),
+                IrStmt::Fail(_) => {}
+            }
+        }
+    }
+    let mut found = Vec::new();
+    for f in &module.functions {
+        walk_stmts(&f.body, &mut found);
+    }
+    found
+}
+
+/// Emit the rounding helpers this module needs (SPEC-rounding section 2.4).
+///
+/// `f64::floor` and friends live in `std`, not `core`, so a `no_std` cdylib cannot call them —
+/// and taking `libm` would end this repo's zero-third-party-dependency property. These are
+/// written with core operations only and are bit-exact with `std` (measured, including the
+/// sign of zero).
+fn emit_rounding_helpers(module: &IrModule, out: &mut String) {
+    let used = used_rounders(module);
+    if used.is_empty() {
+        return;
+    }
+    // 2^53. At or above it every f64 is already an integer, so nothing needs doing — and
+    // below it the i64 round-trip is exact, which is why this cannot saturate the way the
+    // `as i32` workaround it replaces did.
+    out.push_str(
+        "const ML_INTEGRAL: f64 = 9007199254740992.0;\n\
+         fn ml_trunc_raw(x: f64) -> f64 {\n\
+         \x20   if x != x { return x; }\n\
+         \x20   if x >= ML_INTEGRAL || x <= -ML_INTEGRAL { return x; }\n\
+         \x20   (x as i64) as f64\n\
+         }\n\
+         // Carry x's sign onto a zero result: IEEE gives a product the XOR of the operand\n\
+         // signs, so `x * 0.0` is exactly \"zero with x's sign\". Without this, ceil(-0.5)\n\
+         // would be +0.0 and C would disagree (DP-R3).\n\
+         fn ml_sz(r: f64, x: f64) -> f64 { if r == 0.0 { x * 0.0 } else { r } }\n",
+    );
+    for name in &used {
+        match *name {
+            "trunc" => out.push_str("fn ml_trunc(x: f64) -> f64 { ml_sz(ml_trunc_raw(x), x) }\n"),
+            "floor" => out.push_str(
+                "fn ml_floor(x: f64) -> f64 { let t = ml_trunc_raw(x); ml_sz(if t > x { t - 1.0 } else { t }, x) }\n",
+            ),
+            "ceil" => out.push_str(
+                "fn ml_ceil(x: f64) -> f64 { let t = ml_trunc_raw(x); ml_sz(if t < x { t + 1.0 } else { t }, x) }\n",
+            ),
+            // NOT `floor(x + 0.5)`: that returns 1 for 0.49999999999999994. The fractional
+            // part is computed exactly instead (`x - trunc(x)` is exact below 2^53).
+            "round" => out.push_str(
+                "fn ml_round(x: f64) -> f64 { let t = ml_trunc_raw(x); if t != t { return t; } let d = x - t; ml_sz(if d >= 0.5 { t + 1.0 } else if d <= -0.5 { t - 1.0 } else { t }, x) }\n",
+            ),
+            _ => {}
+        }
+    }
+    out.push('\n');
 }
 
 fn op_str(op: IrBinOp) -> &'static str {

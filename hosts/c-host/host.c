@@ -18,6 +18,10 @@
  *
  * usage: host <artifact_dir> <expected_abi_version>
  */
+/* <math.h> is here for the rounding checks: DP-R3 says the module's floor/ceil/round/trunc
+   match C's exactly, so the honest test is to call both and compare - including signbit(),
+   because the sign of zero is invisible to ==. */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +35,7 @@
 #include "discount4.h"
 #include "line_total.h"
 #include "commission.h"
+#include "deduction.h"
 #include "pack.h"
 
 typedef uint32_t (*abi_version_fn)(void);
@@ -44,6 +49,7 @@ typedef double (*line_total_fn)(double, int32_t);
 typedef int32_t (*boxes_fn)(int32_t, int32_t);
 typedef int32_t (*boxes_checked_fn)(int32_t, int32_t, int32_t *);
 typedef double (*commission_fn)(double, int32_t *);
+typedef double (*unary_f64_fn)(double);
 typedef int32_t (*commission_checked_fn)(double, int32_t *, double *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
@@ -78,6 +84,8 @@ _Static_assert(_Generic(&mlx_commission, commission_fn: 1, default: 0),
                "generated mlx_commission signature changed");
 _Static_assert(_Generic(&mlx_commission_checked, commission_checked_fn: 1, default: 0),
                "generated mlx_commission_checked signature changed");
+_Static_assert(_Generic(&mlx_deduction, unary_f64_fn: 1, default: 0),
+               "generated mlx_deduction signature changed");
 
 static int failures = 0;
 
@@ -289,6 +297,40 @@ int main(int argc, char **argv) {
         check(fee == -7.0, "a failed call leaves out_value untouched");
     }
 
+    /* --- deduction.dll: the rounding builtins. A C host is the right place to check these,
+       because DP-R3 says they match <math.h> exactly - so this compares the module against
+       the C library sitting right next to it, not against our own expectations. --- */
+    HMODULE dd = load(dir, "deduction.dll");
+    if (dd == NULL) {
+        return 1;
+    }
+    unary_f64_fn deduction = (unary_f64_fn)sym(dd, "mlx_deduction");
+    if (deduction) {
+        check(deduction(3000000.0) == 135000.0, "deduction(3000000) == 135000");
+        /* The whole reason for the slice: `(x) as i32 as f64` returned 2147483647 here. */
+        check(deduction(50000000000.0) == 2250000000.0,
+              "deduction(50000000000) == 2250000000 (no longer saturated)");
+        check(deduction(1000000000000.0) == 45000000000.0,
+              "deduction(1000000000000) == 45000000000");
+    }
+    unary_f64_fn fl = (unary_f64_fn)sym(dd, "mlx_fl");
+    unary_f64_fn ce = (unary_f64_fn)sym(dd, "mlx_ce");
+    unary_f64_fn ro = (unary_f64_fn)sym(dd, "mlx_ro");
+    unary_f64_fn tr = (unary_f64_fn)sym(dd, "mlx_tr");
+    if (fl && ce && ro && tr) {
+        check(fl(2.6) == floor(2.6) && fl(-2.4) == floor(-2.4), "floor agrees with <math.h>");
+        check(ce(2.4) == ceil(2.4) && ce(-2.6) == ceil(-2.6), "ceil agrees with <math.h>");
+        check(ro(2.5) == round(2.5) && ro(-2.5) == round(-2.5), "round agrees with <math.h>");
+        check(tr(2.9) == trunc(2.9) && tr(-2.9) == trunc(-2.9), "trunc agrees with <math.h>");
+        /* The trap a naive `floor(x + 0.5)` falls into. */
+        check(ro(0.49999999999999994) == round(0.49999999999999994),
+              "round(0.49999999999999994) agrees with <math.h> (not 1)");
+        /* Sign of zero - invisible to ==, so compare the bit patterns. */
+        check(signbit(ce(-0.5)) == signbit(ceil(-0.5)), "ceil(-0.5) keeps the sign of zero");
+        check(signbit(fl(-0.0)) == signbit(floor(-0.0)), "floor(-0.0) keeps the sign of zero");
+    }
+
+    FreeLibrary(dd);
     FreeLibrary(cm);
     FreeLibrary(pk);
     FreeLibrary(d);

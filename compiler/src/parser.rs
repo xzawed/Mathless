@@ -15,9 +15,9 @@
 //! and      := compare ('&&' compare)*
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
-//! mul      := unary (('*'|'/') unary)*
-//! unary    := ('-'|'!') unary | cast
-//! cast     := primary ('as' type)*
+//! mul      := cast (('*'|'/') cast)*
+//! cast     := unary ('as' type)*
+//! unary    := ('-'|'!') unary | primary
 //! primary  := number | 'true' | 'false' | ident | ident '(' args? ')' | '(' expr ')'
 //! ```
 
@@ -333,13 +333,13 @@ impl Parser {
         Ok(lhs)
     }
 
-    /// `unary := ('-' | '!') unary | cast` — binds tighter than `*` and `/`, and is
+    /// `unary := ('-' | '!') unary | primary` — the tightest layer above `primary`, and
     /// right-recursive so `- -x` and `!!b` parse (SPEC-unary DP-U3).
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         let op = match self.peek() {
             Token::Minus => UnOp::Neg,
             Token::Bang => UnOp::Not,
-            _ => return self.parse_cast(),
+            _ => return self.parse_primary(),
         };
         self.pos += 1;
         let operand = self.parse_unary()?;
@@ -349,10 +349,13 @@ impl Parser {
         })
     }
 
-    /// `cast := primary ('as' type)*` — binds tighter than unary, so `-x as f64` is
-    /// `-(x as f64)`. Left-associative, so `x as i32 as f64` chains.
+    /// `cast := unary ('as' type)*` — binds LOOSER than unary and tighter than `*` and `/`,
+    /// so `-x as f64` is `(-x) as f64` and `a as f64 * b` casts only `a`. This is the
+    /// Rust/C#/Kotlin layering (DP-N1, reversed 2026-08-31): the old Mathless binding put
+    /// `as` below unary, which agreed everywhere except `i32::MIN` — where it silently gave
+    /// the opposite sign. Left-associative, so `x as i32 as f64` chains.
     fn parse_cast(&mut self) -> Result<Expr, ParseError> {
-        let mut e = self.parse_primary()?;
+        let mut e = self.parse_unary()?;
         while self.peek() == &Token::As {
             self.pos += 1;
             let to = self.parse_type()?;
@@ -365,7 +368,7 @@ impl Parser {
     }
 
     fn parse_mul(&mut self) -> Result<Expr, ParseError> {
-        let mut lhs = self.parse_unary()?;
+        let mut lhs = self.parse_cast()?;
         loop {
             let op = match self.peek() {
                 Token::Star => BinOp::Mul,
@@ -373,7 +376,7 @@ impl Parser {
                 _ => break,
             };
             self.pos += 1;
-            let rhs = self.parse_unary()?;
+            let rhs = self.parse_cast()?;
             lhs = Expr::Binary {
                 op,
                 lhs: Box::new(lhs),

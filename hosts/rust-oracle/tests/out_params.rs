@@ -95,3 +95,54 @@ fn the_export_surface_is_unchanged_in_shape() {
 
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// DP-O3 declined to GUARANTEE that a failing call leaves the declared out untouched — it
+/// chose "not enforced + a host contract" over buffering and committing atomically. This
+/// measures what that actually means, because `HOST_ABI.md` used to carry a parenthetical
+/// saying a failed call "writes nothing (verified by measurement)", which reads like the
+/// guarantee DP-O3 refused to give.
+///
+/// `examples/commission.mls` happens to assign its out AFTER the failure check, so it does
+/// leave the out untouched — that is a property of that program, not of the language. This
+/// module writes the out FIRST and then fails, which is legal Mathless.
+#[test]
+fn a_failing_call_may_leave_a_declared_out_written() {
+    const SRC: &str = "error E_TOO_BIG = 1\n\
+                       export fn order_check(qty: i32, out offending: i32) -> i32! {\n\
+                         offending = qty\n\
+                         if qty > 100 { fail E_TOO_BIG }\n\
+                         return 0\n\
+                       }";
+    let out = std::env::temp_dir().join(format!("mlc_out_o3_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let arts = emit_artifacts(SRC, "order_check", &out).expect("emit order_check");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load order_check.dll");
+
+    let f: extern "C" fn(i32, *mut i32, *mut i32) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_order_check\0").unwrap()) };
+
+    // Success: both are written, as always.
+    let (mut offending, mut value) = (-7i32, -7i32);
+    assert_eq!(f(50, &mut offending, &mut value), 0);
+    assert_eq!(offending, 50);
+    assert_eq!(value, 0);
+
+    // Failure: the status is the error code, `out_value` is untouched (D17 DP-E3 IS enforced,
+    // because it is written only on the return path) — but the DECLARED out was already
+    // assigned before `fail`, and it stays written.
+    let (mut offending, mut value) = (-7i32, -7i32);
+    assert_eq!(f(250, &mut offending, &mut value), 1);
+    assert_eq!(
+        value, -7,
+        "out_value is only written on the return path, so a failure leaves it alone"
+    );
+    assert_eq!(
+        offending, 250,
+        "DP-O3: the declared out is NOT rolled back. This is why the contract is \
+         'do not read on status != 0', not 'the module does not write'"
+    );
+
+    drop(m);
+    let _ = std::fs::remove_dir_all(&out);
+}

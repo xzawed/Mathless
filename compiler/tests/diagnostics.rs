@@ -189,3 +189,72 @@ fn a_genuinely_missing_return_still_says_so() {
     assert!(shown.contains("may not return on all paths"), "{shown}");
     assert!(!shown.contains("unreachable"), "{shown}");
 }
+
+/// Every diagnostic must reach the console as ONE line.
+///
+/// The messages are written as multi-line Rust string literals, which only stay single-line
+/// because each continued line ends in a `\`. Drop that backslash and the literal keeps the
+/// newline AND the 13-21 columns of source indentation that follow it — so the user sees the
+/// compiler's own formatting bleeding into their terminal. It compiles, it looks plausible in
+/// a `contains(...)` assertion, and it is wrong: the same shape this repo has now met six times.
+///
+/// Two messages shipped that way in #89 (the `out string` and `-> string` rejections) because
+/// every test that touched them only asserted `contains("string")`. This asserts the property
+/// itself, over one source per diagnostic family, so the whole class cannot regress.
+#[test]
+fn no_diagnostic_leaks_a_newline_or_source_indentation() {
+    // One invalid source per diagnostic family. Add a row whenever a message is added.
+    const BAD: &[&str] = &[
+        // parse
+        "export fn f(mut: f64) -> f64 { return 0.0 }",
+        "export fn f(s: string) -> bool { return s == \"oops }",
+        "export fn f(s: string) -> bool { return s == \"a\nb\" }",
+        "export fn f(s: string) -> bool { return s == \"한글\" }",
+        // types and operators
+        "export fn f(a: f64) -> f64 { return a < 1.0 }",
+        "export fn f(a: f64, b: i32) -> f64 { return a + b }",
+        "export fn f(a: f64, b: f64) -> f64 { return a % b }",
+        "export fn f(a: i32) -> i32 { return a / 0 }",
+        "export fn f(a: string, b: string) -> bool { return a < b }",
+        "export fn f(a: string, b: i32) -> bool { return a == b }",
+        // string scope — the three rejections, including the two that shipped mangled
+        "export fn f(s: string) -> string { return s }",
+        "export fn f(s: string) -> bool { let t = s return t == s }",
+        "export fn f(s: string, out t: string) -> bool { return true }",
+        // out params
+        "fn f(a: f64, out t: i32) -> f64 { return a }",
+        "export fn f(a: f64, out t: i32) -> f64 { return t as f64 }",
+        "export fn f(a: f64, out t: i32) -> f64 { return a }",
+        // names and scopes
+        "export fn f(__d: i32) -> i32 { return __d }",
+        "export fn f(mlx_x: i32) -> i32 { return mlx_x }",
+        "export fn f(a: i32) -> i32 { return b }",
+        "export fn f(a: i32) -> i32 { a = 1 return a }",
+        // functions, calls, recursion, fallibility
+        "fn g() -> i32! { return 1 }\nexport fn f() -> i32 { return 0 }",
+        "fn g() -> i32 { return g() }\nexport fn f() -> i32 { return 0 }",
+        "export fn floor(x: f64) -> f64 { return x }",
+        "export fn f() -> i32 { return 1 }\nexport fn F() -> i32 { return 2 }",
+        // control flow
+        "export fn f(b: bool) -> i32 { if b { return 1 } }",
+        "export fn f() -> i32 { return 1 let x = 2 }",
+    ];
+
+    for src in BAD {
+        let shown = compile_to_ir(src)
+            .map(|_| String::new())
+            .unwrap_or_else(|e| e.to_string());
+        assert!(!shown.is_empty(), "expected a diagnostic for: {src}");
+        assert!(
+            !shown.contains('\n'),
+            "diagnostic spans lines (a missing line-continuation in the format literal)\n\
+             source: {src}\nmessage: {shown:?}"
+        );
+        // Leaked source indentation shows up as a run of spaces; real prose never has one.
+        assert!(
+            !shown.contains("   "),
+            "diagnostic carries the compiler's own indentation\n\
+             source: {src}\nmessage: {shown:?}"
+        );
+    }
+}

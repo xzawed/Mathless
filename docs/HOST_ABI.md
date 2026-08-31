@@ -78,8 +78,13 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
 2. **NULL을 넘기지 마라.** 모듈은 검사하지 않는다 — 검사는 완전할 수 없고(정렬 안 된·해제된
    포인터는 NULL이 아니다) 호출마다 분기를 늘린다. NULL은 **정의되지 않은 동작**이다.
 3. **`status != 0`이면 어떤 out-param도 읽지 마라**(D17 DP-E3 + SPEC-out-params DP-O3).
-   실패한 호출은 아무것도 쓰지 않는다 — 실측으로 확인되지만, **계약은 "쓰지 않는다"가 아니라
-   "읽지 마라"다.** 부분적으로 쓴 뒤 실패하는 미래의 함수도 이 계약 안에 있다.
+   **계약은 "모듈이 쓰지 않는다"가 아니라 "호스트가 읽지 마라"다** — DP-O3가 일부러 그렇게 정했다
+   (버퍼링 후 원자적 커밋은 비용을 내고 계약 하나를 없앨 뿐이다).
+   **실측(2026-08-31):** `out` 파라미터를 `fail` **앞에서** 대입하는 함수는 실패해도 그 값을
+   **쓴 채로 둔다**(`order_check(250, &offending)` → status `1`, `offending == 250`).
+   D17의 `out_value`만 미변경이다(반환 경로에서만 쓰기 때문). 즉 **"실패하면 아무것도 안 쓴다"는
+   보장이 아니라 그 프로그램의 성질일 뿐이다.** 회귀 테스트: `hosts/rust-oracle/tests/out_params.rs`
+   의 `a_failing_call_may_leave_a_declared_out_written`.
 4. 성공한 호출은 선언된 모든 out-param을 쓴다(DP-O2가 컴파일 타임에 강제한다).
 
 ### 문자열 파라미터 계약 (호스트가 지켜야 할 것)

@@ -345,8 +345,8 @@ fn check_function(
         // the same reason `-> T!` is export-only. Lifting this later is additive.
         if p.out && p.ty == Type::Str {
             return Err(TypeError::new(format!(
-                "function '{}': parameter '{}' is `out string`, which is not supported — a 
-                 string is borrowed for the call, so the module has nowhere to write one. That 
+                "function '{}': parameter '{}' is `out string`, which is not supported — a \
+                 string is borrowed for the call, so the module has nowhere to write one. That \
                  needs the caller-allocates buffer protocol (Q12), a later slice",
                 f.name, p.name
             )));
@@ -391,8 +391,8 @@ fn check_function(
     // a separate slice.
     if f.ret == Type::Str {
         return Err(TypeError::new(format!(
-            "function '{}' returns `string`, which is not supported — a string can only be a 
-             parameter (it is borrowed for the call). Returning one needs the caller-allocates 
+            "function '{}' returns `string`, which is not supported — a string can only be a \
+             parameter (it is borrowed for the call). Returning one needs the caller-allocates \
              buffer protocol (Q12), which is a later slice",
             f.name
         )));

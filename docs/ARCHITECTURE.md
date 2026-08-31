@@ -105,4 +105,5 @@ MVP는 compiler 최소 + C ABI + Delphi 또는 C 호스트 하나면 충분하�
 | `runtime/` | C ABI 헤더·예약 심볼 규약 | 있음 (헤더만, 런타임 코드 없음) |
 | `hosts/rust-oracle/` | kernel32 로더 + PE export 리더 (테스트 오라클) | 있음 |
 | `examples/` | `.mls` 예제 | 있음 |
-| `backend/` · `host/delphi` · `host/c` · `packager/` | — | **미생성** |
+| `backend/` · `host/delphi` · `packager/` | — | **미생성** |
+| `host/c` | `hosts/c-host/` | **이름만 다르다 — 실재한다.** MSVC로 빌드하는 C11 호스트가 수용 D를 닫고 CI의 정본 잡이 이를 실행한다(`.github/workflows/ci.yml`). 이 표는 권장 경계를 기준으로 쓰였고, 실제 디렉터리는 `hosts/` 아래에 있다 |

@@ -22,10 +22,15 @@
    review before a PR is marked complete. If a Grok tool fails, report it and ask — do not
    silently self-substitute.
 7. Squash-merge into `main`. Delete the branch after merge.
-8. **CI** (GitHub Actions, `windows-latest`) runs `cargo fmt --check` + `clippy -D warnings`
-   + `cargo test --workspace` on every PR — the authoritative gate that actually executes the
-   `#![cfg(windows)]` acceptance tests. Keep it green before merge. (Cross-platform SO/ELF CI
-   is deferred with D22.)
+8. **CI** (GitHub Actions) runs `cargo fmt --check` + `clippy -D warnings`
+   + `cargo test --workspace` on every PR, in **two jobs**. `windows-latest` is the
+   authoritative gate: it is where the `#![cfg(windows)]` acceptance tests actually execute,
+   and `MATHLESS_GATE_D=require` makes a missing MSVC a failure rather than a silent skip, so
+   acceptance D (a real C host loading the module) cannot quietly stop running. `ubuntu-latest`
+   is **insurance, not authority** — it catches a Windows-only assumption in the platform-
+   independent frontend, but the acceptance tests compile away there. Keep both green before
+   merge. (A cross-platform SO/ELF **target** is still deferred with D22 — the Linux job is
+   not it.)
 
 ## Methodology: SDD + WBS + TDD (mandatory from Phase 1)
 
@@ -69,8 +74,9 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
    `cargo test --workspace`를 실행한다. **`windows-latest`가 정본 게이트** — `#![cfg(windows)]`
    수용 테스트를 실제로 돌리며, `MATHLESS_GATE_D=require`로 수용 D(실제 C 호스트)가 조용히
    skip되지 않게 한다. **`ubuntu-latest`는 프런트엔드 보험**(Windows 전용 가정 조기 발견)이지
-   권위가 아니다 — 수용 테스트는 거기서 컴파일되지 않는다(실측: 전체 중 **88개**가 Linux에서 실행,
-   19개는 `cfg(windows)`로 제외). 머지 전 둘 다 green 유지.
+   권위가 아니다 — 수용 테스트는 거기서 컴파일되지 않는다. **분할 수치는 여기 적지 않는다**:
+   한때 "88개 실행 / 19개 제외"라고 적어 뒀다가 그대로 낡았다(그 합 107은 오늘 수치가 아니다).
+   테스트 수의 정본은 `docs/STATUS.md` §1이다. 머지 전 둘 다 green 유지.
    (`.so`/ELF **타깃**은 여전히 D22와 함께 이연 — Linux 잡은 D22가 아니다.)
 
 ## 라이선스와 기여

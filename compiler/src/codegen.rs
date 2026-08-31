@@ -54,7 +54,16 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
         out.push('\n');
     }
 
-    // A no_std cdylib requires a panic handler; our arithmetic never panics (panic=abort).
+    // A no_std cdylib requires a panic handler. Nothing on today's surface can reach this one:
+    // `f64 /0` is inf, `as` saturates, integer arithmetic wraps (release leaves overflow-checks
+    // off) and `i32 /` is rejected in typeck. So it exists to satisfy `no_std`, not to handle
+    // anything.
+    //
+    // What it does if a future slice DOES reach it matters, because it is easy to get wrong:
+    // in `no_std` the `#[panic_handler]` IS the panic runtime, and the profile's
+    // `panic = "abort"` only drops unwinding tables — it does not call abort(). So a panic
+    // lands here and spins, hanging the calling host thread while the process stays up. That
+    // is the `while` liveness class, not the recursion class (STATUS §5-4).
     out.push_str("#[panic_handler]\nfn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }\n");
     Ok(out)
 }

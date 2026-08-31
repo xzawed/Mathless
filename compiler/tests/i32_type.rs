@@ -38,12 +38,18 @@ fn mixing_i32_and_f64_is_rejected() {
 
 #[test]
 fn i32_division_is_rejected_this_slice() {
-    // i32 `/0` would abort the no_std cdylib, so `i32 /` is a typecheck error for now.
+    // `i32 /` is a typecheck error for now (DP-I3). Two things the message must get right:
+    // it must NOT claim the module aborts — a panic in a generated module spins forever in
+    // `ml_panic`'s `loop {}` (STATUS 5-4) — and if it suggests the f64 round-trip it must
+    // carry that workaround's own trap: a zero divisor silently yields i32::MAX/MIN/0
+    // instead of failing (measured on a loaded module).
     let err = compile_to_ir("export fn f(a: i32) -> i32 { return a / 2 }").unwrap_err();
+    let msg = format!("{err:?}").to_lowercase();
+    assert!(msg.contains("division") || msg.contains("i32"), "{err:?}");
+    assert!(!msg.contains("abort"), "the abort claim is false: {err:?}");
     assert!(
-        format!("{err:?}").to_lowercase().contains("division")
-            || format!("{err:?}").to_lowercase().contains("i32"),
-        "{err:?}"
+        msg.contains("i32::max") || msg.contains("guard"),
+        "the suggested f64 workaround must carry its /0 caveat: {err:?}"
     );
 }
 

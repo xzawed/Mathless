@@ -100,7 +100,14 @@ fn c_signature(f: &IrFunction) -> String {
     let mut parts: Vec<String> = f
         .params
         .iter()
-        .map(|p| format!("{} {}", c_type(p.ty), p.name))
+        .map(|p| {
+            // A declared `out` is a pointer, exactly like D17's `out_value` below it.
+            if p.out {
+                format!("{}* {}", c_type(p.ty), p.name)
+            } else {
+                format!("{} {}", c_type(p.ty), p.name)
+            }
+        })
         .collect();
     if f.fallible {
         // D17: i32 status return + a `T*` out-param.
@@ -170,7 +177,14 @@ fn delphi_signature(f: &IrFunction) -> String {
     let mut parts: Vec<String> = f
         .params
         .iter()
-        .map(|p| format!("{}: {}", p.name, delphi_type(p.ty)))
+        .map(|p| {
+            // Delphi already spells this for `out_value`; a declared out gets the same keyword.
+            if p.out {
+                format!("out {}: {}", p.name, delphi_type(p.ty))
+            } else {
+                format!("{}: {}", p.name, delphi_type(p.ty))
+            }
+        })
         .collect();
     if f.fallible {
         // D17: Integer status return + an `out` param (Delphi `out` == C `T*` for f64/bool).

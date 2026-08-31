@@ -51,10 +51,12 @@ fn lowers_discount_to_typed_ir() {
                 IrParam {
                     name: "price".into(),
                     ty: IrType::F64,
+                    out: false,
                 },
                 IrParam {
                     name: "vip".into(),
                     ty: IrType::Bool,
+                    out: false,
                 },
             ],
             ret: IrType::F64,

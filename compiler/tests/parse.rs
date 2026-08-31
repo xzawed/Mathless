@@ -16,10 +16,12 @@ fn parses_discount_example() {
                 Param {
                     name: "price".into(),
                     ty: Type::F64,
+                    out: false,
                 },
                 Param {
                     name: "vip".into(),
                     ty: Type::Bool,
+                    out: false,
                 },
             ],
             ret: Type::F64,

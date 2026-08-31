@@ -5,7 +5,7 @@
 //! module   := function*
 //! function := 'export'? 'fn' ident '(' params? ')' '->' type block
 //! params   := param (',' param)*
-//! param    := ident ':' type
+//! param    := 'out'? ident ':' type
 //! type     := 'f64' | 'bool'
 //! block    := '{' stmt* '}'
 //! stmt     := 'if' expr block | 'while' expr block | 'return' expr | 'fail' ident
@@ -137,10 +137,23 @@ impl Parser {
         let mut params = Vec::new();
         if *self.peek() != Token::RParen {
             loop {
+                // `out p: T` — the marker sits before the name, as in Pascal and C#. The
+                // generated Delphi unit already spells `out` for D17's implicit out-param,
+                // so the surface and that binding agree.
+                let out = if *self.peek() == Token::Out {
+                    self.pos += 1;
+                    true
+                } else {
+                    false
+                };
                 let pname = self.ident("parameter name")?;
                 self.eat(&Token::Colon, "':'")?;
                 let ty = self.parse_type()?;
-                params.push(Param { name: pname, ty });
+                params.push(Param {
+                    name: pname,
+                    ty,
+                    out,
+                });
                 if *self.peek() == Token::Comma {
                     self.pos += 1;
                 } else {

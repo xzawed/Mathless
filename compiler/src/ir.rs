@@ -56,6 +56,9 @@ pub struct IrFunction {
 pub struct IrParam {
     pub name: String,
     pub ty: IrType,
+    /// Lowered as `*mut T` and written through, exactly like D17's implicit `out_value`.
+    /// Declared outs keep source order; `out_value` is appended after all of them (DP-O1).
+    pub out: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -82,6 +85,14 @@ pub enum IrStmt {
     /// `<name> = <value>` — reassign a mutable local (already checked in scope, mutable,
     /// and type-compatible by the typechecker).
     Assign {
+        name: String,
+        value: IrExpr,
+    },
+    /// `<name> = <value>` where `<name>` is an `out` parameter — the same surface statement,
+    /// but it lowers to a write THROUGH a pointer. Kept as a separate variant so codegen
+    /// cannot confuse the two: emitting a plain `name = …` for an out-param would assign the
+    /// pointer itself and silently drop the value.
+    AssignOut {
         name: String,
         value: IrExpr,
     },

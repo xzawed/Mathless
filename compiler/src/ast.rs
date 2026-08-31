@@ -32,6 +32,9 @@ pub struct Function {
 pub struct Param {
     pub name: String,
     pub ty: Type,
+    /// `out p: T` — caller-allocates out-parameter: write-only and export-only
+    /// (SPEC-out-params DP-O4/O5).
+    pub out: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

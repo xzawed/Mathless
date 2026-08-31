@@ -44,6 +44,10 @@ impl std::error::Error for TypeError {}
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Binding {
     Param,
+    /// An `out` parameter: assignable, but NOT readable (DP-O4). The host may have handed us
+    /// the address of an uninitialised variable, so reading it is a mistake the language can
+    /// prevent rather than document.
+    OutParam,
     Let,
     LetMut,
 }
@@ -287,11 +291,33 @@ fn check_function(
                 f.name, p.name
             )));
         }
+        // DP-O5: an `out` parameter is export-only. A call expression has no syntax for
+        // passing a pointer, so an internal `fn` with one could never be called with it —
+        // the same reason `-> T!` is export-only. Lifting this later is additive.
+        if p.out && !f.exported {
+            return Err(TypeError::new(format!(
+                "function '{}': parameter '{}' is `out`, which is only allowed on an `export fn` \
+                 — a call expression cannot pass a pointer, so an internal function could never \
+                 receive one",
+                f.name, p.name
+            )));
+        }
         let ty = ir_type(p.ty);
-        scope.insert(p.name.clone(), (ty, Binding::Param));
+        scope.insert(
+            p.name.clone(),
+            (
+                ty,
+                if p.out {
+                    Binding::OutParam
+                } else {
+                    Binding::Param
+                },
+            ),
+        );
         params.push(IrParam {
             name: p.name.clone(),
             ty,
+            out: p.out,
         });
     }
     // The fallible ABI synthesizes an `out_value` out-param; a user param of that name would
@@ -314,6 +340,19 @@ fn check_function(
             if f.fallible { " or `fail`" } else { "" }
         )));
     }
+    // DP-O2: every path that RETURNS must have assigned every `out` parameter. Same spirit as
+    // the check above — decidable, and the alternative is a host reading its own uninitialised
+    // stack variable and believing the module put it there.
+    let outs: Vec<&str> = params
+        .iter()
+        .filter(|p| p.out)
+        .map(|p| p.name.as_str())
+        .collect();
+    if !outs.is_empty() {
+        let mut assigned: Vec<&str> = Vec::new();
+        check_outs_assigned(&body, &outs, &mut assigned, &f.name)?;
+    }
+
     Ok(IrFunction {
         name: f.name.clone(),
         params,
@@ -322,6 +361,49 @@ fn check_function(
         exported: f.exported,
         body,
     })
+}
+
+/// Definite assignment for `out` parameters (DP-O2).
+///
+/// Conservative and deliberately simple: an assignment inside an `if` or `while` body does
+/// NOT count once control leaves it, because neither is guaranteed to run — Mathless has no
+/// `else`, so there is no two-branch case to merge. A `return` inside such a body still sees
+/// the assignments made along its own path, which is what makes the natural shape
+/// (`if c { t = 0  return … }`) compile.
+///
+/// `fail` is exempt (DP-O3): on a non-zero status the host reads no out-param at all.
+fn check_outs_assigned<'a>(
+    body: &'a [IrStmt],
+    outs: &[&str],
+    assigned: &mut Vec<&'a str>,
+    fname: &str,
+) -> Result<(), TypeError> {
+    for s in body {
+        match s {
+            IrStmt::AssignOut { name, .. } => {
+                if !assigned.contains(&name.as_str()) {
+                    assigned.push(name.as_str());
+                }
+            }
+            IrStmt::Return(_) => {
+                if let Some(missing) = outs.iter().find(|o| !assigned.contains(o)) {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': `out` parameter '{missing}' is not assigned on \
+                         every path that returns — assign it before this `return`, or the host \
+                         reads whatever was in its own variable"
+                    )));
+                }
+            }
+            // A branch body may not run, so its assignments do not survive it. Returns inside
+            // it are still checked, against the path that reaches them.
+            IrStmt::If { body, .. } | IrStmt::While { body, .. } => {
+                let mut inner = assigned.clone();
+                check_outs_assigned(body, outs, &mut inner, fname)?;
+            }
+            IrStmt::Fail(_) | IrStmt::Let { .. } | IrStmt::Assign { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 fn check_block(
@@ -431,7 +513,7 @@ fn check_stmt(
                 }
             };
             match binding {
-                Binding::LetMut => {}
+                Binding::LetMut | Binding::OutParam => {}
                 Binding::Let => {
                     return Err(TypeError::new(format!(
                         "function '{fname}': '{name}' is immutable — declare it `let mut {name} = …` to reassign it"
@@ -450,9 +532,18 @@ fn check_stmt(
                     value.ty
                 )));
             }
-            Ok(IrStmt::Assign {
-                name: name.clone(),
-                value,
+            // An out-param assignment writes THROUGH a pointer, so it gets its own IR
+            // statement — codegen must not be able to emit a plain `name = …` for it.
+            Ok(if binding == Binding::OutParam {
+                IrStmt::AssignOut {
+                    name: name.clone(),
+                    value,
+                }
+            } else {
+                IrStmt::Assign {
+                    name: name.clone(),
+                    value,
+                }
             })
         }
         Stmt::Let {
@@ -525,6 +616,14 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             kind: IrExprKind::ConstBool(*b),
         }),
         Expr::Var(name) => match scope.get(name) {
+            // DP-O4: an `out` parameter is write-only. The host passes the address of one of
+            // its own variables, and nothing says that variable was initialised — so reading
+            // it here would read whatever the host happened to have on its stack.
+            Some(&(_, Binding::OutParam)) => Err(TypeError::new(format!(
+                "function '{fname}': cannot read `out` parameter '{name}' — it is write-only, \
+                 because the host may pass the address of an uninitialised variable. Take a \
+                 separate input parameter if you need the value."
+            ))),
             Some(&(ty, _)) => Ok(IrExpr {
                 ty,
                 kind: IrExprKind::Var(name.clone()),

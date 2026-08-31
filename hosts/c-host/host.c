@@ -30,6 +30,7 @@
 #include "count_bounded.h"
 #include "discount4.h"
 #include "line_total.h"
+#include "commission.h"
 #include "pack.h"
 
 typedef uint32_t (*abi_version_fn)(void);
@@ -42,6 +43,8 @@ typedef double (*discount4_fn)(double, bool);
 typedef double (*line_total_fn)(double, int32_t);
 typedef int32_t (*boxes_fn)(int32_t, int32_t);
 typedef int32_t (*boxes_checked_fn)(int32_t, int32_t, int32_t *);
+typedef double (*commission_fn)(double, int32_t *);
+typedef int32_t (*commission_checked_fn)(double, int32_t *, double *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -68,6 +71,13 @@ _Static_assert(_Generic(&mlx_boxes, boxes_fn: 1, default: 0),
                "generated mlx_boxes signature changed");
 _Static_assert(_Generic(&mlx_boxes_checked, boxes_checked_fn: 1, default: 0),
                "generated mlx_boxes_checked signature changed");
+/* An out-param must reach C as a POINTER. If the generator ever emitted it by value again,
+   these two would stop matching and the host would fail to compile - which is the whole
+   point: the bug this slice fixes was a signature that looked right and was not. */
+_Static_assert(_Generic(&mlx_commission, commission_fn: 1, default: 0),
+               "generated mlx_commission signature changed");
+_Static_assert(_Generic(&mlx_commission_checked, commission_checked_fn: 1, default: 0),
+               "generated mlx_commission_checked signature changed");
 
 static int failures = 0;
 
@@ -241,6 +251,45 @@ int main(int argc, char **argv) {
         check(untouched == -999, "boxes_checked(17, 0) leaves the out-param untouched");
     }
 
+    /* --- commission.dll: a declared `out` parameter. The host allocates; the module writes
+       through the pointer. This is the case that could not be expressed at all before. --- */
+    HMODULE cm = load(dir, "commission.dll");
+    if (cm == NULL) {
+        return 1;
+    }
+    commission_fn commission = (commission_fn)sym(cm, "mlx_commission");
+    if (commission) {
+        int32_t tier = -1;
+        double fee = commission(500000.0, &tier);
+        check(fee == 500000.0 * 0.03, "commission(500000) fee");
+        check(tier == 1, "commission(500000) writes tier 1 through the out-param");
+
+        tier = -1;
+        fee = commission(9000000.0, &tier);
+        check(fee == 9000000.0 * 0.07, "commission(9000000) fee");
+        check(tier == 3, "commission(9000000) writes tier 3");
+    }
+    commission_checked_fn commission_checked =
+        (commission_checked_fn)sym(cm, "mlx_commission_checked");
+    if (commission_checked) {
+        /* DP-O1: (inputs..., declared outs..., out_value). */
+        int32_t tier = -1;
+        double fee = -1.0;
+        int32_t status = commission_checked(500000.0, &tier, &fee);
+        check(status == 0, "commission_checked(500000) status == 0");
+        check(tier == 1, "commission_checked writes the declared out");
+        check(fee == 500000.0 * 0.03, "commission_checked writes out_value");
+
+        /* DP-O3: a failure writes neither. */
+        tier = -7;
+        fee = -7.0;
+        status = commission_checked(-1.0, &tier, &fee);
+        check(status == ML_ERR_E_NEGATIVE, "commission_checked(-1) status == ML_ERR_E_NEGATIVE");
+        check(tier == -7, "a failed call leaves the declared out untouched");
+        check(fee == -7.0, "a failed call leaves out_value untouched");
+    }
+
+    FreeLibrary(cm);
     FreeLibrary(pk);
     FreeLibrary(d);
     FreeLibrary(s);

@@ -79,10 +79,18 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         )));
     }
 
+    // Declared `out` params become `*mut T`, in source order. D17's implicit `out_value` is
+    // appended after all of them below, which is DP-O1: the return value always comes last.
     let mut params: Vec<String> = f
         .params
         .iter()
-        .map(|p| format!("{}: {}", p.name, rust_type(p.ty)))
+        .map(|p| {
+            if p.out {
+                format!("{}: *mut {}", p.name, rust_type(p.ty))
+            } else {
+                format!("{}: {}", p.name, rust_type(p.ty))
+            }
+        })
         .collect();
 
     // An internal function is a plain Rust `fn`: no `#[no_mangle]`, no `extern "C"`, no
@@ -166,6 +174,13 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
             // Internal binding — a plain Rust `let`, never an export.
             let kw = if *mutable { "let mut" } else { "let" };
             let _ = writeln!(out, "{pad}{kw} {name} = {};", emit_expr(value));
+        }
+        IrStmt::AssignOut { name, value } => {
+            // Same shape as the D17 success write: a raw store through the caller's pointer.
+            // The host contract is that the pointer is valid for the duration of the call
+            // (D16); a NULL is undefined behaviour here exactly as it already is for
+            // `out_value` (SPEC-out-params section 5.1 — inherited, not introduced).
+            let _ = writeln!(out, "{pad}unsafe {{ *{name} = {}; }}", emit_expr(value));
         }
         IrStmt::Assign { name, value } => {
             // Reassign an in-scope `let mut`. Inside an `if` this mutates the OUTER binding,
@@ -393,6 +408,7 @@ mod tests {
                 params: vec![IrParam {
                     name: "b".into(),
                     ty: IrType::Bool,
+                    out: false,
                 }],
                 ret: IrType::F64,
                 fallible: false,

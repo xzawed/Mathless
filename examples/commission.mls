@@ -1,0 +1,22 @@
+// out-params slice: return the fee AND which bracket produced it.
+//
+// Before this slice the second value could only be DECLARED, never written — `out_tier: i32`
+// was a by-value input, and the generated header said so: `int32_t out_tier`, not `int32_t*`.
+
+export fn commission(amount: f64, out tier: i32) -> f64 {
+  if amount < 1000000.0 { tier = 1  return amount * 0.03 }
+  if amount < 5000000.0 { tier = 2  return amount * 0.05 }
+  tier = 3
+  return amount * 0.07
+}
+
+error E_NEGATIVE = 1
+
+// DP-O1: the declared out comes first, D17's implicit `out_value` last.
+// DP-O3: on `fail` neither is written, and the host reads neither.
+export fn commission_checked(amount: f64, out tier: i32) -> f64! {
+  if amount < 0.0 { fail E_NEGATIVE }
+  if amount < 1000000.0 { tier = 1  return amount * 0.03 }
+  tier = 3
+  return amount * 0.07
+}

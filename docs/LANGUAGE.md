@@ -61,6 +61,9 @@
 
 - 타입: `f64`, `bool`, `i32`
 - `export fn NAME(params) -> T { … }` — 자유 함수, 모듈 export
+- **`out` 파라미터** `export fn f(a: f64, out t: i32) -> f64` — 값을 여러 개 돌려주는 수단.
+  C로는 `int32_t* t`, Delphi로는 `out t: Integer`. **쓰기 전용**이고 **정상 반환 경로마다 대입이
+  강제**된다. `export fn`에만 붙는다(SPEC-out-params)
 - **`fn NAME(params) -> T { … }`** — `export` 없는 **내부 함수**. 호출식 `NAME(args)`로 부른다.
   export되지 않으므로 export 심볼 집합이 늘지 않는다(실측). **재귀는 금지**(직접·상호) — 스택
   오버플로가 호스트 프로세스를 죽이기 때문이며, `while`의 비종료와 달리 정적으로 판정 가능하다

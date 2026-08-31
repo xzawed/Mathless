@@ -16,6 +16,8 @@ pub enum Token {
     Fail,
     Let,
     Mut,
+    /// `out` — marks a caller-allocates out-parameter (SPEC-out-params).
+    Out,
     While,
     As,
     // atoms
@@ -67,6 +69,7 @@ impl Token {
             Token::Fail => Some("fail"),
             Token::Let => Some("let"),
             Token::Mut => Some("mut"),
+            Token::Out => Some("out"),
             Token::While => Some("while"),
             Token::As => Some("as"),
             _ => None,
@@ -261,6 +264,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "fail" => Token::Fail,
                 "let" => Token::Let,
                 "mut" => Token::Mut,
+                "out" => Token::Out,
                 "while" => Token::While,
                 "as" => Token::As,
                 _ => Token::Ident(s),

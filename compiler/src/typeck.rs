@@ -96,6 +96,24 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                     f.name
                 )));
             }
+            // D17's error ABI is a HOST-BOUNDARY convention: an i32 status plus an
+            // `out_value` out-param appended to the *exported* signature. There is no
+            // internal calling convention for it, and DP-C1 forbids calling a fallible
+            // callee, so an internal `-> T!` is unreachable by construction. Left to
+            // codegen it lowered wrong, because a non-exported fn is emitted with
+            // `fallible = false`: `fail E` became a plain `return <code>;` — a silent
+            // wrong answer for `-> i32!`, and a rustc E0308 for the other types that
+            // reached the user only as "cargo build of generated crate failed".
+            if f.fallible {
+                return Err(TypeError::new(format!(
+                    "internal function '{}' is fallible (`-> {}!`) — the D17 error ABI is a \
+                     host-boundary convention (i32 status + out-param), so a fallible \
+                     function must be `export`ed; an internal one can never be called \
+                     because a fallible callee is not a value",
+                    f.name,
+                    ir_type(f.ret),
+                )));
+            }
         }
         functions.push(f);
     }

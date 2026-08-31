@@ -345,9 +345,10 @@ fn check_function(
         // the same reason `-> T!` is export-only. Lifting this later is additive.
         if p.out && p.ty == Type::Str {
             return Err(TypeError::new(format!(
-                "function '{}': parameter '{}' is `out string`, which is not supported — a \
-                 string is borrowed for the call, so the module has nowhere to write one. That \
-                 needs the caller-allocates buffer protocol (Q12), a later slice",
+                "function '{}': parameter '{}' is `out string`, which is not supported — use \
+                 `-> string!` instead, which delivers the string through the caller-allocates \
+                 buffer (ml_buf/ml_cap/ml_needed). A function returns at most one string; \
+                 several string outputs at once is not supported yet",
                 f.name, p.name
             )));
         }
@@ -652,14 +653,16 @@ fn check_stmt(
         } => {
             // Check the RHS in the CURRENT scope first, so `let x = x` is use-before-def.
             let value = check_expr(value, scope, fname, sigs)?;
-            // SPEC-string-input section 2.5: a string may only be a PARAMETER. A local would
-            // outlive nothing here today, but it is the first step toward "where do these
-            // bytes live", and that question belongs to the Q12 slice.
+            // A string may be a parameter or a `-> string!` return (SPEC-string-return), but
+            // not a local: with no allocator there is nowhere for one to live. A parameter is
+            // borrowed for the call and a return is copied straight into the host's buffer;
+            // a local is the one position with no owner, so it stays rejected.
             if value.ty == IrType::Str {
                 return Err(TypeError::new(format!(
                     "function '{fname}': local '{name}' would be a `string`, which is not \
-                     supported — a string can only be a parameter (it is borrowed for the \
-                     call). Compare it in place instead of binding it"
+                     supported — a string can be a parameter or a `-> string!` return, but \
+                     there is nowhere for a local to live (the module has no allocator). \
+                     Compare it in place, or return it directly, instead of binding it"
                 )));
             }
             // Local names honour the same reserved-word policy as parameters (all targets).

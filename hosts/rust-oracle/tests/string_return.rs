@@ -328,3 +328,46 @@ fn the_module_gains_no_export_and_its_imports_are_compared_not_claimed() {
     let _ = std::fs::remove_dir_all(&out);
     let _ = std::fs::remove_dir_all(&base_out);
 }
+
+/// The combination no test covered, and the one a doc sentence got wrong twice.
+///
+/// `HOST_ABI.md` says "the module writes nothing on the failure path". That is true of the
+/// STRING BUFFER — the only write site is `return`, which exits — and it is NOT true of a
+/// declared scalar `out`, which DP-O3 explicitly declines to roll back. `examples/carrier.mls`
+/// could not show the difference: `carrier_label` has no `fail`. This module does.
+#[test]
+fn a_failing_string_return_leaves_the_buffer_alone_but_not_a_declared_out() {
+    const SRC: &str = "error E_BAD = 3\n\
+                       export fn both(code: string, out tier: i32) -> string! {\n\
+                         tier = 7\n\
+                         if code == \"BAD\" { fail E_BAD }\n\
+                         return \"ok\"\n\
+                       }";
+    let out = std::env::temp_dir().join(format!("mlc_sret_mix_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let arts = emit_artifacts(SRC, "both", &out).expect("emit both");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load both.dll");
+    let f: extern "C" fn(*const c_char, *mut i32, *mut u8, i32, *mut i32) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_both\0").unwrap()) };
+
+    let mut buf = Canary::new();
+    let mut tier = -7i32;
+    let mut needed = -7i32;
+    let status = f(c"BAD".as_ptr(), &mut tier, buf.ptr(), 64, &mut needed);
+
+    assert_eq!(status, 3);
+    assert!(
+        buf.is_pristine(),
+        "the string buffer IS untouched on failure — the only write site is `return`"
+    );
+    assert_eq!(needed, -7, "and so is *ml_needed");
+    assert_eq!(
+        tier, 7,
+        "but a declared scalar out assigned before `fail` STAYS written (DP-O3). This is why \
+         the host contract is 'do not read on status != 0', not 'the module does not write'"
+    );
+
+    drop(m);
+    let _ = std::fs::remove_dir_all(&out);
+}

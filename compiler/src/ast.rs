@@ -106,6 +106,8 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    /// `%` — remainder. i32 only, and total: `x % 0 == 0` (SPEC-i32-division DP-D1/D4).
+    Rem,
     Lt,
     Gt,
     Le,

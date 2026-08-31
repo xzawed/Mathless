@@ -1,6 +1,8 @@
 //! Integer-type (`i32`) slice (SPEC docs/slices/SPEC-i32.md): signed 32-bit integers.
-//! Integer literal (no `.`) is `i32`; decimal literal is `f64`; no implicit mixing; `i32 /`
-//! is rejected this slice. The E2 load/call proof is in `hosts/rust-oracle/tests/i32_type.rs`.
+//! Integer literal (no `.`) is `i32`; decimal literal is `f64`; no implicit mixing. `i32 /`
+//! was out of scope here (DP-I3) and the division slice added it — see
+//! `compiler/tests/i32_division.rs`. The E2 load/call proof is in
+//! `hosts/rust-oracle/tests/i32_type.rs`.
 
 use mlc::{compile_to_ir, compile_to_rust};
 
@@ -37,20 +39,12 @@ fn mixing_i32_and_f64_is_rejected() {
 }
 
 #[test]
-fn i32_division_is_rejected_this_slice() {
-    // `i32 /` is a typecheck error for now (DP-I3). Two things the message must get right:
-    // it must NOT claim the module aborts — a panic in a generated module spins forever in
-    // `ml_panic`'s `loop {}` (STATUS 5-4) — and if it suggests the f64 round-trip it must
-    // carry that workaround's own trap: a zero divisor silently yields i32::MAX/MIN/0
-    // instead of failing (measured on a loaded module).
-    let err = compile_to_ir("export fn f(a: i32) -> i32 { return a / 2 }").unwrap_err();
-    let msg = format!("{err:?}").to_lowercase();
-    assert!(msg.contains("division") || msg.contains("i32"), "{err:?}");
-    assert!(!msg.contains("abort"), "the abort claim is false: {err:?}");
-    assert!(
-        msg.contains("i32::max") || msg.contains("guard"),
-        "the suggested f64 workaround must carry its /0 caveat: {err:?}"
-    );
+fn i32_division_is_no_longer_rejected() {
+    // DP-I3 deferred `i32 /` out of the i32 slice, and this test used to pin that rejection.
+    // The division slice supersedes it (SPEC-i32-division): `/` and `%` are now total on i32.
+    // Kept as a positive test rather than deleted, so the supersession is visible from here —
+    // the negative form would otherwise just vanish from history.
+    compile_to_rust("export fn f(a: i32) -> i32 { return a / 2 }").expect("i32 / now compiles");
 }
 
 #[test]

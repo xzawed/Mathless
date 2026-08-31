@@ -15,7 +15,7 @@
 //! and      := compare ('&&' compare)*
 //! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
 //! add      := mul (('+'|'-') mul)*
-//! mul      := cast (('*'|'/') cast)*
+//! mul      := cast (('*'|'/'|'%') cast)*
 //! cast     := unary ('as' type)*
 //! unary    := ('-'|'!') unary | primary
 //! primary  := number | 'true' | 'false' | ident | ident '(' args? ')' | '(' expr ')'
@@ -373,6 +373,7 @@ impl Parser {
             let op = match self.peek() {
                 Token::Star => BinOp::Mul,
                 Token::Slash => BinOp::Div,
+                Token::Percent => BinOp::Rem,
                 _ => break,
             };
             self.pos += 1;

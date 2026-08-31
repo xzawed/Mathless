@@ -1,0 +1,24 @@
+// i32-division slice: split a loose quantity into whole boxes and a remainder.
+// Before this slice the only route was `(qty as f64 / per_box as f64) as i32`, which is
+// exact for ordinary pairs but turns `per_box == 0` into 2,147,483,647 boxes.
+//
+// `/` and `%` are TOTAL here (SPEC-i32-division DP-D1): a zero divisor gives 0, and
+// i32::MIN / -1 wraps. A caller who wants a domain error guards at the boundary instead —
+// see `boxes_checked` below.
+
+export fn boxes(qty: i32, per_box: i32) -> i32 {
+  return qty / per_box
+}
+
+export fn loose(qty: i32, per_box: i32) -> i32 {
+  return qty % per_box
+}
+
+error E_EMPTY_BOX = 1
+
+// The pattern SPEC-i32-division section 4 documents: total operator in the language,
+// domain error at the C ABI boundary where D17's `fail` is legal.
+export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
+  if per_box == 0 { fail E_EMPTY_BOX }
+  return qty / per_box
+}

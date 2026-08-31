@@ -1,9 +1,9 @@
 //! Typecheck + lowering AST → typed IR (W3).
 //!
 //! Rules for the MVP subset:
-//! - arithmetic (`+ - *`): both operands the same numeric type (`f64`→`f64`, `i32`→`i32`);
-//!   no implicit i32/f64 mixing. Division `/` is `f64` only — `i32 /` is rejected because
-//!   `/0` panics, and a panic in a generated module hangs the calling thread (STATUS §5-4).
+//! - arithmetic (`+ - * / %`): both operands the same numeric type (`f64`→`f64`, `i32`→`i32`);
+//!   no implicit i32/f64 mixing. `%` is i32-only (SPEC-i32-division DP-D4). i32 `/` and `%`
+//!   are TOTAL — the zero and `i32::MIN / -1` cases are closed in codegen, not here.
 //! - ordered comparison (`< > <= >=`): both operands the same numeric type → `bool`
 //! - equality (`== !=`): operands of equal type → `bool`
 //! - `if` condition must be `bool`
@@ -632,6 +632,19 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             })
         }
         Expr::Binary { op, lhs, rhs } => {
+            // DP-D5: `/ 0` and `% 0` written literally are rejected. The operators are total
+            // at runtime, so this changes no value — it catches the one case that is
+            // statically decidable and certainly a mistake. Deliberately SYNTACTIC, not
+            // constant folding: `let z = 0  a / z` still compiles, because the runtime rule
+            // covers it. `f64 / 0.0` also still compiles — that is `inf`, a defined value.
+            if matches!(op, BinOp::Div | BinOp::Rem) && matches!(**rhs, Expr::Int(0)) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': dividing by the literal 0 is rejected — `{}` by zero is \
+                     defined as 0 at runtime (SPEC-i32-division DP-D1), but writing the zero out \
+                     is always a mistake",
+                    if matches!(op, BinOp::Div) { "/" } else { "%" }
+                )));
+            }
             let lhs = check_expr(lhs, scope, fname, sigs)?;
             let rhs = check_expr(rhs, scope, fname, sigs)?;
             let (irop, ty) = check_binop(*op, lhs.ty, rhs.ty, fname)?;
@@ -670,23 +683,25 @@ fn check_binop(
                 "function '{fname}': operator {op:?} expects two f64 or two i32 operands, found {lt} and {rt}"
             ))),
         },
+        // `/` takes both numeric types. The two are lowered differently, though: `f64 /` is a
+        // plain operator because `f64 /0` is `inf`, while `i32 /` is guarded in codegen — the
+        // plain Rust operator panics on BOTH `b == 0` and `i32::MIN / -1`, and a panic in a
+        // generated module spins in the emitted `loop {}` handler (STATUS §5-4).
         BinOp::Div => match (lt, rt) {
             (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
-            // i32 division is out of this slice (DP-I3) because `/0` panics, and a panic in a
-            // generated module spins forever in the emitted `loop {}` panic handler rather
-            // than aborting (STATUS §5-4 — the older "aborts" wording was wrong).
-            //
-            // The message names the f64 round-trip because it is exact for every i32 pair,
-            // but it must also name that route's trap: `b == 0` becomes inf/-inf/NaN and
-            // then saturates to i32::MAX / i32::MIN / 0, so a zero divisor silently returns a
-            // plausible number instead of failing (measured on a loaded module).
-            (IrType::I32, IrType::I32) => Err(TypeError::new(format!(
-                "function '{fname}': i32 division `/` is not supported yet (SPEC-i32 DP-I3) — \
-                 write `(a as f64 / b as f64) as i32`, but guard `b == 0` yourself: that form \
-                 yields i32::MAX/i32::MIN/0 for a zero divisor instead of reporting an error"
-            ))),
+            (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::I32)),
             _ => Err(TypeError::new(format!(
-                "function '{fname}': operator / expects two f64 operands, found {lt} and {rt}"
+                "function '{fname}': operator / expects two f64 or two i32 operands, found {lt} and {rt}"
+            ))),
+        },
+        // DP-D4: `%` is i32-only. Floating-point remainder is a separate semantic argument
+        // (C's `fmod` truncates toward zero, IEEE `remainder` rounds to nearest-even), and
+        // this slice does not settle it.
+        BinOp::Rem => match (lt, rt) {
+            (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::I32)),
+            _ => Err(TypeError::new(format!(
+                "function '{fname}': operator % expects two i32 operands, found {lt} and {rt} \
+                 — f64 remainder is out of scope (SPEC-i32-division DP-D4)"
             ))),
         },
         BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => match (lt, rt) {
@@ -712,6 +727,7 @@ fn map_op(op: BinOp) -> IrBinOp {
         BinOp::Sub => IrBinOp::Sub,
         BinOp::Mul => IrBinOp::Mul,
         BinOp::Div => IrBinOp::Div,
+        BinOp::Rem => IrBinOp::Rem,
         BinOp::Lt => IrBinOp::Lt,
         BinOp::Gt => IrBinOp::Gt,
         BinOp::Le => IrBinOp::Le,

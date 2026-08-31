@@ -30,6 +30,7 @@
 #include "count_bounded.h"
 #include "discount4.h"
 #include "line_total.h"
+#include "pack.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
@@ -39,6 +40,8 @@ typedef int32_t (*negate_if_fn)(int32_t, bool);
 typedef int32_t (*count_bounded_fn)(int32_t, int32_t);
 typedef double (*discount4_fn)(double, bool);
 typedef double (*line_total_fn)(double, int32_t);
+typedef int32_t (*boxes_fn)(int32_t, int32_t);
+typedef int32_t (*boxes_checked_fn)(int32_t, int32_t, int32_t *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -61,6 +64,10 @@ _Static_assert(_Generic(&mlx_discount4, discount4_fn: 1, default: 0),
                "generated mlx_discount4 signature changed");
 _Static_assert(_Generic(&mlx_line_total, line_total_fn: 1, default: 0),
                "generated mlx_line_total signature changed");
+_Static_assert(_Generic(&mlx_boxes, boxes_fn: 1, default: 0),
+               "generated mlx_boxes signature changed");
+_Static_assert(_Generic(&mlx_boxes_checked, boxes_checked_fn: 1, default: 0),
+               "generated mlx_boxes_checked signature changed");
 
 static int failures = 0;
 
@@ -201,6 +208,40 @@ int main(int argc, char **argv) {
         check(line_total(2.5, 0) == 0.0, "line_total(2.5, 0) == 0");
     }
 
+    /* --- pack.dll: i32 `/` and `%` are TOTAL. Both edge cases are the ones where C's own
+       integer division is undefined behaviour, so a C host is exactly the right place to
+       check that the module RETURNS a defined value instead of trapping. --- */
+    HMODULE pk = load(dir, "pack.dll");
+    if (pk == NULL) {
+        return 1;
+    }
+    boxes_fn boxes = (boxes_fn)sym(pk, "mlx_boxes");
+    boxes_fn loose = (boxes_fn)sym(pk, "mlx_loose");
+    if (boxes && loose) {
+        check(boxes(17, 5) == 3, "boxes(17, 5) == 3");
+        check(loose(17, 5) == 2, "loose(17, 5) == 2");
+        check(boxes(-17, 5) == -3, "boxes(-17, 5) == -3 (truncates toward zero)");
+        check(loose(-17, 5) == -2, "loose(-17, 5) == -2 (sign follows the dividend)");
+        /* The whole point of the slice: in C these two would be UB. */
+        check(boxes(17, 0) == 0, "boxes(17, 0) == 0 (total, not a trap)");
+        check(loose(17, 0) == 0, "loose(17, 0) == 0 (total, not a trap)");
+        check(boxes(INT32_MIN, -1) == INT32_MIN, "boxes(INT32_MIN, -1) wraps to INT32_MIN");
+        check(loose(INT32_MIN, -1) == 0, "loose(INT32_MIN, -1) == 0");
+    }
+    boxes_checked_fn boxes_checked = (boxes_checked_fn)sym(pk, "mlx_boxes_checked");
+    if (boxes_checked) {
+        int32_t out = -999;
+        int32_t status = boxes_checked(17, 5, &out);
+        check(status == 0, "boxes_checked(17, 5) status == 0");
+        check(out == 3, "boxes_checked(17, 5) writes 3 through the out-param");
+
+        int32_t untouched = -999;
+        status = boxes_checked(17, 0, &untouched);
+        check(status == ML_ERR_E_EMPTY_BOX, "boxes_checked(17, 0) status == ML_ERR_E_EMPTY_BOX");
+        check(untouched == -999, "boxes_checked(17, 0) leaves the out-param untouched");
+    }
+
+    FreeLibrary(pk);
     FreeLibrary(d);
     FreeLibrary(s);
     FreeLibrary(w);

@@ -61,14 +61,19 @@ Windows x64 with a pinned toolchain.
 **The compiler.** `mlc` runs lex, parse, typecheck, a backend-independent IR, then codegen. The
 backend emits `no_std`, `extern "C"` Rust and builds it as a `cargo` cdylib.
 
-**The language today.** Three types: `f64`, `bool` and `i32`. They come with arithmetic (`+`,
-`-`, `*`, and `/` on `f64` only), comparisons, and an explicit `as` conversion between the two
-numeric types. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals
-are `let` and `let mut`, with assignment. Operators include unary `-` and `!`, plus `&&` and
-`||`. A function can be fallible: `-> T!` with `error NAME = N` and `fail NAME`, which lowers to
-an integer status and an out-parameter. Internal `fn` declarations can call each other, but
-recursion is rejected at compile time. [docs/LANGUAGE.md](docs/LANGUAGE.md) keeps the definitive
-list.
+**The language today.** Four types: `f64`, `bool`, `i32` and `string`. The numeric ones come
+with arithmetic (`+`, `-`, `*`, `/`, and `%` on `i32`), comparisons, and an explicit `as`
+conversion between them; `i32` division is total, so `x / 0` is `0` rather than a trap.
+A `string` can be a parameter or a `-> string!` return; the operations on it are `==` and
+`!=`, which compare bytes. Returning one uses a caller-allocated buffer — the module never
+allocates. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
+`let` and `let mut`, with assignment. Operators include unary `-` and `!`, plus `&&` and
+`||`. There are four built-ins — `floor`, `ceil`, `round`, `trunc` — which match C's
+`<math.h>` exactly. A function can be fallible: `-> T!` with `error NAME = N` and
+`fail NAME`, which lowers to an integer status and an out-parameter, and it can declare
+extra `out` parameters to return several values. Internal `fn` declarations can call each
+other, but recursion is rejected at compile time.
+[docs/LANGUAGE.md](docs/LANGUAGE.md) keeps the definitive list.
 
 **The CLI.** `mlc build <file.mls> -o <dir>` writes three files side by side: the `.dll` module,
 a `.h` C header, and a `.pas` Delphi import unit.

@@ -47,7 +47,11 @@ fn f64_to_i32_truncates_saturates_and_maps_nan_to_zero() {
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out).unwrap();
     let arts = emit_artifacts(
-        "export fn trunc(x: f64) -> i32 { return x as i32 }\n\
+        // Named `cast_trunc`, not `trunc`: the rounding slice made `trunc` a built-in, and a
+        // user function may not shadow one (SPEC-rounding DP-R1). That rule caught this very
+        // test the day it landed, which is the argument for rejecting at the declaration
+        // rather than silently shadowing.
+        "export fn cast_trunc(x: f64) -> i32 { return x as i32 }\n\
          export fn over(x: f64) -> i32 { return (x / 0.0) as i32 }\n\
          export fn nan_to(x: f64) -> i32 { return (0.0 / 0.0) as i32 }\n\
          export fn widen(n: i32) -> f64 { return n as f64 }",
@@ -58,7 +62,7 @@ fn f64_to_i32_truncates_saturates_and_maps_nan_to_zero() {
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load edges.dll");
     let trunc: extern "C" fn(f64) -> i32 =
-        unsafe { std::mem::transmute(m.symbol(b"mlx_trunc\0").unwrap()) };
+        unsafe { std::mem::transmute(m.symbol(b"mlx_cast_trunc\0").unwrap()) };
     let over: extern "C" fn(f64) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_over\0").unwrap()) };
     let nan_to: extern "C" fn(f64) -> i32 =

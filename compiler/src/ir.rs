@@ -8,6 +8,8 @@
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum IrType {
+    /// Lowered as `*const u8`: borrowed for the call (D16 rule 1), never owned.
+    Str,
     F64,
     Bool,
     I32,
@@ -18,6 +20,7 @@ impl std::fmt::Display for IrType {
     /// Rust variant name (`F64`).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            IrType::Str => "string",
             IrType::F64 => "f64",
             IrType::Bool => "bool",
             IrType::I32 => "i32",
@@ -108,6 +111,8 @@ pub struct IrExpr {
 #[derive(Debug, PartialEq)]
 pub enum IrExprKind {
     ConstF64(f64),
+    /// A string literal, stored WITHOUT its NUL; codegen appends one.
+    ConstStr(String),
     ConstI32(i32),
     ConstBool(bool),
     /// Reference to a parameter/local by name.

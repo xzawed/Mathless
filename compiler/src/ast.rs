@@ -39,6 +39,9 @@ pub struct Param {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Type {
+    /// `string` — a borrowed NUL-terminated byte sequence. **Parameter position only**
+    /// (SPEC-string-input section 2.5): a return or a local would ask where the bytes live.
+    Str,
     F64,
     Bool,
     I32,
@@ -78,6 +81,8 @@ pub enum UnOp {
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(f64),
+    /// `"…"` — an ASCII string literal. Lowers to a static NUL-terminated byte array.
+    Str(String),
     Int(i64),
     Bool(bool),
     Var(String),

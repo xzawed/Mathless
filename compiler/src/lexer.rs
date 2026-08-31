@@ -26,6 +26,8 @@ pub enum Token {
     Number(f64),
     /// An integer literal (no decimal point), e.g. `12`.
     Int(i64),
+    /// `"…"` — an ASCII, unescaped string literal (SPEC-string-input DP-S4).
+    Str(String),
     // punctuation
     Arrow,
     LParen,
@@ -188,6 +190,72 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             });
             i += 1;
             col += 1;
+            continue;
+        }
+
+        // string literal: `"…"`, plain ASCII, no escapes (SPEC-string-input DP-S4).
+        //
+        // No escapes means `"` cannot appear inside one, which is fine for the classification
+        // codes this exists for. `\` is rejected loudly rather than passed through, so a
+        // source that expects `\n` to mean a newline fails instead of silently comparing a
+        // backslash. ASCII-only keeps STATUS section 6's existing rule (non-ASCII in a
+        // generated artifact trips MSVC C4819 under `/WX`) narrow rather than widening it.
+        if c == '"' {
+            let (line0, col0) = (line, col);
+            i += 1;
+            col += 1;
+            let mut s = String::new();
+            loop {
+                let Some(&ch) = chars.get(i) else {
+                    return Err(ParseError::new(
+                        "unterminated string literal — a string must close on the same line",
+                        line0,
+                        col0,
+                    ));
+                };
+                match ch {
+                    '"' => {
+                        i += 1;
+                        col += 1;
+                        break;
+                    }
+                    '\n' => {
+                        return Err(ParseError::new(
+                            "unterminated string literal — a string must close on the same line",
+                            line0,
+                            col0,
+                        ))
+                    }
+                    '\\' => {
+                        return Err(ParseError::new(
+                            "escapes are not supported in a string literal yet — `\\` has no \
+                             meaning here, so it would silently be a backslash",
+                            line,
+                            col,
+                        ))
+                    }
+                    c if !c.is_ascii() => {
+                        return Err(ParseError::new(
+                            format!(
+                                "non-ASCII character '{c}' in a string literal — generated \
+                                 artifacts stay ASCII (non-ASCII trips MSVC C4819 under `/WX`)"
+                            ),
+                            line,
+                            col,
+                        ))
+                    }
+                    c => {
+                        s.push(c);
+                        i += 1;
+                        col += 1;
+                    }
+                }
+            }
+            out.push(Spanned {
+                tok: Token::Str(s),
+                line: line0,
+                col: col0,
+            });
             continue;
         }
 

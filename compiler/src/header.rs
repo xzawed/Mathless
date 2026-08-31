@@ -12,6 +12,8 @@ use crate::ir::{IrFunction, IrModule, IrType};
 
 fn c_type(t: IrType) -> &'static str {
     match t {
+        // DP-S1: NUL-terminated, borrowed for the call.
+        IrType::Str => "const char*",
         IrType::F64 => "double",
         IrType::Bool => "bool",
         IrType::I32 => "int32_t",
@@ -20,6 +22,10 @@ fn c_type(t: IrType) -> &'static str {
 
 fn delphi_type(t: IrType) -> &'static str {
     match t {
+        // NOT Delphi's `string`: that is a UTF-16 UnicodeString, and passing one here sends
+        // the wrong bytes silently (SPEC-string-input section 5.2). The unit carries a
+        // warning comment for the same reason.
+        IrType::Str => "PAnsiChar",
         IrType::F64 => "Double",
         IrType::Bool => "Boolean",
         IrType::I32 => "Integer",
@@ -146,8 +152,35 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     );
     let _ = writeln!(
         s,
-        "  Boolean is 1 byte to match the module ABI; do not use LongBool. }}"
+        "  Boolean is 1 byte to match the module ABI; do not use LongBool."
     );
+    // Only when the module actually takes a string — an unrelated module should not carry a
+    // warning about a type it never mentions.
+    if module
+        .functions
+        .iter()
+        .any(|f| f.exported && f.params.iter().any(|p| p.ty == IrType::Str))
+    {
+        // Deliberately spells out which cast does what: the blanket "a UnicodeString silently
+        // matches nothing" is only true of the Pointer() spelling. Nothing here is measured -
+        // there is no dcc64 on the machine that generates it - so it says so.
+        let _ = writeln!(
+            s,
+            "\n  PAnsiChar is NOT Delphi's `string`, which is UTF-16 (UnicodeString). The module\n  \
+             compares BYTES up to the NUL and never inspects the encoding (SPEC-string-input\n  \
+             DP-S2), so how you build the argument decides whether it can match at all:\n  \
+             - PAnsiChar(AnsiString(S)) - correct. Keep the AnsiString in a local for the\n    \
+             duration of the call; the temporary in a cast expression lives only for the\n    \
+             statement.\n  \
+             - PAnsiChar(S) on a UnicodeString - compiles with an implicit-cast warning and\n    \
+             converts through the ANSI code page. ASCII survives; anything else may not.\n  \
+             - PAnsiChar(Pointer(S)) - WRONG and silent. It reinterprets UTF-16 bytes, so the\n    \
+             comparison matches nothing and nothing crashes.\n  \
+             UNVERIFIED (E1): no Delphi compiler has ever built this unit - see the DRAFT note\n  \
+             above. This paragraph is from Embarcadero's documented behaviour, not a measurement."
+        );
+    }
+    let _ = writeln!(s, "  }}");
     let _ = writeln!(s, "unit {unit_name};");
     s.push('\n');
     let _ = writeln!(s, "interface");

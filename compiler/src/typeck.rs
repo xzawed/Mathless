@@ -210,7 +210,7 @@ fn collect_calls(body: &[Stmt], out: &mut Vec<String>) {
                 expr(lhs, out);
                 expr(rhs, out);
             }
-            Expr::Number(_) | Expr::Int(_) | Expr::Bool(_) | Expr::Var(_) => {}
+            Expr::Number(_) | Expr::Int(_) | Expr::Bool(_) | Expr::Str(_) | Expr::Var(_) => {}
         }
     }
     for s in body {
@@ -294,6 +294,7 @@ fn reject_recursion(module: &ast::Module) -> Result<(), TypeError> {
 
 fn ir_type(t: Type) -> IrType {
     match t {
+        Type::Str => IrType::Str,
         Type::F64 => IrType::F64,
         Type::Bool => IrType::Bool,
         Type::I32 => IrType::I32,
@@ -342,6 +343,14 @@ fn check_function(
         // DP-O5: an `out` parameter is export-only. A call expression has no syntax for
         // passing a pointer, so an internal `fn` with one could never be called with it —
         // the same reason `-> T!` is export-only. Lifting this later is additive.
+        if p.out && p.ty == Type::Str {
+            return Err(TypeError::new(format!(
+                "function '{}': parameter '{}' is `out string`, which is not supported — a 
+                 string is borrowed for the call, so the module has nowhere to write one. That 
+                 needs the caller-allocates buffer protocol (Q12), a later slice",
+                f.name, p.name
+            )));
+        }
         if p.out && !f.exported {
             return Err(TypeError::new(format!(
                 "function '{}': parameter '{}' is `out`, which is only allowed on an `export fn` \
@@ -374,6 +383,17 @@ fn check_function(
         return Err(TypeError::new(format!(
             "function '{}': parameter name 'out_value' is reserved in a fallible function \
              (it names the D17 out-param) — rename it",
+            f.name
+        )));
+    }
+    // SPEC-string-input section 2.5: a string may only be a PARAMETER. Returning one asks
+    // where the bytes live, and the answer is the Q12 protocol (host buffer + capacity) —
+    // a separate slice.
+    if f.ret == Type::Str {
+        return Err(TypeError::new(format!(
+            "function '{}' returns `string`, which is not supported — a string can only be a 
+             parameter (it is borrowed for the call). Returning one needs the caller-allocates 
+             buffer protocol (Q12), which is a later slice",
             f.name
         )));
     }
@@ -601,6 +621,16 @@ fn check_stmt(
         } => {
             // Check the RHS in the CURRENT scope first, so `let x = x` is use-before-def.
             let value = check_expr(value, scope, fname, sigs)?;
+            // SPEC-string-input section 2.5: a string may only be a PARAMETER. A local would
+            // outlive nothing here today, but it is the first step toward "where do these
+            // bytes live", and that question belongs to the Q12 slice.
+            if value.ty == IrType::Str {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' would be a `string`, which is not \
+                     supported — a string can only be a parameter (it is borrowed for the \
+                     call). Compare it in place instead of binding it"
+                )));
+            }
             // Local names honour the same reserved-word policy as parameters (all targets).
             let targets = crate::reserved::reserving_targets(name);
             if !targets.is_empty() {
@@ -655,6 +685,12 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
         Expr::Number(n) => Ok(IrExpr {
             ty: IrType::F64,
             kind: IrExprKind::ConstF64(*n),
+        }),
+        // The lexer already guaranteed ASCII and no escapes (DP-S4), so the bytes reaching
+        // codegen are exactly what the author typed.
+        Expr::Str(s) => Ok(IrExpr {
+            ty: IrType::Str,
+            kind: IrExprKind::ConstStr(s.clone()),
         }),
         Expr::Int(n) => {
             // The only integer type is i32; the literal must fit.

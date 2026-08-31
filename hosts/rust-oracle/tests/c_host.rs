@@ -103,6 +103,54 @@ fn dumpbin_exports(vcvars: &Path, workdir: &Path, dll: &Path) -> Vec<String> {
     names
 }
 
+/// The same second opinion for the import table, in the `"dll!function"` form our reader uses.
+///
+/// `dumpbin /imports` prints one indented DLL name, then its functions as `<hint> <name>`
+/// pairs (or `Ordinal <n>` when there is no name). The `Summary` section at the end also has
+/// two-field lines (`1000 .rdata`), and its first field parses as hex — so parsing stops there
+/// rather than inventing imports named after sections.
+fn dumpbin_imports(vcvars: &Path, workdir: &Path, dll: &Path) -> Vec<String> {
+    let out = run_in_msvc_env(
+        vcvars,
+        workdir,
+        &format!("dumpbin /nologo /imports \"{}\"", dll.display()),
+    );
+    assert!(
+        out.status.success(),
+        "dumpbin /imports failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut names: Vec<String> = Vec::new();
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if t == "Summary" {
+            break;
+        }
+        if t.to_ascii_lowercase().ends_with(".dll") && !t.contains(char::is_whitespace) {
+            current = Some(t.to_ascii_lowercase());
+            continue;
+        }
+        let Some(dll_name) = current.as_deref() else {
+            continue;
+        };
+        let f: Vec<&str> = t.split_whitespace().collect();
+        if f.len() != 2 {
+            continue;
+        }
+        if f[0] == "Ordinal" {
+            if let Ok(n) = f[1].parse::<u32>() {
+                names.push(format!("{dll_name}!#{n}"));
+            }
+        } else if u32::from_str_radix(f[0], 16).is_ok() {
+            names.push(format!("{dll_name}!{}", f[1]));
+        }
+    }
+    names.sort();
+    names
+}
+
 #[test]
 fn a_real_c_host_loads_and_calls_the_module() {
     let Some(vcvars) = vcvars64() else {
@@ -182,6 +230,9 @@ fn a_real_c_host_loads_and_calls_the_module() {
     )
     .expect("emit line_total");
 
+    let vat =
+        emit_artifacts(include_str!("../../../examples/vat.mls"), "vat", &work).expect("emit vat");
+
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("c-host")
@@ -240,6 +291,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &pack.dll,
         &commission.dll,
         &deduction.dll,
+        &vat.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();
@@ -250,6 +302,19 @@ fn a_real_c_host_loads_and_calls_the_module() {
             "our PE reader and dumpbin disagree about {}",
             dll.display()
         );
+
+        // The IMPORT reader is new (SPEC-string-input section 3-C measures "the import set is
+        // unchanged"), so give it the same second opinion the export reader gets. Without this
+        // a reader that silently returned an empty set would make every import assertion pass.
+        let ours = pe::read_imports(dll).expect("our PE import reader");
+        let theirs = dumpbin_imports(&vcvars, &work, dll);
+        assert_eq!(
+            ours,
+            theirs,
+            "our PE reader and dumpbin disagree about the imports of {}",
+            dll.display()
+        );
+        assert!(!ours.is_empty(), "an empty import set would be suspicious");
     }
 
     let _ = std::fs::remove_dir_all(&work);

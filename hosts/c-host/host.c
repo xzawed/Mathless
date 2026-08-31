@@ -37,6 +37,7 @@
 #include "commission.h"
 #include "deduction.h"
 #include "pack.h"
+#include "vat.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
@@ -51,6 +52,9 @@ typedef int32_t (*boxes_checked_fn)(int32_t, int32_t, int32_t *);
 typedef double (*commission_fn)(double, int32_t *);
 typedef double (*unary_f64_fn)(double);
 typedef int32_t (*commission_checked_fn)(double, int32_t *, double *);
+typedef double (*vat_rate_fn)(const char *);
+typedef int32_t (*issuer_of_fn)(const char *);
+typedef bool (*is_export_item_fn)(const char *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -86,6 +90,15 @@ _Static_assert(_Generic(&mlx_commission_checked, commission_checked_fn: 1, defau
                "generated mlx_commission_checked signature changed");
 _Static_assert(_Generic(&mlx_deduction, unary_f64_fn: 1, default: 0),
                "generated mlx_deduction signature changed");
+/* DP-S1: a string parameter must reach C as `const char*`. If the generator ever emitted a
+   pointer+length pair, or a plain char*, these stop compiling - which is the point: the shape
+   appears at every host call site, so it has to be caught at the boundary, not at runtime. */
+_Static_assert(_Generic(&mlx_vat_rate, vat_rate_fn: 1, default: 0),
+               "generated mlx_vat_rate signature changed");
+_Static_assert(_Generic(&mlx_issuer_of, issuer_of_fn: 1, default: 0),
+               "generated mlx_issuer_of signature changed");
+_Static_assert(_Generic(&mlx_is_export_item, is_export_item_fn: 1, default: 0),
+               "generated mlx_is_export_item signature changed");
 
 static int failures = 0;
 
@@ -330,6 +343,43 @@ int main(int argc, char **argv) {
         check(signbit(fl(-0.0)) == signbit(floor(-0.0)), "floor(-0.0) keeps the sign of zero");
     }
 
+    /* --- vat.dll: string INPUT parameters (SPEC-string-input sections 3-B and 3-B2).
+       A C host is the right place for this one: it passes ordinary C string literals, which
+       is what DP-S1 chose the ABI for, and the comparison is byte equality up to the NUL. --- */
+    HMODULE vt = load(dir, "vat.dll");
+    if (vt == NULL) {
+        return 1;
+    }
+    vat_rate_fn vat_rate = (vat_rate_fn)sym(vt, "mlx_vat_rate");
+    issuer_of_fn issuer_of = (issuer_of_fn)sym(vt, "mlx_issuer_of");
+    is_export_item_fn is_export_item = (is_export_item_fn)sym(vt, "mlx_is_export_item");
+    if (vat_rate && issuer_of && is_export_item) {
+        check(vat_rate("KR") == 0.1, "vat_rate(\"KR\") == 0.1");
+        check(vat_rate("JP") == 0.08, "vat_rate(\"JP\") == 0.08");
+        check(vat_rate("US") == 0.0, "vat_rate(\"US\") == 0.0 (falls through)");
+
+        /* Section 3-B2 - each of these passes under some looser comparison. */
+        check(vat_rate("kr") == 0.0, "vat_rate(\"kr\") == 0.0 (case matters)");
+        check(vat_rate("") == 0.0, "vat_rate(\"\") == 0.0");
+        check(vat_rate("KRW") == 0.0, "vat_rate(\"KRW\") == 0.0 (longer is not a match)");
+        check(vat_rate("K") == 0.0, "vat_rate(\"K\") == 0.0 (a prefix is not a match)");
+
+        /* The NUL ends it: a buffer with garbage after the terminator still matches "KR".
+           Built here rather than written as a literal so the trailing bytes are certainly
+           present in memory. */
+        char padded[8] = {'K', 'R', '\0', 'Z', 'Z', 'Z', 'Z', 'Z'};
+        check(vat_rate(padded) == 0.1, "vat_rate(\"KR\\0ZZZZZ\") == 0.1 (stops at the NUL)");
+
+        check(issuer_of("4") == 1, "issuer_of(\"4\") == 1");
+        check(issuer_of("51") == 2, "issuer_of(\"51\") == 2");
+        check(issuer_of("5") == 0, "issuer_of(\"5\") == 0 (\"5\" is not \"51\")");
+
+        /* `!=` is the negated loop, so it needs its own value. */
+        check(is_export_item("DOM") == false, "is_export_item(\"DOM\") == false");
+        check(is_export_item("EXP") == true, "is_export_item(\"EXP\") == true");
+    }
+
+    FreeLibrary(vt);
     FreeLibrary(dd);
     FreeLibrary(cm);
     FreeLibrary(pk);

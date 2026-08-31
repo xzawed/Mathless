@@ -49,6 +49,7 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
         crate::abi::ML_MODULE_ABI_VERSION
     );
 
+    emit_string_helper(module, &mut out);
     emit_rounding_helpers(module, &mut out);
 
     for f in &module.functions {
@@ -143,6 +144,8 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
 
 fn rust_type(t: IrType) -> &'static str {
     match t {
+        // Borrowed for the call (D16 rule 1). NUL-terminated, never owned, never allocated.
+        IrType::Str => "*const u8",
         IrType::F64 => "f64",
         IrType::Bool => "bool",
         IrType::I32 => "i32",
@@ -212,6 +215,9 @@ fn emit_stmt(s: &IrStmt, indent: usize, fallible: bool, out: &mut String) {
 
 fn emit_expr(e: &IrExpr) -> String {
     match &e.kind {
+        // A static, NUL-terminated byte array: no allocation, and the NUL makes the module's
+        // view of the bytes identical to the C caller's (DP-S1).
+        IrExprKind::ConstStr(s) => format!("b\"{s}\\0\".as_ptr()"),
         IrExprKind::ConstF64(n) => format!("{n:?}f64"),
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
@@ -300,9 +306,77 @@ fn emit_expr(e: &IrExpr) -> String {
                     method
                 );
             }
+            // A string is a `*const u8` (DP-S1). Rust's `==` on raw pointers compares the
+            // ADDRESSES, which would make `country == "KR"` false for a host string that
+            // happens to hold exactly those bytes — the wrong answer, silently, with no
+            // compile error. Route both directions through the byte-loop helper instead.
+            if matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str {
+                let call = format!("ml_streq({}, {})", emit_expr(lhs), emit_expr(rhs));
+                return if matches!(op, IrBinOp::Eq) {
+                    call
+                } else {
+                    format!("(!{call})")
+                };
+            }
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }
     }
+}
+
+/// Does this module compare strings anywhere? Only then is the helper emitted.
+fn compares_strings(module: &IrModule) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::Binary { op, lhs, rhs } => {
+                (matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str)
+                    || in_expr(lhs)
+                    || in_expr(rhs)
+            }
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand)
+            }
+            IrExprKind::Call { args, .. } => args.iter().any(in_expr),
+            _ => false,
+        }
+    }
+    fn in_stmts(body: &[IrStmt]) -> bool {
+        body.iter().any(|s| match s {
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond) || in_stmts(body)
+            }
+            IrStmt::Return(e)
+            | IrStmt::Let { value: e, .. }
+            | IrStmt::Assign { value: e, .. }
+            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            IrStmt::Fail(_) => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
+/// Byte-equality for two NUL-terminated pointers (SPEC-string-input section 2.3).
+///
+/// Deliberately NOT `strcmp`: calling the CRT would add an import, and the module's import set
+/// is one of the protection proxies acceptance C measures (D04/D05). A byte loop costs a few
+/// lines and keeps the boundary unchanged.
+///
+/// Encoding is opaque (DP-S2). Equal bytes are equal strings; matching encodings between host
+/// and source is a host contract, stated in HOST_ABI.
+fn emit_string_helper(module: &IrModule, out: &mut String) {
+    if !compares_strings(module) {
+        return;
+    }
+    out.push_str(
+        "fn ml_streq(a: *const u8, b: *const u8) -> bool {\n\
+         \x20   let mut i = 0usize;\n\
+         \x20   loop {\n\
+         \x20       let (x, y) = unsafe { (*a.add(i), *b.add(i)) };\n\
+         \x20       if x != y { return false; }\n\
+         \x20       if x == 0 { return true; }\n\
+         \x20       i += 1;\n\
+         \x20   }\n\
+         }\n\n",
+    );
 }
 
 /// Which built-in rounders this module actually calls, so an unused one is not emitted.
@@ -332,6 +406,7 @@ fn used_rounders(module: &IrModule) -> Vec<&'static str> {
             IrExprKind::ConstF64(_)
             | IrExprKind::ConstI32(_)
             | IrExprKind::ConstBool(_)
+            | IrExprKind::ConstStr(_)
             | IrExprKind::Var(_) => {}
         }
     }

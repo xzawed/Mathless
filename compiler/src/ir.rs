@@ -142,6 +142,8 @@ pub enum IrBinOp {
     Sub,
     Mul,
     Div,
+    /// `%` — remainder. i32 only; lowered with the same zero guard as `Div`.
+    Rem,
     Lt,
     Gt,
     Le,

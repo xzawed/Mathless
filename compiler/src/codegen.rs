@@ -56,8 +56,9 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
 
     // A no_std cdylib requires a panic handler. Nothing on today's surface can reach this one:
     // `f64 /0` is inf, `as` saturates, integer arithmetic wraps (release leaves overflow-checks
-    // off) and `i32 /` is rejected in typeck. So it exists to satisfy `no_std`, not to handle
-    // anything.
+    // off) and i32 `/`/`%` are emitted guarded below, so neither a zero divisor nor
+    // `i32::MIN / -1` reaches a panicking operator. So it exists to satisfy `no_std`, not to
+    // handle anything.
     //
     // What it does if a future slice DOES reach it matters, because it is easy to get wrong:
     // in `no_std` the `#[panic_handler]` IS the panic runtime, and the profile's
@@ -249,6 +250,29 @@ fn emit_expr(e: &IrExpr) -> String {
                 lhs.ty,
                 rhs.ty
             );
+            // i32 `/` and `%` are TOTAL in Mathless (SPEC-i32-division DP-D1), and Rust's are
+            // not: the plain operator panics on `b == 0` and, separately, on `i32::MIN / -1`.
+            // The second one is easy to miss — division overflow panics in a release build too,
+            // because it is NOT governed by `overflow-checks` (measured with
+            // `rustc -O -C overflow-checks=off`). Either panic would enter `ml_panic` and spin
+            // there, hanging the host thread (STATUS §5-4), so both edges close here:
+            // `wrapping_*` handles MIN/-1 and the guard handles the zero.
+            //
+            // The divisor is bound first so it is evaluated exactly once — `a / f(b)` must not
+            // call `f` twice just because the emitted form mentions the divisor in two places.
+            if matches!(op, IrBinOp::Div | IrBinOp::Rem) && lhs.ty == IrType::I32 {
+                let method = if matches!(op, IrBinOp::Div) {
+                    "wrapping_div"
+                } else {
+                    "wrapping_rem"
+                };
+                return format!(
+                    "{{ let __d = {}; if __d == 0 {{ 0i32 }} else {{ ({}).{}(__d) }} }}",
+                    emit_expr(rhs),
+                    emit_expr(lhs),
+                    method
+                );
+            }
             format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
         }
     }
@@ -259,7 +283,11 @@ fn op_str(op: IrBinOp) -> &'static str {
         IrBinOp::Add => "+",
         IrBinOp::Sub => "-",
         IrBinOp::Mul => "*",
+        // `Div` reaches here only for f64; the i32 form is emitted guarded above and never
+        // takes this path. `Rem` is i32-only (DP-D4), so it never reaches here at all —
+        // the arm exists so a future f64 `%` cannot be added without noticing this.
         IrBinOp::Div => "/",
+        IrBinOp::Rem => "%",
         IrBinOp::Lt => "<",
         IrBinOp::Gt => ">",
         IrBinOp::Le => "<=",

@@ -161,6 +161,8 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &work,
     )
     .expect("emit discount4");
+    let pack = emit_artifacts(include_str!("../../../examples/pack.mls"), "pack", &work)
+        .expect("emit pack");
     let line_total = emit_artifacts(
         include_str!("../../../examples/line_total.mls"),
         "line_total",
@@ -223,6 +225,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &count_bounded.dll,
         &discount4.dll,
         &line_total.dll,
+        &pack.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

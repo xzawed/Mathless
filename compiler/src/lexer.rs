@@ -39,6 +39,8 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    /// `%` — remainder (SPEC-i32-division). i32 only; sits with `*` and `/`.
+    Percent,
     Lt,
     Gt,
     Le,
@@ -170,6 +172,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             '-' => Some(Token::Minus),
             '*' => Some(Token::Star),
             '/' => Some(Token::Slash),
+            '%' => Some(Token::Percent),
             '<' => Some(Token::Lt),
             '>' => Some(Token::Gt),
             _ => None,

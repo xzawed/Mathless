@@ -7,7 +7,10 @@
 //!
 //! **Exported** function names are safe without this check: they are emitted with the `mlx_`
 //! prefix. **Internal** function names are not — since SPEC-calls they are emitted as-is —
-//! so `typeck` runs them through here too, plus a `ml_`/`mlx_` prefix check (D18).
+//! so `typeck` runs them through here too.
+//!
+//! Target keywords are only half the problem. codegen also injects its OWN identifiers into
+//! the same emitted scope, and those need reserving as well — see [`generated_prefix`].
 
 /// Return the target languages that reserve `name` (empty if the name is safe everywhere).
 /// Rust and C are case-sensitive; Pascal is case-insensitive.
@@ -23,6 +26,44 @@ pub fn reserving_targets(name: &str) -> Vec<&'static str> {
         targets.push("Pascal");
     }
     targets
+}
+
+/// Prefixes that codegen owns. A user name carrying one of these lands in the SAME emitted
+/// scope as an identifier the compiler generated, and shadowing is silent in Rust.
+///
+/// This is not hypothetical. Both were reachable from ordinary source before this check:
+///
+/// - `__d` — the divisor temporary in the `i32 /` and `%` guard. A parameter named `__d`
+///   was shadowed by it, so `__d / b` returned `1` for every nonzero `b`. It compiled, the
+///   number looked plausible, and it was wrong.
+/// - `ml_floor` — a parameter by that name shadowed the emitted rounding helper, so
+///   `floor(x)` lowered to `ml_floor(ml_floor)` and rustc reported E0618 in a file the user
+///   never wrote.
+///
+/// There is no codegen-side escape: Mathless and Rust share an identifier character set, so
+/// no generated name is unspellable. Reserving the prefix is the fix.
+///
+/// `out_value` is handled separately in `typeck` because it is only generated for a fallible
+/// function, and its message can say so.
+pub fn generated_prefix(name: &str) -> Option<&'static str> {
+    // Order matters for the message only: `mlx_` is checked first so a name carrying it is
+    // not reported as merely `ml_`.
+    ["mlx_", "ml_", "__"]
+        .into_iter()
+        .find(|p| name.starts_with(p))
+}
+
+/// What the compiler generates behind each reserved prefix — used to explain the rejection
+/// instead of just stating it.
+pub fn generated_prefix_reason(prefix: &str) -> &'static str {
+    match prefix {
+        "mlx_" => "exported functions are emitted as `mlx_<name>` (D18)",
+        "ml_" => {
+            "the runtime namespace: `ml_module_abi_version`, the panic handler, and the \
+                  rounding helpers"
+        }
+        _ => "compiler temporaries such as the `__d` divisor binding in the `i32 /` guard",
+    }
 }
 
 /// Rust 2021 keywords (strict + reserved).

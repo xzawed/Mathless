@@ -99,12 +99,20 @@ fn argument_count_and_types_must_match() {
 #[test]
 fn calling_a_fallible_function_is_rejected_for_now() {
     // DP-C1: `-> T!` lowers to status + out-param, so it is not a value.
+    //
+    // The callee must be `export`ed for this test to reach the CALL SITE at all: an
+    // internal `-> T!` is now rejected at its declaration, so the original internal-`g`
+    // form would still fail this assertion while testing the other rule entirely.
     let err = compile_to_ir(
-        "error E = 1\nfn g(x: i32) -> i32! { if x < 0 { fail E } return x }\nexport fn f() -> i32 { return g(1) }",
+        "error E = 1\nexport fn g(x: i32) -> i32! { if x < 0 { fail E } return x }\nexport fn f() -> i32 { return g(1) }",
     )
     .unwrap_err();
     let msg = format!("{err:?}").to_lowercase();
     assert!(msg.contains("fallible"), "{err:?}");
+    assert!(
+        !msg.contains("internal function"),
+        "must be the call-site rule, not the declaration rule: {err:?}"
+    );
 }
 
 #[test]
@@ -158,4 +166,41 @@ fn an_exported_name_may_still_look_like_a_prefix() {
     // Exports are emitted as `mlx_<name>`, so `export fn mlx_foo` becomes `mlx_mlx_foo` —
     // ugly but not a collision. Don't reject what isn't broken.
     compile_to_rust("export fn mlx_foo(x: i32) -> i32 { return x }").expect("no collision");
+}
+
+#[test]
+fn an_internal_fallible_function_is_rejected() {
+    // D17's error ABI is a HOST-BOUNDARY convention (i32 status + an out-param appended to
+    // the export's signature). There is no internal calling convention for it, and DP-C1
+    // already forbids calling a fallible callee — so a non-exported `-> T!` is unreachable
+    // by construction. It used to compile: codegen emits non-exported fns with
+    // `fallible = false` hardcoded, so `fail E` lowered to a plain `return <code>;`.
+    let err = compile_to_ir(
+        "error E = 1\nfn g(x: i32) -> i32! { if x < 0 { fail E } return x }\n\
+         export fn f(x: i32) -> i32 { return x }",
+    )
+    .unwrap_err();
+    let msg = format!("{err:?}").to_lowercase();
+    assert!(msg.contains("fallible"), "{err:?}");
+    assert!(
+        msg.contains("export"),
+        "the fix must be named in the message: {err:?}"
+    );
+}
+
+#[test]
+fn an_internal_fallible_function_is_rejected_at_the_source_for_every_return_type() {
+    // The measured symptom differed by type and neither form was acceptable: `-> i32!`
+    // built and silently returned the error code as an ordinary value, while `-> f64!` and
+    // `-> bool!` died inside rustc (E0308) and surfaced only as "cargo build of generated
+    // crate failed" — a backend error with no source position. Both are now typeck errors.
+    for (ty, ok) in [("i32", "0"), ("f64", "0.0"), ("bool", "true")] {
+        let src = format!(
+            "error E = 1\nfn g(x: i32) -> {ty}! {{ if x < 0 {{ fail E }} return {ok} }}\n\
+             export fn f(x: i32) -> i32 {{ return x }}"
+        );
+        let err = compile_to_ir(&src).unwrap_err();
+        let msg = format!("{err:?}").to_lowercase();
+        assert!(msg.contains("fallible"), "{src} -> {err:?}");
+    }
 }

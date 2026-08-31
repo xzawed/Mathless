@@ -52,12 +52,14 @@ fn implicit_mixing_is_still_rejected() {
 }
 
 #[test]
-fn a_cast_binds_tighter_than_unary_minus() {
-    // `-x as f64` is `-(x as f64)`: the cast attaches to the primary, then unary applies.
+fn a_cast_binds_looser_than_unary_minus() {
+    // `-x as f64` is `(-x) as f64`: unary applies to the primary, then the cast wraps it.
+    // This is Rust/C#/Kotlin binding (DP-N1, reversed 2026-08-31). The old Mathless binding
+    // was the other way round and diverged silently at `i32::MIN` — see SPEC section 2.1.
     let rust = compile_to_rust("export fn f(x: i32) -> f64 { return -x as f64 }").expect("compile");
     assert!(
-        rust.contains("(-(x as f64))"),
-        "expected -(x as f64):\n{rust}"
+        rust.contains("((-x) as f64)"),
+        "expected (-x) as f64:\n{rust}"
     );
 }
 

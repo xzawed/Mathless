@@ -218,9 +218,12 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::Var(name) => name.clone(),
         IrExprKind::Call { name, args } => {
             let args: Vec<String> = args.iter().map(emit_expr).collect();
-            // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). The
-            // prefix is already reserved for the runtime namespace, so it cannot collide with
-            // anything the user wrote.
+            // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). That is
+            // safe because `reserved::generated_prefix` rejects `ml_` on parameters, locals
+            // and internal function names — when this comment claimed the prefix was "already
+            // reserved" it was only true of internal FUNCTION names, and
+            // `export fn f(ml_floor: f64) -> f64 { return floor(ml_floor) }` emitted
+            // `ml_floor(ml_floor)` and died in rustc.
             if crate::typeck::BUILTIN_ROUNDERS.contains(&name.as_str()) {
                 format!("ml_{name}({})", args.join(", "))
             } else {

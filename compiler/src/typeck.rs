@@ -100,12 +100,17 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                     targets.join(", ")
                 )));
             }
-            if f.name.starts_with("ml_") || f.name.starts_with("mlx_") {
+            // An internal function name is emitted raw, so it takes the same prefix rule as
+            // parameters and locals — including `__`, because a generated temporary in the
+            // caller shadows a function of that name for value purposes.
+            if let Some(prefix) = crate::reserved::generated_prefix(&f.name) {
                 return Err(TypeError::new(format!(
-                    "internal function '{}' uses a reserved prefix — `ml_` is the runtime \
-                     namespace and `mlx_` is what exports are emitted as (D18), so this can \
-                     collide with a generated symbol",
-                    f.name
+                    "internal function '{}' starts with `{}`, which the compiler generates \
+                     into the same scope — {}. Rename it (an internal name is emitted as-is, \
+                     unlike an export which gets the `mlx_` prefix).",
+                    f.name,
+                    prefix,
+                    crate::reserved::generated_prefix_reason(prefix)
                 )));
             }
             // D17's error ABI is a HOST-BOUNDARY convention: an i32 status plus an
@@ -313,6 +318,19 @@ fn check_function(
                 f.name,
                 p.name,
                 targets.join(", ")
+            )));
+        }
+        // A parameter lands in the same emitted scope as the identifiers codegen injects, and
+        // shadowing there is silent: a parameter named `__d` was captured by the `i32 /`
+        // guard's divisor binding and made `__d / b` return 1 for every nonzero `b`.
+        if let Some(prefix) = crate::reserved::generated_prefix(&p.name) {
+            return Err(TypeError::new(format!(
+                "function '{}': parameter '{}' starts with `{}`, which the compiler generates \
+                 into the same scope — {}. Rename it.",
+                f.name,
+                p.name,
+                prefix,
+                crate::reserved::generated_prefix_reason(prefix)
             )));
         }
         if !seen_params.insert(p.name.to_ascii_lowercase()) {
@@ -589,6 +607,15 @@ fn check_stmt(
                 return Err(TypeError::new(format!(
                     "function '{fname}': local '{name}' is a reserved word in {} — rename it",
                     targets.join(", ")
+                )));
+            }
+            // Same reason as for parameters: a local shares the emitted scope with codegen's
+            // own bindings, and Rust shadowing is silent.
+            if let Some(prefix) = crate::reserved::generated_prefix(name) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' starts with `{prefix}`, which the \
+                     compiler generates into the same scope — {}. Rename it.",
+                    crate::reserved::generated_prefix_reason(prefix)
                 )));
             }
             // In a fallible fn, `out_value` names the synthesized D17 out-param.

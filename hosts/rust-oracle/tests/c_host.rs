@@ -233,6 +233,13 @@ fn a_real_c_host_loads_and_calls_the_module() {
     let vat =
         emit_artifacts(include_str!("../../../examples/vat.mls"), "vat", &work).expect("emit vat");
 
+    let carrier = emit_artifacts(
+        include_str!("../../../examples/carrier.mls"),
+        "carrier",
+        &work,
+    )
+    .expect("emit carrier");
+
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("c-host")
@@ -292,6 +299,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &commission.dll,
         &deduction.dll,
         &vat.dll,
+        &carrier.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

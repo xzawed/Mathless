@@ -1,0 +1,29 @@
+// string-return slice: carrier label by SCAC code — the measured rule from SPEC section 0.
+//
+// The point is NOT that this cannot be done with an i32 code; it can, and it was measured
+// doing so. The point is what the i32 version costs: the LABELS then live in the host, so
+// adding one carrier to this module makes an unmodified host print an unknown code —
+// measured, and the opposite of ARCHITECTURE.md's "replacing a module = replacing a file".
+//
+// Here the vocabulary stays inside the module, and the host only supplies a buffer.
+
+error E_UNKNOWN_SCAC = 1
+
+export fn carrier_name(scac: string) -> string! {
+  if scac == "UPSN" { return "UPS Ground" }
+  if scac == "FDEG" { return "FedEx Ground" }
+  if scac == "DHLE" { return "DHL Express" }
+  // Echoing an input is legal too: the bytes came from the host, so nothing new is produced.
+  if scac == "SELF" { return scac }
+  // An empty result is a real value, distinct from a failure (SPEC section 3-B5).
+  if scac == "NONE" { return "" }
+  fail E_UNKNOWN_SCAC
+}
+
+// Composes with a declared scalar out. DP-O1 survives: declared outs in order, then the
+// return value last — the return value is simply three slots wide instead of one.
+export fn carrier_label(scac: string, out tier: i32) -> string! {
+  if scac == "UPSN" { tier = 1  return "UPS Ground" }
+  tier = 0
+  return "Unassigned"
+}

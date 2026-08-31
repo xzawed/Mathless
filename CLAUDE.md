@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 저장소 성격
 
-- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 수용 A/B/C 실행). CI는 `windows-latest`에서 fmt+clippy+test.
+- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 크레이트는 아니지만 **`hosts/c-host/`(MSVC로 빌드하는 C11 데모 호스트)** 도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본(`MATHLESS_GATE_D=require`로 수용 D skip 금지), `ubuntu-latest`는 프런트엔드 보험.
 - 설계 산출물은 여전히 `docs/*.md`와 루트의 `README.md` / `CLAUDE.md`이며, **개념을 깨지 않는 것**이 최우선이다(위 규칙 우선).
 - 작업은 이제 **문서 정합(모순 탐지·열린 질문)** 과 **SDD+WBS+TDD 구현**을 함께 한다. 코드 변경은 실패 테스트 → 구현 → 통과 → Grok 검증 → PR 순서를 따른다(아래 "개발 방법론").
 
@@ -104,7 +104,7 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
 
 ## 작업 우선순위
 
-Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 A/B/C는 **완료**다.
+Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 **A/B/C/D**는 **완료**다 — 단 D는 **C 쪽만**이고 Delphi는 미검증이다(아래 1번).
 
 > **우선순위의 정본은 `docs/STATUS.md` §3이다** — 이 목록은 슬라이스마다 낡는다. 착수 전 그 문서를 먼저 읽는다.
 > 완료된 슬라이스 이력은 `docs/slices/README.md` 색인, phase 단위 작업 분해는 `docs/phase1/WBS.md`.
@@ -112,13 +112,13 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 큰 줄기만 적는다:
 
 1. 수용 D — **C 쪽 완료**(MSVC `cl` 호스트, 2026-08-29). 남은 절반은 **Delphi**(`dcc64` 미설치, 실측 확인) — D14의 플래그십이다.
-2. 다음 슬라이스는 `docs/STATUS.md` §3에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — D17 에러 경로·`let`·`i32`·`let mut`는 이미 구현 완료다(`docs/slices/README.md`).
+2. 다음 슬라이스는 `docs/STATUS.md` §3에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — 닫힌 목록의 정본은 `docs/slices/README.md` 색인이다(여기 나열하면 슬라이스마다 낡는다 — 실제로 9개 중 4개만 적혀 있었다). 오늘 기준 9개: D17 에러 경로 · `let` · `i32` · `let mut` · `while` · 단항 · `&&`/`||` · 내부 함수와 호출 · `as`.
 3. 이후 슬라이스 후보: D16(caller-allocates/context handle), 문자열/구조체 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
 
 ## 산출물 규칙
 
 - 설계 변경은 해당 `docs/*.md`를 **먼저** 수정한다.
-- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`host/delphi`·`host/c`·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지).
+- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`host/delphi`·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트한다.
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.
 

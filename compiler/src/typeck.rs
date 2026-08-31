@@ -2,8 +2,8 @@
 //!
 //! Rules for the MVP subset:
 //! - arithmetic (`+ - *`): both operands the same numeric type (`f64`→`f64`, `i32`→`i32`);
-//!   no implicit i32/f64 mixing. Division `/` is `f64` only — `i32 /` is rejected (i32 `/0`
-//!   would abort the module).
+//!   no implicit i32/f64 mixing. Division `/` is `f64` only — `i32 /` is rejected because
+//!   `/0` panics, and a panic in a generated module hangs the calling thread (STATUS §5-4).
 //! - ordered comparison (`< > <= >=`): both operands the same numeric type → `bool`
 //! - equality (`== !=`): operands of equal type → `bool`
 //! - `if` condition must be `bool`
@@ -672,9 +672,18 @@ fn check_binop(
         },
         BinOp::Div => match (lt, rt) {
             (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
-            // i32 `/0` aborts the no_std cdylib, so i32 division is out of this slice (DP-I3).
+            // i32 division is out of this slice (DP-I3) because `/0` panics, and a panic in a
+            // generated module spins forever in the emitted `loop {}` panic handler rather
+            // than aborting (STATUS §5-4 — the older "aborts" wording was wrong).
+            //
+            // The message names the f64 round-trip because it is exact for every i32 pair,
+            // but it must also name that route's trap: `b == 0` becomes inf/-inf/NaN and
+            // then saturates to i32::MAX / i32::MIN / 0, so a zero divisor silently returns a
+            // plausible number instead of failing (measured on a loaded module).
             (IrType::I32, IrType::I32) => Err(TypeError::new(format!(
-                "function '{fname}': i32 division `/` is not supported in this slice (i32 /0 aborts) — use f64"
+                "function '{fname}': i32 division `/` is not supported yet (SPEC-i32 DP-I3) — \
+                 write `(a as f64 / b as f64) as i32`, but guard `b == 0` yourself: that form \
+                 yields i32::MAX/i32::MIN/0 for a zero divisor instead of reporting an error"
             ))),
             _ => Err(TypeError::new(format!(
                 "function '{fname}': operator / expects two f64 operands, found {lt} and {rt}"

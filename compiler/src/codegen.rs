@@ -327,14 +327,28 @@ pub fn build_cdylib(
     std::fs::write(crate_dir.join("src").join("lib.rs"), rust_src)
         .map_err(|e| CodegenError::new(format!("write lib.rs: {e}")))?;
 
+    // Capture cargo's output instead of inheriting stdio. Inheriting leaked the generated
+    // crate's build chatter into the user's console: a `Compiling <name> (…\Temp\mlc-build-…)`
+    // line, and any rustc diagnostic pointing at `src/lib.rs:<line>` — a file the user never
+    // wrote, in a directory that is deleted right afterwards. On success there is nothing
+    // worth showing; on failure the text belongs IN the error, where a caller can handle it,
+    // rather than having already scrolled past.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let status = Command::new(cargo)
+    let out = Command::new(cargo)
         .args(["build", "--release", "--manifest-path"])
         .arg(crate_dir.join("Cargo.toml"))
-        .status()
+        .output()
         .map_err(|e| CodegenError::new(format!("spawn cargo: {e}")))?;
-    if !status.success() {
-        return Err(CodegenError::new("cargo build of generated crate failed"));
+    if !out.status.success() {
+        // Say whose line numbers these are. The positions are in emitted Rust, and by the
+        // time anyone reads this the file is usually gone, so a bare paste would send the
+        // reader looking for a `src/lib.rs` that is not theirs.
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(CodegenError::new(format!(
+            "cargo build of generated crate failed — the positions below are in the \
+             GENERATED Rust, not in your source:\n{}",
+            stderr.trim_end()
+        )));
     }
 
     let dll = crate_dir

@@ -196,7 +196,15 @@ impl Parser {
                 self.pos += 1;
                 Ok(Type::I32)
             }
-            other => self.err(format!("expected type (f64|bool|i32), found {other:?}")),
+            // `string` is a type NAME, not a keyword, so it stays usable as an identifier —
+            // the same choice DP-R1 made for the rounding builtins.
+            Token::Ident(s) if s == "string" => {
+                self.pos += 1;
+                Ok(Type::Str)
+            }
+            other => self.err(format!(
+                "expected type (f64|bool|i32|string), found {other:?}"
+            )),
         }
     }
 
@@ -405,6 +413,10 @@ impl Parser {
             Token::Number(n) => {
                 self.pos += 1;
                 Ok(Expr::Number(n))
+            }
+            Token::Str(s) => {
+                self.pos += 1;
+                Ok(Expr::Str(s))
             }
             Token::Int(n) => {
                 self.pos += 1;

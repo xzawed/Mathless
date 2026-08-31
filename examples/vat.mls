@@ -1,0 +1,26 @@
+// string-input slice: VAT rate by country code — the measured rule from SPEC §1.1.
+//
+// All three rules that needed text had the same shape: string IN, scalar OUT. The host owns
+// the code, the module branches on it and returns a number. Before this slice the source did
+// not lex at all: `parse error … unexpected character '"'`.
+//
+// The comparison is BYTE equality up to the NUL (DP-S2). "kr" is not "KR", and "KRW" is not
+// "KR" either — a prefix is not a match.
+
+export fn vat_rate(country: string) -> f64 {
+  if country == "KR" { return 0.1 }
+  if country == "JP" { return 0.08 }
+  if country == "DE" { return 0.19 }
+  return 0.0
+}
+
+// The other two measured rules, same shape, different scalar out.
+export fn issuer_of(bin: string) -> i32 {
+  if bin == "4" { return 1 }
+  if bin == "51" { return 2 }
+  return 0
+}
+
+export fn is_export_item(code: string) -> bool {
+  return code != "DOM"
+}

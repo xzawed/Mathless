@@ -10,14 +10,14 @@
 - **저장소는 공개다 (2026-08-30).** `https://github.com/xzawed/Mathless` — 익명 접근 `HTTP 200`,
   API `"visibility": "public"`. 공개 전 보안·개인정보 감사를 실측으로 마쳤다(§5c). **이제 커밋 메시지와
   PR 본문은 쓰는 즉시 공개된다.**
-- **테스트:** `cargo test --workspace` = **254 pass / 0 fail**. `clippy -D warnings`·`fmt` clean.
+- **테스트:** `cargo test --workspace` = **280 pass / 0 fail**. `clippy -D warnings`·`fmt` clean.
 - **CI 두 잡:** `windows-latest`가 **정본**(수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`로 skip 금지),
   `ubuntu-latest`는 프런트엔드 보험(수용 테스트는 `cfg(windows)`라 거기선 컴파일되지 않는다).
   툴체인 핀 `rust-toolchain.toml` = 1.97.1.
-- **코드:** **5,044 LOC**(Rust + C 호스트, 테스트 제외) + 테스트 **4,738 LOC**. `src`에 TODO/FIXME 없음.
+- **코드:** **5,596 LOC**(Rust + C 호스트, 테스트 제외) + 테스트 **5,335 LOC**. `src`에 TODO/FIXME 없음.
   서드파티 의존성 **0개**(`Cargo.lock`에 로컬 크레이트 둘뿐).
 - **수용 A/B/C/D 전부 통과.** **단 D는 C 쪽만이다** — MSVC로 빌드한 C11 호스트가 산출 DLL을
-  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **체크 84개**).
+  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **체크 94개**).
   **Delphi는 미검증**(`dcc64` 부재를 실측 확인) → 생성 `.pas`는 DRAFT 유지. D14의 공식 쌍 중 **C만 증명됨**.
 - **산출물:** `mlc build <f.mls> -o <dir>` → `.dll` + `.h` + `.pas`. `discount.dll` = **9,728 B**,
   export는 **정확히 2개**(`mlx_*` + `ml_module_abi_version`, 자체 PE 리더 + `dumpbin` 교차 확인).
@@ -42,6 +42,9 @@
 - **`out` 파라미터**(#80) `export fn f(a: f64, out t: i32) -> f64` — 값을 여러 개 돌려주는 수단.
   C는 `T*`, Delphi는 `out p: T`. **쓰기 전용**, **정상 반환 경로마다 대입 강제**, `export fn` 전용.
   실패 가능 함수와 합칠 때 `out_value`가 **언제나 마지막**이다(DP-O1)
+- **실패 가능 함수 호출**(#97) `let x = try f(a)` · `x = try f(a)` · `return try f(a)` — 피호출자의
+  status가 **그대로** 전파된다. **`try`는 문장 전용**이라 식 안에 못 들어간다. 호출자도 `-> T!`여야
+  하고, v1의 피호출자는 **내부 `fn`만**이다. **C ABI 무변경**(테스트로 못박음)
 - 실패 가능 함수 `-> T!` + `error NAME = N` + `fail NAME`(D17: i32 status + out-param).
   **`export fn`에만 붙는다**(#67) — D17은 호스트 경계 규약이고 내부 호출 규약은 없다
 - `if`(**`else` 없음**) / `while` / `return`
@@ -54,6 +57,24 @@
 **문자열 연결·포맷·길이·부분문자열·순서 비교·지역 변수**, 배열, struct, 호스트 함수 import, 재귀.
 
 ## 3. 다음 작업 — 여기서 시작한다
+
+### 3a-6. ✅ 닫힘 — 실패 가능 함수 호출 `try` (2026-09-01, SPEC #96 / 구현 #97)
+
+모든 `-> T!` 함수가 **잎**이던 제한을 풀었다. [`SPEC-fallible-calls.md`](slices/SPEC-fallible-calls.md).
+DP-F1~F8·F10 사용자 확인(권고안 그대로). **DP-F9(중복 `error` 값 거부)는 아직 열려 있다.**
+
+**다음 세션이 알아야 할 것:**
+
+1. **근거는 수요가 아니라 §0.1이다.** 막히던 프로그램 6개의 우회책이 **전부 빌드된다**(줄 수 차이
+   −3~+6). 진짜 비용은 헤더에 있다 — 규칙을 export로 승격하면 **호출자가 non-fallible이 되어**
+   검증이 권고 사항으로 격하되고 ABI가 강제하지 않는다. 크기 차이는 **0바이트**였다.
+2. **위치 제한이 이 슬라이스의 안전장치다.** `try`가 식 안에 못 들어가므로 `i32` 나눗셈의
+   **오른쪽-먼저 평가**(#76이 넣었다)와 `&&` 단락 위험이 **도달 불가능**하다. 식 위치를 여는 날
+   그 평가 순서를 **먼저 고쳐야 한다**(§5.3).
+3. **단락 평가 부채는 갚지 못했다 — 초안은 갚겠다고 썼다가 정정했다.** 재려면 조건 안에 `try`가
+   있어야 하는데 DP-F2가 그것을 금지한다. §5-1은 그대로 열려 있다.
+4. **C ABI 무변경을 테스트로 못박았다**(§3-F). 기존 예제 다섯 개의 생성 선언을 문자열로 고정했고,
+   그 테스트가 실제로 **제 잘못된 기대값을 잡아냈다**(파라미터명이 `sales`가 아니라 `amount`).
 
 ### 3a-5. ✅ 닫힘 — 문자열 **반환** (2026-09-01, SPEC #91 / 구현 #92)
 
@@ -453,7 +474,7 @@ struct 반환과 caller-allocates · context handle · 콜백 · 호스트 함�
   **실제로 쓰이는 것**만 만든다.
 - **D22(`.so`/ELF) 미개시** — 명시적 결정 필요.
 - **수용 D를 언어보다 뒤처지게 두지 말 것** — 새 구문을 넣으면 `hosts/c-host/host.c`에도 추가한다.
-  지금까지 모든 슬라이스가 그렇게 했다(체크 84개).
+  지금까지 모든 슬라이스가 그렇게 했다(체크 94개).
 - **`DECISIONS.md`는 사용자 확인 없이 바꾸지 않는다**(규칙 8).
 - **생성 산출물은 ASCII로 유지** — 비-ASCII는 MSVC에서 C4819를 내고 `/WX` 빌드를 깬다(실측). 테스트가 고정.
 - **아직 없는 것을 현재형으로 쓰지 말 것** — **저장소는 이미 공개다.** 계획은 계획으로 표시한다(§5b).

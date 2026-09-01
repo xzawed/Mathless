@@ -101,15 +101,20 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     // `mlx_` prefix. That is what keeps it out of the export table — measured in acceptance
     // C, not asserted here (SPEC-calls section 2.3).
     if !f.exported {
-        let _ = writeln!(
-            out,
-            "fn {}({}) -> {} {{",
-            f.name,
-            params.join(", "),
-            rust_type(f.ret)
-        );
+        // A fallible internal function returns `Result<T, i32>` (DP-F6). This is the shape
+        // #67 was missing: without it `fail` lowered to a plain `return <code>`, which for
+        // `-> i32!` silently returned the error code as an ordinary value.
+        let (ret_ty, abi) = if f.fallible {
+            (
+                format!("Result<{}, i32>", rust_type(f.ret)),
+                RetAbi::InternalResult,
+            )
+        } else {
+            (rust_type(f.ret).to_string(), RetAbi::Plain)
+        };
+        let _ = writeln!(out, "fn {}({}) -> {} {{", f.name, params.join(", "), ret_ty);
         for s in &f.body {
-            emit_stmt(s, 1, RetAbi::Plain, out);
+            emit_stmt(s, 1, abi, out);
         }
         out.push_str("}\n");
         return Ok(());
@@ -190,6 +195,21 @@ enum RetAbi {
     Status,
     /// SPEC-string-return: `i32` status + the Q12 triple `(ml_buf, ml_cap, ml_needed)`.
     StringBuffer,
+    /// SPEC-fallible-calls: an INTERNAL fallible function. It is a plain Rust `fn`, not bound
+    /// by the C ABI at all, so it returns `Result<T, i32>` — the only shape that needs no
+    /// invented value on the failure path (DP-F6). `Option` would lose the D17 code.
+    InternalResult,
+}
+
+impl RetAbi {
+    /// How a propagating failure leaves a function with this ABI. The three C-facing shapes
+    /// return the bare status; an internal one re-wraps it so its own caller can propagate.
+    fn propagate(self) -> &'static str {
+        match self {
+            RetAbi::InternalResult => "return Err(__e)",
+            _ => "return __e",
+        }
+    }
 }
 
 fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
@@ -214,13 +234,91 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                     emit_expr(e)
                 );
             }
+            // An internal fallible fn hands its value back as `Ok`, so its caller can tell
+            // success from a propagated status without a sentinel value.
+            RetAbi::InternalResult => {
+                let _ = writeln!(out, "{pad}return Ok({});", emit_expr(e));
+            }
             RetAbi::Plain => {
                 let _ = writeln!(out, "{pad}return {};", emit_expr(e));
             }
         },
         IrStmt::Fail(code) => {
             // Failure: return the positive domain code; the out-param is left untouched.
-            let _ = writeln!(out, "{pad}return {code};");
+            //
+            // An internal fallible fn wraps it instead, so the code survives the hop. Emitting
+            // a bare `return <code>` there is exactly the silent wrong answer #67 measured:
+            // for `-> i32!` it returned the error code as an ordinary value.
+            if abi == RetAbi::InternalResult {
+                let _ = writeln!(out, "{pad}return Err({code});");
+            } else {
+                let _ = writeln!(out, "{pad}return {code};");
+            }
+        }
+        // `<dest> = try <callee>(<args>)`.
+        //
+        // Lowered as a `match`, never with Rust's `?`: `?` only works inside a function
+        // returning `Result`, and two of the three C-facing shapes return a bare `i32`, so it
+        // would need a nested inner fn per export. One `match` fits all four ABIs.
+        //
+        // `__v` and `__e` are ARM-LOCAL, so no two statements' temporaries can collide — the
+        // `__d` shadowing defect (#85) came from a temporary that outlived its arm. `__` is
+        // reserved from user identifiers anyway, which is the second line of defence.
+        IrStmt::TryCall {
+            dest, callee, args, ..
+        } => {
+            let call = format!(
+                "{callee}({})",
+                args.iter().map(emit_expr).collect::<Vec<_>>().join(", ")
+            );
+            let prop = abi.propagate();
+            match dest {
+                IrTryDest::Let { name, mutable } => {
+                    let m = if *mutable { "mut " } else { "" };
+                    let _ = writeln!(
+                        out,
+                        "{pad}let {m}{name} = match {call} {{ Ok(__v) => __v, Err(__e) => {prop} }};"
+                    );
+                }
+                IrTryDest::Assign(name) => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}{name} = match {call} {{ Ok(__v) => __v, Err(__e) => {prop} }};"
+                    );
+                }
+                // A write THROUGH a pointer, exactly like `IrStmt::AssignOut`. Emitting a
+                // plain `name = …` here would assign the pointer itself.
+                IrTryDest::AssignOut(name) => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}unsafe {{ *{name} = match {call} {{ Ok(__v) => __v, Err(__e) => {prop} }}; }}"
+                    );
+                }
+                // `return try f(x)`: the success arm has to do whatever this function's own
+                // `return` does, so it is delegated rather than duplicated — emitted INSIDE
+                // the arm so `__v` stays arm-local like the other three destinations. Binding
+                // it outside would work today (this statement always ends its block) but it
+                // is the shape the `__d` defect came from, and there is no reason to keep it.
+                IrTryDest::Return => {
+                    let _ = writeln!(out, "{pad}match {call} {{");
+                    let _ = writeln!(out, "{pad}    Ok(__v) => {{");
+                    emit_stmt(
+                        &IrStmt::Return(IrExpr {
+                            // The type is not read by any `Return` arm — the emitted
+                            // expression is the binding `__v`, whose type rustc infers from
+                            // the callee's `Result`.
+                            ty: IrType::I32,
+                            kind: IrExprKind::Var("__v".to_string()),
+                        }),
+                        indent + 2,
+                        abi,
+                        out,
+                    );
+                    let _ = writeln!(out, "{pad}    }}");
+                    let _ = writeln!(out, "{pad}    Err(__e) => {{ {prop}; }}");
+                    let _ = writeln!(out, "{pad}}}");
+                }
+            }
         }
         IrStmt::Let {
             name,
@@ -463,6 +561,8 @@ fn compares_strings(module: &IrModule) -> bool {
             | IrStmt::Let { value: e, .. }
             | IrStmt::Assign { value: e, .. }
             | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            // A try-call's arguments are ordinary expressions and may compare strings.
+            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
             IrStmt::Fail(_) => false,
         })
     }
@@ -536,6 +636,13 @@ fn used_rounders(module: &IrModule) -> Vec<&'static str> {
                 | IrStmt::Let { value: e, .. }
                 | IrStmt::Assign { value: e, .. }
                 | IrStmt::AssignOut { value: e, .. } => walk_expr(e, found),
+                // Same for the rounding builtins: a try-call argument may use one, and
+                // missing it here would emit a call to a helper that was never defined.
+                IrStmt::TryCall { args, .. } => {
+                    for a in args {
+                        walk_expr(a, found);
+                    }
+                }
                 IrStmt::Fail(_) => {}
             }
         }

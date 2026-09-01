@@ -39,6 +39,7 @@
 #include "pack.h"
 #include "vat.h"
 #include "carrier.h"
+#include "quote.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef double (*discount_fn)(double, bool);
@@ -58,6 +59,8 @@ typedef int32_t (*issuer_of_fn)(const char *);
 typedef bool (*is_export_item_fn)(const char *);
 typedef int32_t (*carrier_name_fn)(const char *, char *, int32_t, int32_t *);
 typedef int32_t (*carrier_label_fn)(const char *, int32_t *, char *, int32_t, int32_t *);
+typedef int32_t (*unit_price_fn)(double, int32_t, double *);
+typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -110,6 +113,13 @@ _Static_assert(_Generic(&mlx_carrier_name, carrier_name_fn: 1, default: 0),
                "generated mlx_carrier_name signature changed");
 _Static_assert(_Generic(&mlx_carrier_label, carrier_label_fn: 1, default: 0),
                "generated mlx_carrier_label signature changed");
+/* The fallible-calls slice must not touch the C ABI at all: a function that propagates a
+   helper's status is declared exactly like any other D17 fallible export. If the internal
+   Result shape ever leaked into the boundary, these two would stop matching. */
+_Static_assert(_Generic(&mlx_unit_price, unit_price_fn: 1, default: 0),
+               "generated mlx_unit_price signature changed");
+_Static_assert(_Generic(&mlx_line_check, line_check_fn: 1, default: 0),
+               "generated mlx_line_check signature changed");
 
 static int failures = 0;
 
@@ -473,6 +483,44 @@ int main(int argc, char **argv) {
         check(strcmp(buf, "UPS Ground") == 0, "...and the string into the triple");
     }
 
+    /* --- quote.dll: a status propagated out of a reused internal helper
+       (SPEC-fallible-calls section 3-D). What this proves from the C side is that the
+       propagation is invisible here: `mlx_unit_price` looks and behaves like any other D17
+       fallible export, and the code it returns is the helper's own. --- */
+    HMODULE qt = load(dir, "quote.dll");
+    if (qt == NULL) {
+        return 1;
+    }
+    unit_price_fn unit_price = (unit_price_fn)sym(qt, "mlx_unit_price");
+    line_check_fn line_check = (line_check_fn)sym(qt, "mlx_line_check");
+    if (unit_price && line_check) {
+        double v = -7.0;
+        int32_t st = unit_price(100.0, 4, &v);
+        check(st == 0, "unit_price(100, 4) status == 0");
+        check(v == 25.0, "unit_price(100, 4) == 25");
+
+        /* The helper's code, two levels down, arriving unchanged. */
+        v = -7.0;
+        st = unit_price(100.0, 0, &v);
+        check(st == ML_ERR_E_BAD_QTY, "unit_price(100, 0) propagates ML_ERR_E_BAD_QTY");
+        check(v == -7.0, "a propagated failure leaves out_value untouched");
+
+        /* A declared out alongside a propagating call: written on success, and never reached
+           on failure because the `try` left the function first. */
+        int32_t tier = -7;
+        int32_t iv = -7;
+        st = line_check(5, &tier, &iv);
+        check(st == 0 && tier == 1 && iv == 5, "line_check(5) writes both outs");
+
+        tier = -7;
+        iv = -7;
+        st = line_check(0, &tier, &iv);
+        check(st == ML_ERR_E_BAD_QTY, "line_check(0) propagates the helper's code");
+        check(tier == -7, "the try exited before the out was assigned");
+        check(iv == -7, "and out_value is untouched");
+    }
+
+    FreeLibrary(qt);
     FreeLibrary(cr);
     FreeLibrary(vt);
     FreeLibrary(dd);

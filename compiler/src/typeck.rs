@@ -121,14 +121,19 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
             // `fallible = false`: `fail E` became a plain `return <code>;` — a silent
             // wrong answer for `-> i32!`, and a rustc E0308 for the other types that
             // reached the user only as "cargo build of generated crate failed".
-            if f.fallible {
+            // (Lifted by SPEC-fallible-calls DP-F3.) An internal `-> T!` used to be rejected
+            // here because DP-C1 made it uncallable, so codegen had no shape for it and
+            // lowered `fail` as a plain `return <code>` — a silent wrong answer. `try` gives
+            // it a call form and codegen gives it `Result<T, i32>`, so the ban is gone.
+            //
+            // A fallible internal function that returns a STRING is still rejected: the Q12
+            // buffer belongs to the host and only an export has one (DP-F7).
+            if f.fallible && f.ret == Type::Str {
                 return Err(TypeError::new(format!(
-                    "internal function '{}' is fallible (`-> {}!`) — the D17 error ABI is a \
-                     host-boundary convention (i32 status + out-param), so a fallible \
-                     function must be `export`ed; an internal one can never be called \
-                     because a fallible callee is not a value",
-                    f.name,
-                    ir_type(f.ret),
+                    "internal function '{}' returns `string!` — a returned string is written \
+                     into the host's buffer, and only an `export` has one. Make it `export`, \
+                     or return a scalar",
+                    f.name
                 )));
             }
         }
@@ -236,6 +241,15 @@ fn collect_calls(body: &[Stmt], out: &mut Vec<String>) {
             }
             Stmt::Return(e) | Stmt::Let { value: e, .. } | Stmt::Assign { value: e, .. } => {
                 expr(e, out)
+            }
+            // A try-call is a call-graph EDGE. If it were not walked here, a cycle through
+            // `try` would slip past `reject_recursion` and overflow the host's stack — which
+            // kills the process, not just the call.
+            Stmt::TryCall { callee, args, .. } => {
+                out.push(callee.clone());
+                for a in args {
+                    expr(a, out);
+                }
             }
             Stmt::Fail(_) => {}
         }
@@ -500,7 +514,44 @@ fn check_outs_assigned<'a>(
                 let mut inner = assigned.clone();
                 check_outs_assigned(body, outs, &mut inner, fname)?;
             }
-            IrStmt::Fail(_) | IrStmt::Let { .. } | IrStmt::Assign { .. } => {}
+            // A try-call has two exits, and they are treated differently on purpose.
+            //
+            // Its FAILURE exit is exempt, exactly as `fail` is: on a non-zero status the host
+            // reads no out-param (D17 DP-E3 + DP-O3), so an unassigned out on that path is
+            // not a defect — it is the contract.
+            //
+            // Its SUCCESS path continues, and if the destination IS an out parameter, that
+            // counts as assigning it. `t = try g(x)` must satisfy DP-O2 the same way `t = 1`
+            // does; without this arm it would not, and a correct program would be rejected.
+            IrStmt::TryCall {
+                dest: IrTryDest::AssignOut(name),
+                ..
+            } => {
+                if !assigned.contains(&name.as_str()) {
+                    assigned.push(name.as_str());
+                }
+            }
+            // `return try g(x)` returns on success, so it is a return path like any other and
+            // every out must already be assigned. Missing this arm would have let
+            // `export fn f(out t: i32) -> i32! { return try g(1) }` through with `t` never
+            // written — the host would read its own variable and believe the module wrote it,
+            // which is the exact defect DP-O2 exists to prevent.
+            IrStmt::TryCall {
+                dest: IrTryDest::Return,
+                ..
+            } => {
+                if let Some(missing) = outs.iter().find(|o| !assigned.contains(o)) {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': `out` parameter '{missing}' is not assigned on \
+                         every path that returns — assign it before this `return`, or the host \
+                         reads whatever was in its own variable"
+                    )));
+                }
+            }
+            IrStmt::TryCall { .. }
+            | IrStmt::Fail(_)
+            | IrStmt::Let { .. }
+            | IrStmt::Assign { .. } => {}
         }
     }
     Ok(())
@@ -543,6 +594,176 @@ fn check_block(
         )));
     }
     Ok(out)
+}
+
+/// `try f(args)` in one of the three statement positions (SPEC-fallible-calls).
+///
+/// Every rejection here names the fix, because the message this replaces was a dead end:
+/// "cannot be called in an expression yet" told the author nothing they could act on.
+#[allow(clippy::too_many_arguments)]
+fn check_try_call(
+    dest: &ast::TryDest,
+    callee: &str,
+    args: &[Expr],
+    scope: &mut Scope,
+    ret: IrType,
+    fname: &str,
+    fallible: bool,
+    sigs: &Sigs,
+) -> Result<IrStmt, TypeError> {
+    let Some(sig) = sigs.get(callee) else {
+        return Err(TypeError::new(format!(
+            "function '{fname}': unknown function '{callee}'"
+        )));
+    };
+    // The marker is checked in BOTH directions, so it can never lie: a fallible callee
+    // without `try` is rejected at the call site, and `try` on an infallible one here.
+    if !sig.fallible {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' is not fallible, so `try` does not apply — it \
+             cannot fail, and there is no status to propagate. Drop the `try`"
+        )));
+    }
+    // DP-F4: a non-fallible caller has no status channel to leave through. Inferring `!` from
+    // the body would change the exported ABI with no change to the source, which D17 already
+    // rejected (DP-E1); defaulting is the silent-wrong-answer shape this repo keeps meeting.
+    if !fallible {
+        return Err(TypeError::new(format!(
+            "function '{fname}': `try` needs a status to propagate into, but '{fname}' is not \
+             fallible — declare it `-> {ret}!` so the failure can leave, or handle the case \
+             without calling '{callee}'"
+        )));
+    }
+    // DP-F5: v1 calls internal functions only. Not because an exported call is broken — #95
+    // fixed that — but because an exported fallible function's body is emitted against the C
+    // ABI (status + out_value) while a `try` callee returns `Result<T, i32>`. Supporting both
+    // needs the wrapper refactor, which is its own slice.
+    if sig.exported {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' is `export`ed and cannot be `try`-called yet — an \
+             exported fallible function is emitted against the C ABI, not the internal one. \
+             Drop `export` from '{callee}' if only this module calls it"
+        )));
+    }
+    if let Some(out_name) = &sig.out_param {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' cannot be called because its parameter \
+             '{out_name}' is an `out` — that is a pointer the host supplies, and a call \
+             expression has no way to pass one"
+        )));
+    }
+    // DP-F7: the returned string is written into the host's buffer, which a callee does not
+    // have, and a string local has nowhere to live.
+    if sig.ret == IrType::Str {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' returns `string!`, which cannot be `try`-called \
+             yet — the bytes go into the host's buffer, so there is nowhere for the result to \
+             land inside a module function"
+        )));
+    }
+    if args.len() != sig.params.len() {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' expects {} argument(s), found {}",
+            sig.params.len(),
+            args.len()
+        )));
+    }
+    let ty = sig.ret;
+    let want: Vec<IrType> = sig.params.clone();
+    let mut checked = Vec::with_capacity(args.len());
+    for (i, (arg, w)) in args.iter().zip(want.iter()).enumerate() {
+        let arg = check_expr(arg, scope, fname, sigs)?;
+        if arg.ty != *w {
+            return Err(TypeError::new(format!(
+                "function '{fname}': '{callee}' argument {} expects {w}, found {}",
+                i + 1,
+                arg.ty
+            )));
+        }
+        checked.push(arg);
+    }
+
+    let ir_dest = match dest {
+        ast::TryDest::Return => {
+            if ty != ret {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': return type mismatch: expected {ret}, found {ty}"
+                )));
+            }
+            IrTryDest::Return
+        }
+        ast::TryDest::Let { name, mutable } => {
+            // Same reserved-name policy a plain `let` gets — the binding is emitted raw.
+            let targets = crate::reserved::reserving_targets(name);
+            if !targets.is_empty() {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' is a reserved word in {}",
+                    targets.join(", ")
+                )));
+            }
+            if let Some(prefix) = crate::reserved::generated_prefix(name) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' starts with `{prefix}`, which the \
+                     compiler generates into the same scope — {}",
+                    crate::reserved::generated_prefix_reason(prefix)
+                )));
+            }
+            scope.insert(
+                name.clone(),
+                (
+                    ty,
+                    if *mutable {
+                        Binding::LetMut
+                    } else {
+                        Binding::Let
+                    },
+                ),
+            );
+            IrTryDest::Let {
+                name: name.clone(),
+                mutable: *mutable,
+            }
+        }
+        ast::TryDest::Assign(name) => {
+            let (dty, binding) = match scope.get(name) {
+                Some(&(t, b)) => (t, b),
+                None => {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': unknown variable '{name}' — assignment needs a \
+                         `let mut` local or an `out` parameter in scope"
+                    )))
+                }
+            };
+            if dty != ty {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': cannot assign {ty} to '{name}' of type {dty} — type \
+                     mismatch"
+                )));
+            }
+            match binding {
+                Binding::LetMut => IrTryDest::Assign(name.clone()),
+                Binding::OutParam => IrTryDest::AssignOut(name.clone()),
+                Binding::Let => {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': '{name}' is not mutable — declare it `let mut`"
+                    )))
+                }
+                Binding::Param => {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': cannot assign to parameter '{name}' — parameters \
+                         are immutable (D16: an argument is borrowed for the call)"
+                    )))
+                }
+            }
+        }
+    };
+
+    Ok(IrStmt::TryCall {
+        dest: ir_dest,
+        callee: callee.to_string(),
+        args: checked,
+        ty,
+    })
 }
 
 fn check_stmt(
@@ -660,6 +881,9 @@ fn check_stmt(
                     value,
                 }
             })
+        }
+        Stmt::TryCall { dest, callee, args } => {
+            check_try_call(dest, callee, args, scope, ret, fname, fallible, sigs)
         }
         Stmt::Let {
             name,
@@ -784,8 +1008,9 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             // and cannot sit in an expression (DP-C1).
             if sig.fallible {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': '{name}' is fallible (`-> T!`) and cannot be called in \
-                     an expression yet — it returns a status and writes through an out-param"
+                    "function '{fname}': '{name}' is fallible (`-> T!`) — call it with `try`, \
+                     as in `let x = try {name}(…)`, so its failure propagates. `try` is a \
+                     statement form and cannot appear inside a larger expression"
                 )));
             }
             // An `out` parameter is a POINTER in the generated code, and a call expression has

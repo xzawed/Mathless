@@ -1,0 +1,34 @@
+// fallible-calls slice: a validation rule and a division rule, each fallible, each REUSED.
+//
+// Before this slice neither helper could exist: an internal `fn` could not be `-> T!`, and
+// making it an export did not help — the call site rejected it too. The measured workaround
+// was to promote the rule to its own export, which makes its callers non-fallible: the
+// validation becomes advisory and the ABI stops enforcing it (SPEC section 0.1).
+
+error E_BAD_QTY = 1
+error E_DIV0    = 2
+
+fn check_qty(qty: i32) -> i32! {
+  if qty < 1 { fail E_BAD_QTY }
+  if qty > 10000 { fail E_BAD_QTY }
+  return qty
+}
+
+fn safe_div(a: f64, b: f64) -> f64! {
+  if b == 0.0 { fail E_DIV0 }
+  return a / b
+}
+
+// Two exports share both rules. Neither helper reaches the export table.
+export fn unit_price(total: f64, qty: i32) -> f64! {
+  let q = try check_qty(qty)
+  return try safe_div(total, q as f64)
+}
+
+// Three levels deep, and with a declared `out` alongside — the code from the deepest
+// helper must arrive unchanged.
+export fn line_check(qty: i32, out tier: i32) -> i32! {
+  let q = try check_qty(qty)
+  tier = 1
+  return q
+}

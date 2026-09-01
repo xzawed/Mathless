@@ -10,11 +10,11 @@
 - **저장소는 공개다 (2026-08-30).** `https://github.com/xzawed/Mathless` — 익명 접근 `HTTP 200`,
   API `"visibility": "public"`. 공개 전 보안·개인정보 감사를 실측으로 마쳤다(§5c). **이제 커밋 메시지와
   PR 본문은 쓰는 즉시 공개된다.**
-- **테스트:** `cargo test --workspace` = **285 pass / 0 fail**. `clippy -D warnings`·`fmt` clean.
+- **테스트:** `cargo test --workspace` = **304 pass / 0 fail**. `clippy -D warnings`·`fmt` clean.
 - **CI 두 잡:** `windows-latest`가 **정본**(수용 A/B/C/D 실행, `MATHLESS_GATE_D=require`로 skip 금지),
   `ubuntu-latest`는 프런트엔드 보험(수용 테스트는 `cfg(windows)`라 거기선 컴파일되지 않는다).
   툴체인 핀 `rust-toolchain.toml` = 1.97.1.
-- **코드:** **5,596 LOC**(Rust + C 호스트, 테스트 제외) + 테스트 **5,335 LOC**. `src`에 TODO/FIXME 없음.
+- **코드:** **5,738 LOC**(Rust + C 호스트, 테스트 제외) + 테스트 **6,100 LOC**. `src`에 TODO/FIXME 없음.
   서드파티 의존성 **0개**(`Cargo.lock`에 로컬 크레이트 둘뿐).
 - **수용 A/B/C/D 전부 통과.** **단 D는 C 쪽만이다** — MSVC로 빌드한 C11 호스트가 산출 DLL을
   `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **체크 94개**).

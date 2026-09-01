@@ -145,10 +145,6 @@ pub enum IrExprKind {
     Call {
         name: String,
         args: Vec<IrExpr>,
-        /// The callee is `export`ed, so the generated Rust names it `mlx_<name>`. Without this
-        /// the call emitted the bare name and the generated crate failed to build — DP-C3
-        /// said an export was callable, and it was not.
-        exported: bool,
     },
     Unary {
         op: IrUnOp,

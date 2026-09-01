@@ -235,7 +235,13 @@ fn no_diagnostic_leaks_a_newline_or_source_indentation() {
         // that replaced that one rejection, so the family stays covered as it grew.
         "error E = 1\nfn g(x: i32) -> i32! { fail E }\nexport fn f(x: i32) -> i32 { let y = try g(x) return y }",
         "fn g(x: i32) -> i32 { return x }\nexport fn f(x: i32) -> i32! { let y = try g(x) return y }",
-        "error E = 1\nexport fn g(x: i32) -> i32! { fail E }\nexport fn f(x: i32) -> i32! { let y = try g(x) return y }",
+        // (Calling an EXPORTED fallible callee is legal since the wrapper refactor; these two
+        // are the rules that still reject a try call.)
+        "error E = 1
+fn g(x: i32, out t: i32) -> i32! { t = 1 fail E }
+export fn f(x: i32) -> i32! { let y = try g(x) return y }",
+        "fn g(s: string) -> string! { return s }
+export fn f(s: string) -> string! { return try g(s) }",
         "error E = 1\nfn g(x: i32) -> i32! { fail E }\nexport fn f(x: i32) -> i32! { let y = g(x) return y }",
         "error E = 1\nfn g(x: i32) -> i32! { fail E }\nexport fn f(x: i32) -> i32! { let y = try g(x, 1) return y }",
         "fn g() -> i32 { return g() }\nexport fn f() -> i32 { return 0 }",

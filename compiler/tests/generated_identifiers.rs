@@ -46,8 +46,10 @@ fn a_rounding_helper_name_cannot_be_shadowed() {
 
 #[test]
 fn the_reservation_covers_every_place_a_name_enters_the_generated_scope() {
-    // Parameters and locals both land in the emitted function body, and an INTERNAL function
-    // name is emitted raw (SPEC-calls 2.3), so all three need the same rule.
+    // Parameters and locals both land in the emitted function body RAW, so both need the
+    // rule. Function names no longer do: since the wrapper refactor every function is emitted
+    // as `ml_fn_<name>`, so a user function name never enters the generated scope at all
+    // (DP-W4) — the case at the end asserts that freedom instead of the old rejection.
     for src in [
         // parameters
         "export fn f(__x: i32) -> i32 { return __x }",
@@ -57,11 +59,17 @@ fn the_reservation_covers_every_place_a_name_enters_the_generated_scope() {
         "export fn f(a: i32) -> i32 { let __t = a return __t }",
         "export fn f(a: f64) -> f64 { let ml_sz = a return ml_sz }",
         "export fn f(a: i32) -> i32 { let mut __acc = a __acc = a return __acc }",
-        // internal function names
-        "fn __helper(a: i32) -> i32 { return a }\nexport fn f(a: i32) -> i32 { return __helper(a) }",
     ] {
         assert!(compile_to_ir(src).is_err(), "{src} must be rejected");
     }
+
+    // ...and a FUNCTION name is no longer one of those places. `__helper` becomes
+    // `ml_fn___helper`, which collides with nothing — the generated temporaries `__v`, `__e`
+    // and `__d` are locals, not functions.
+    compile_to_ir(
+        "fn __helper(a: i32) -> i32 { return a }\nexport fn f(a: i32) -> i32 { return __helper(a) }",
+    )
+    .expect("a function name never reaches the generated scope");
 }
 
 #[test]

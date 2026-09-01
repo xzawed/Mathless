@@ -27,6 +27,9 @@ struct Pe<'a> {
     num_rva: usize,
     /// PE32+ (`0x20B`) uses 8-byte thunks; PE32 uses 4.
     plus: bool,
+    /// File offset of the first section header, so a caller can read a section by NAME —
+    /// `sections` above keeps only what RVA translation needs.
+    sect_off: usize,
 }
 
 impl<'a> Pe<'a> {
@@ -92,6 +95,7 @@ impl<'a> Pe<'a> {
             dd_at: opt_off + dd_off,
             num_rva,
             plus: magic == 0x20B,
+            sect_off,
         })
     }
 
@@ -119,6 +123,20 @@ impl<'a> Pe<'a> {
                 None
             }
         })
+    }
+
+    /// Section header `i` as `(name bytes, virtual size, raw file offset, raw size)`.
+    fn section_header(&self, i: usize) -> Result<([u8; 8], u32, usize, usize), String> {
+        let s = self.sect_off + i * 40;
+        self.need(s, 40)?;
+        let mut name = [0u8; 8];
+        name.copy_from_slice(&self.data[s..s + 8]);
+        Ok((
+            name,
+            u32le(self.data, s + 8),
+            u32le(self.data, s + 20) as usize,
+            u32le(self.data, s + 16) as usize,
+        ))
     }
 
     /// The NUL-terminated string at `rva`.
@@ -174,6 +192,46 @@ pub fn read_exports_bytes(data: &[u8]) -> Result<Vec<String>, String> {
     }
     out.sort();
     Ok(out)
+}
+
+/// One section's name, virtual size, and raw bytes.
+pub struct Section {
+    pub name: String,
+    /// The size the loader maps — byte-precise, unlike the file size, which `FileAlignment`
+    /// rounds to 512 and which therefore does not move for small code changes (measured).
+    pub virtual_size: u32,
+    pub bytes: Vec<u8>,
+}
+
+/// Read one section by name (`".text"`, `".pdata"`, …) from the PE file at `path`.
+///
+/// This exists because file size is a useless regression signal for this compiler: several
+/// modules of visibly different content all come out at exactly 9,728 B, and an adapter that
+/// wrote through an out-param on the failure path — a real contract violation — added 16
+/// bytes of code and moved the file size by zero. `.text` moves.
+///
+/// Never hash the whole file instead: two builds of one source differ in about 20 bytes
+/// (`TimeDateStamp` and a build id), so a whole-file hash is flaky by construction.
+pub fn read_section(path: &Path, want: &str) -> Result<Option<Section>, String> {
+    let data = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let pe = Pe::parse(&data)?;
+    for i in 0..pe.sections.len() {
+        let hdr = pe.section_header(i)?;
+        let name = String::from_utf8_lossy(&hdr.0)
+            .trim_end_matches('\0')
+            .to_string();
+        if name != want {
+            continue;
+        }
+        let (_, vsize, raw_off, raw_size) = hdr;
+        let end = raw_off.saturating_add(raw_size).min(data.len());
+        return Ok(Some(Section {
+            name,
+            virtual_size: vsize,
+            bytes: data[raw_off.min(data.len())..end].to_vec(),
+        }));
+    }
+    Ok(None)
 }
 
 /// Read the imported symbols of a PE file at `path`, as `"DLL!function"` (sorted).

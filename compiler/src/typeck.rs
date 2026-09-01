@@ -105,32 +105,19 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 f.name
             )));
         }
-        // An INTERNAL function's name is emitted raw into the generated Rust — the `mlx_`
-        // prefix that makes exported names safe does not apply to it (Grok verify). So it
-        // needs the same checks a parameter or local gets, plus the reserved namespaces.
+        // (DP-W4.) Two checks used to live here, and both have lost their reason.
+        //
+        // An internal function's name used to be emitted RAW into the generated Rust, so it
+        // needed the target's reserved words rejected (`fn match` would not parse) and the
+        // compiler's own prefixes reserved (`fn ml_floor` would collide with a helper).
+        // Since the wrapper refactor every function is emitted as `ml_fn_<name>` — no user
+        // function name reaches the generated Rust at all — so neither collision is reachable.
+        //
+        // Removing them takes a restriction AWAY. `fn match` and `fn type` are now legal, and
+        // `export fn match`, which compiled all along because the `mlx_` prefix hid it, keeps
+        // working. The same checks stay in force for PARAMETERS and LOCALS, which are still
+        // emitted raw.
         if !f.exported {
-            let targets = crate::reserved::reserving_targets(&f.name);
-            if !targets.is_empty() {
-                return Err(TypeError::new(format!(
-                    "internal function '{}' is a reserved word in {} — rename it (an internal \
-                     name is emitted as-is, unlike an export which gets the `mlx_` prefix)",
-                    f.name,
-                    targets.join(", ")
-                )));
-            }
-            // An internal function name is emitted raw, so it takes the same prefix rule as
-            // parameters and locals — including `__`, because a generated temporary in the
-            // caller shadows a function of that name for value purposes.
-            if let Some(prefix) = crate::reserved::generated_prefix(&f.name) {
-                return Err(TypeError::new(format!(
-                    "internal function '{}' starts with `{}`, which the compiler generates \
-                     into the same scope — {}. Rename it (an internal name is emitted as-is, \
-                     unlike an export which gets the `mlx_` prefix).",
-                    f.name,
-                    prefix,
-                    crate::reserved::generated_prefix_reason(prefix)
-                )));
-            }
             // D17's error ABI is a HOST-BOUNDARY convention: an i32 status plus an
             // `out_value` out-param appended to the *exported* signature. There is no
             // internal calling convention for it, and DP-C1 forbids calling a fallible
@@ -170,8 +157,7 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 params: vec![IrType::F64],
                 ret: IrType::F64,
                 fallible: false,
-                // A builtin is emitted as `ml_<name>`, not `mlx_`, and takes no out-param.
-                exported: false,
+                // A builtin is emitted as `ml_<name>` and takes no out-param.
                 out_param: None,
             },
         );
@@ -192,7 +178,6 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 params: f.params.iter().map(|p| ir_type(p.ty)).collect(),
                 ret: ir_type(f.ret),
                 fallible: f.fallible,
-                exported: f.exported,
                 out_param: f.params.iter().find(|p| p.out).map(|p| p.name.clone()),
             },
         );
@@ -219,10 +204,6 @@ struct Sig {
     params: Vec<IrType>,
     ret: IrType,
     fallible: bool,
-    /// Whether the callee is `export`ed. The generated Rust names an export `mlx_<name>`, so a
-    /// call site has to spell it that way — DP-C3 says both kinds are callable, and until now
-    /// only the internal kind actually was.
-    exported: bool,
     /// The name of the callee's first `out` parameter, if it has one. A call expression has no
     /// syntax for passing a pointer, and `Sig.params` does not model one, so such a callee has
     /// to be rejected rather than silently type-checked against the wrong arity. The NAME is
@@ -652,17 +633,11 @@ fn check_try_call(
              without calling '{callee}'"
         )));
     }
-    // DP-F5: v1 calls internal functions only. Not because an exported call is broken — #95
-    // fixed that — but because an exported fallible function's body is emitted against the C
-    // ABI (status + out_value) while a `try` callee returns `Result<T, i32>`. Supporting both
-    // needs the wrapper refactor, which is its own slice.
-    if sig.exported {
-        return Err(TypeError::new(format!(
-            "function '{fname}': '{callee}' is `export`ed and cannot be `try`-called yet — an \
-             exported fallible function is emitted against the C ABI, not the internal one. \
-             Drop `export` from '{callee}' if only this module calls it"
-        )));
-    }
+    // (DP-F5 lifted by SPEC-export-wrappers.) An exported callee used to be rejected here
+    // because its body was emitted against the C ABI while a `try` callee must return
+    // `Result<T, i32>`. The wrapper refactor gave every function ONE body in the Rust-native
+    // shape and moved the C ABI into a thin adapter, so there is nothing left to reject:
+    // `export` now means only "also visible outside" (DP-C3), in the emission too.
     if let Some(out_name) = &sig.out_param {
         return Err(TypeError::new(format!(
             "function '{fname}': '{callee}' cannot be called because its parameter \
@@ -1068,7 +1043,6 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                 kind: IrExprKind::Call {
                     name: name.clone(),
                     args: checked,
-                    exported: sig.exported,
                 },
             })
         }

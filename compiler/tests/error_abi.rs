@@ -24,17 +24,22 @@ fn fallible_fn_lowers_to_i32_status_plus_out_param() {
         ),
         "fallible signature = status i32 + out-param:\n{rust}"
     );
+    // Since the wrapper refactor the D17 shape lives in the ADAPTER, and the body speaks
+    // Rust. `fail` is `Err(<code>)` in the body; the adapter turns it into the bare status.
+    // The three assertions below still pin the same contract — the status is the error code,
+    // success writes through the out-param, and success reports 0 — but at the layer that
+    // actually implements it now.
     assert!(
-        rust.contains("return 1;"),
-        "`fail DIV_BY_ZERO` lowers to `return 1;`:\n{rust}"
+        rust.contains("return Err(1);"),
+        "`fail DIV_BY_ZERO` carries code 1 out of the body:\n{rust}"
     );
     assert!(
-        rust.contains("*out_value ="),
-        "success writes the value through out-param:\n{rust}"
+        rust.contains("unsafe { *out_value = __v; } 0"),
+        "the adapter writes the value through the out-param and reports 0:\n{rust}"
     );
     assert!(
-        rust.contains("return 0;"),
-        "success returns status 0:\n{rust}"
+        rust.contains("Err(__e) => __e"),
+        "...and hands a failure's code back as the status, unchanged:\n{rust}"
     );
 }
 

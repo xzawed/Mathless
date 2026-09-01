@@ -240,6 +240,9 @@ fn a_real_c_host_loads_and_calls_the_module() {
     )
     .expect("emit carrier");
 
+    let quote = emit_artifacts(include_str!("../../../examples/quote.mls"), "quote", &work)
+        .expect("emit quote");
+
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("c-host")
@@ -300,6 +303,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &deduction.dll,
         &vat.dll,
         &carrier.dll,
+        &quote.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

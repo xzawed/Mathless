@@ -14,6 +14,8 @@ pub enum Token {
     False,
     Error,
     Fail,
+    /// `try` — the call-site marker for a fallible callee (SPEC-fallible-calls DP-F1).
+    Try,
     Let,
     Mut,
     /// `out` — marks a caller-allocates out-parameter (SPEC-out-params).
@@ -69,6 +71,7 @@ impl Token {
             Token::False => Some("false"),
             Token::Error => Some("error"),
             Token::Fail => Some("fail"),
+            Token::Try => Some("try"),
             Token::Let => Some("let"),
             Token::Mut => Some("mut"),
             Token::Out => Some("out"),
@@ -330,6 +333,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 "false" => Token::False,
                 "error" => Token::Error,
                 "fail" => Token::Fail,
+                "try" => Token::Try,
                 "let" => Token::Let,
                 "mut" => Token::Mut,
                 "out" => Token::Out,

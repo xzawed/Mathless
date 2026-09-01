@@ -67,6 +67,27 @@ pub enum Stmt {
     /// `<NAME> = <EXPR>` — reassign a mutable local. A statement, never an expression
     /// (DP-M3), so `a = b = c` does not parse and assignment produces no value.
     Assign { name: String, value: Expr },
+    /// `<dest> = try <callee>(<args>)` — call a fallible function, propagating its status.
+    ///
+    /// Deliberately a STATEMENT and not an expression (DP-F2). There is no try-call node in
+    /// [`Expr`], so `1 + try f(x)`, `f(try g(x))` and `if try f(x)` are unrepresentable rather
+    /// than merely rejected — which is what keeps two measured hazards out of reach: the i32
+    /// division guard evaluates its RIGHT operand first, and hoisting a prelude out of a `&&`
+    /// condition would evaluate the right operand unconditionally.
+    TryCall {
+        dest: TryDest,
+        callee: String,
+        args: Vec<Expr>,
+    },
+}
+
+/// Where a [`Stmt::TryCall`] puts the value it received. One of the three statement positions
+/// `try` is allowed in (DP-F2).
+#[derive(Debug, PartialEq, Clone)]
+pub enum TryDest {
+    Let { name: String, mutable: bool },
+    Assign(String),
+    Return,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

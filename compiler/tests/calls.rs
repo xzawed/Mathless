@@ -118,10 +118,35 @@ fn calling_a_fallible_function_is_rejected_for_now() {
 #[test]
 fn an_exported_function_may_also_be_called() {
     // DP-C3: an export is just a function that is additionally visible outside.
-    compile_to_rust(
+    //
+    // This test used to stop at `compile_to_rust`, which never invokes rustc — so it passed
+    // while the feature it asserts was broken: an export is emitted as `mlx_<name>`, the call
+    // site emitted the bare name, and the generated crate failed to build with a rustc error
+    // quoting a file the user never wrote. Asserting the emitted name is what a unit test can
+    // do; `compiler/tests/calls_build.rs` runs the real build.
+    let rust = compile_to_rust(
         "export fn helper(x: i32) -> i32 { return x + 1 }\nexport fn f(x: i32) -> i32 { return helper(x) }",
     )
     .expect("calling an exported fn is allowed");
+    assert!(
+        rust.contains("mlx_helper(x)"),
+        "an exported callee must be called by its emitted name:\n{rust}"
+    );
+}
+
+#[test]
+fn a_callee_with_an_out_parameter_is_rejected() {
+    // An `out` is a pointer, and a call expression has no syntax for taking an address.
+    // `Sig` did not model out-ness, so this type-checked against a signature that does not
+    // exist and then failed inside the generated crate, with no source position. Today the
+    // missing-name error masked it; fixing that one exposed this one.
+    let err = compile_to_ir(
+        "export fn c(a: f64, out tier: i32) -> f64 { tier = 1 return a }\n\
+         export fn f(a: f64) -> f64 { return c(a, 7) }",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("its parameter 'tier' is an `out`"), "{err}");
 }
 
 #[test]

@@ -273,7 +273,11 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
-        IrExprKind::Call { name, args } => {
+        IrExprKind::Call {
+            name,
+            args,
+            exported,
+        } => {
             let args: Vec<String> = args.iter().map(emit_expr).collect();
             // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). That is
             // safe because `reserved::generated_prefix` rejects `ml_` on parameters, locals
@@ -283,6 +287,11 @@ fn emit_expr(e: &IrExpr) -> String {
             // `ml_floor(ml_floor)` and died in rustc.
             if crate::typeck::BUILTIN_ROUNDERS.contains(&name.as_str()) {
                 format!("ml_{name}({})", args.join(", "))
+            } else if *exported {
+                // An export is emitted as `mlx_<name>`; the bare name does not exist in the
+                // generated crate. DP-C3 says an export is callable like any other function,
+                // and it was not — the call emitted `helper(x)` and rustc could not find it.
+                format!("mlx_{name}({})", args.join(", "))
             } else {
                 format!("{name}({})", args.join(", "))
             }
@@ -489,7 +498,7 @@ fn emit_string_helper(module: &IrModule, out: &mut String) {
 fn used_rounders(module: &IrModule) -> Vec<&'static str> {
     fn walk_expr(e: &IrExpr, found: &mut Vec<&'static str>) {
         match &e.kind {
-            IrExprKind::Call { name, args } => {
+            IrExprKind::Call { name, args, .. } => {
                 if let Some(b) = crate::typeck::BUILTIN_ROUNDERS
                     .iter()
                     .find(|b| **b == name.as_str())

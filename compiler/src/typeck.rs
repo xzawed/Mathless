@@ -147,6 +147,9 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 params: vec![IrType::F64],
                 ret: IrType::F64,
                 fallible: false,
+                // A builtin is emitted as `ml_<name>`, not `mlx_`, and takes no out-param.
+                exported: false,
+                out_param: None,
             },
         );
     }
@@ -166,6 +169,8 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 params: f.params.iter().map(|p| ir_type(p.ty)).collect(),
                 ret: ir_type(f.ret),
                 fallible: f.fallible,
+                exported: f.exported,
+                out_param: f.params.iter().find(|p| p.out).map(|p| p.name.clone()),
             },
         );
     }
@@ -191,6 +196,16 @@ struct Sig {
     params: Vec<IrType>,
     ret: IrType,
     fallible: bool,
+    /// Whether the callee is `export`ed. The generated Rust names an export `mlx_<name>`, so a
+    /// call site has to spell it that way — DP-C3 says both kinds are callable, and until now
+    /// only the internal kind actually was.
+    exported: bool,
+    /// The name of the callee's first `out` parameter, if it has one. A call expression has no
+    /// syntax for passing a pointer, and `Sig.params` does not model one, so such a callee has
+    /// to be rejected rather than silently type-checked against the wrong arity. The NAME is
+    /// kept, not just a flag, so the diagnostic can point at the parameter the author has to
+    /// deal with instead of making them find it.
+    out_param: Option<String>,
 }
 
 type Sigs = HashMap<String, Sig>;
@@ -773,6 +788,19 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                      an expression yet — it returns a status and writes through an out-param"
                 )));
             }
+            // An `out` parameter is a POINTER in the generated code, and a call expression has
+            // no syntax for taking an address. `Sig.params` does not model the pointer either,
+            // so without this check `c(a, 7)` type-checks against a signature that does not
+            // exist and fails later inside the generated crate — a diagnostic with no source
+            // position, at the wrong layer.
+            if let Some(out_name) = &sig.out_param {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': '{name}' cannot be called because its parameter \
+                     '{out_name}' is an `out` — that is a pointer the host supplies, and a call \
+                     expression has no way to pass one. Split the computation into a plain \
+                     function that both can call, or inline it"
+                )));
+            }
             if args.len() != sig.params.len() {
                 return Err(TypeError::new(format!(
                     "function '{fname}': '{name}' expects {} argument(s), found {}",
@@ -797,6 +825,7 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                 kind: IrExprKind::Call {
                     name: name.clone(),
                     args: checked,
+                    exported: sig.exported,
                 },
             })
         }

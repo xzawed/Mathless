@@ -66,7 +66,25 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
     let mut error_table: Scope2 = HashMap::new();
     let mut errors = Vec::with_capacity(module.errors.len());
+    // Two names may not share a VALUE either (SPEC-fallible-calls DP-F9). The header emits a
+    // `#define ML_ERR_<NAME>` per declaration, so a collision gives the host two constants
+    // with one value: its `if (st == ML_ERR_A) … else if (st == ML_ERR_B)` always takes the
+    // first branch, and two distinct module failures collapse into one.
+    //
+    // This was survivable while a code never crossed a function boundary — whoever wrote the
+    // codes also read them. `try` propagation ends that: a code now arrives from a helper the
+    // host has never seen, and the host has nothing but the number.
+    let mut by_code: HashMap<i32, String> = HashMap::new();
     for e in &module.errors {
+        if let Some(first) = by_code.get(&e.code) {
+            return Err(TypeError::new(format!(
+                "error '{}' and error '{first}' both use code {} — a host maps a status to a \
+                 name by its value, so two names with one value are indistinguishable at the \
+                 boundary. Give them different codes",
+                e.name, e.code
+            )));
+        }
+        by_code.insert(e.code, e.name.clone());
         if error_table.insert(e.name.clone(), e.code).is_some() {
             return Err(TypeError::new(format!("duplicate error code '{}'", e.name)));
         }

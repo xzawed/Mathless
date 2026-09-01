@@ -8,7 +8,9 @@
 
 use std::fmt::Write as _;
 
-use crate::ir::{IrFunction, IrModule, IrType};
+use std::collections::HashMap;
+
+use crate::ir::{IrFunction, IrModule, IrStmt, IrType};
 
 fn c_type(t: IrType) -> &'static str {
     match t {
@@ -115,9 +117,26 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
 
     let _ = writeln!(s, "uint32_t ml_module_abi_version(void);");
+    let provenance = error_provenance(module);
     // Bindings describe the module's SURFACE: internal functions are not callable by a host
     // and must not appear here (SPEC-calls section 2.3).
     for f in module.functions.iter().filter(|f| f.exported) {
+        // DP-F10: which codes can actually reach the host through THIS function. Comments
+        // only — the declaration below is byte-identical to what it was before.
+        if f.fallible {
+            if let Some(codes) = provenance.get(f.name.as_str()) {
+                let list = if codes.is_empty() {
+                    "(no domain error)".to_string()
+                } else {
+                    codes
+                        .iter()
+                        .map(|c| format!("ML_ERR_{c}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                let _ = writeln!(s, "/* may fail with: {list} */");
+            }
+        }
         let _ = writeln!(s, "{}", c_signature(f));
     }
     s.push('\n');
@@ -128,6 +147,84 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
     let _ = writeln!(s, "#endif /* {guard} */");
     s
+}
+
+/// For every function, the error NAMES it can fail with — its own `fail`s plus everything
+/// reachable through `try` (DP-F10).
+///
+/// Only `try` edges carry errors: a plain call cannot target a fallible callee, so an
+/// infallible helper can never contribute a code. `reject_recursion` has already proved the
+/// call graph acyclic, so the walk terminates without a visited-set for cycles — but one is
+/// kept anyway, because this function must not hang if it is ever reached with hand-built IR.
+///
+/// Names, not numbers: the header prints `ML_ERR_<NAME>`, which is what a host reads.
+fn error_provenance(module: &IrModule) -> HashMap<&str, Vec<String>> {
+    let code_name: HashMap<i32, &str> = module
+        .errors
+        .iter()
+        .map(|e| (e.code, e.name.as_str()))
+        .collect();
+
+    /// Direct `fail` codes and `try` callees of one body.
+    fn scan<'a>(body: &'a [IrStmt], codes: &mut Vec<i32>, callees: &mut Vec<&'a str>) {
+        for s in body {
+            match s {
+                IrStmt::Fail(c) => codes.push(*c),
+                IrStmt::TryCall { callee, .. } => callees.push(callee.as_str()),
+                IrStmt::If { body, .. } | IrStmt::While { body, .. } => scan(body, codes, callees),
+                IrStmt::Return(_)
+                | IrStmt::Let { .. }
+                | IrStmt::Assign { .. }
+                | IrStmt::AssignOut { .. } => {}
+            }
+        }
+    }
+
+    let mut direct: HashMap<&str, (Vec<i32>, Vec<&str>)> = HashMap::new();
+    for f in &module.functions {
+        let (mut codes, mut callees) = (Vec::new(), Vec::new());
+        scan(&f.body, &mut codes, &mut callees);
+        direct.insert(f.name.as_str(), (codes, callees));
+    }
+
+    fn reach<'a>(
+        name: &'a str,
+        direct: &HashMap<&'a str, (Vec<i32>, Vec<&'a str>)>,
+        seen: &mut Vec<&'a str>,
+        out: &mut Vec<i32>,
+    ) {
+        if seen.contains(&name) {
+            return;
+        }
+        seen.push(name);
+        let Some((codes, callees)) = direct.get(name) else {
+            return;
+        };
+        for c in codes {
+            if !out.contains(c) {
+                out.push(*c);
+            }
+        }
+        for callee in callees {
+            reach(callee, direct, seen, out);
+        }
+    }
+
+    let mut result = HashMap::new();
+    for f in &module.functions {
+        let mut codes = Vec::new();
+        let mut seen = Vec::new();
+        reach(f.name.as_str(), &direct, &mut seen, &mut codes);
+        codes.sort_unstable();
+        result.insert(
+            f.name.as_str(),
+            codes
+                .iter()
+                .filter_map(|c| code_name.get(c).map(|n| (*n).to_string()))
+                .collect(),
+        );
+    }
+    result
 }
 
 fn c_signature(f: &IrFunction) -> String {

@@ -14,10 +14,13 @@
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_add(a: i32, b: i32) -> i32 {
+fn ml_fn_add(a: i32, b: i32) -> i32 {
     let sum = (a + b);
     return sum;
+}
+#[no_mangle]
+pub extern "C" fn mlx_add(a: i32, b: i32) -> i32 {
+    ml_fn_add(a, b)
 }
 
 #[panic_handler]
@@ -65,34 +68,40 @@ fn ml_strout(src: *const u8, buf: *mut u8, cap: i32, needed: *mut i32) -> i32 {
     0
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_carrier_name(scac: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+fn ml_fn_carrier_name(scac: *const u8) -> Result<*const u8, i32> {
     if ml_streq(scac, b"UPSN\0".as_ptr()) {
-        return ml_strout(b"UPS Ground\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+        return Ok(b"UPS Ground\0".as_ptr());
     }
     if ml_streq(scac, b"FDEG\0".as_ptr()) {
-        return ml_strout(b"FedEx Ground\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+        return Ok(b"FedEx Ground\0".as_ptr());
     }
     if ml_streq(scac, b"DHLE\0".as_ptr()) {
-        return ml_strout(b"DHL Express\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+        return Ok(b"DHL Express\0".as_ptr());
     }
     if ml_streq(scac, b"SELF\0".as_ptr()) {
-        return ml_strout(scac, ml_buf, ml_cap, ml_needed);
+        return Ok(scac);
     }
     if ml_streq(scac, b"NONE\0".as_ptr()) {
-        return ml_strout(b"\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+        return Ok(b"\0".as_ptr());
     }
-    return 1;
+    return Err(1);
+}
+#[no_mangle]
+pub extern "C" fn mlx_carrier_name(scac: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+    match ml_fn_carrier_name(scac) { Ok(__v) => ml_strout(__v, ml_buf, ml_cap, ml_needed), Err(__e) => __e }
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_carrier_label(scac: *const u8, tier: *mut i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+fn ml_fn_carrier_label(scac: *const u8, tier: *mut i32) -> Result<*const u8, i32> {
     if ml_streq(scac, b"UPSN\0".as_ptr()) {
         unsafe { *tier = 1i32; }
-        return ml_strout(b"UPS Ground\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+        return Ok(b"UPS Ground\0".as_ptr());
     }
     unsafe { *tier = 0i32; }
-    return ml_strout(b"Unassigned\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+    return Ok(b"Unassigned\0".as_ptr());
+}
+#[no_mangle]
+pub extern "C" fn mlx_carrier_label(scac: *const u8, tier: *mut i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+    match ml_fn_carrier_label(scac, tier) { Ok(__v) => ml_strout(__v, ml_buf, ml_cap, ml_needed), Err(__e) => __e }
 }
 
 #[panic_handler]
@@ -109,8 +118,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_commission(amount: f64, tier: *mut i32) -> f64 {
+fn ml_fn_commission(amount: f64, tier: *mut i32) -> f64 {
     if (amount < 1000000.0f64) {
         unsafe { *tier = 1i32; }
         return (amount * 0.03f64);
@@ -122,18 +130,25 @@ pub extern "C" fn mlx_commission(amount: f64, tier: *mut i32) -> f64 {
     unsafe { *tier = 3i32; }
     return (amount * 0.07f64);
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_commission_checked(amount: f64, tier: *mut i32, out_value: *mut f64) -> i32 {
+pub extern "C" fn mlx_commission(amount: f64, tier: *mut i32) -> f64 {
+    ml_fn_commission(amount, tier)
+}
+
+fn ml_fn_commission_checked(amount: f64, tier: *mut i32) -> Result<f64, i32> {
     if (amount < 0.0f64) {
-        return 1;
+        return Err(1);
     }
     if (amount < 1000000.0f64) {
         unsafe { *tier = 1i32; }
-        unsafe { *out_value = (amount * 0.03f64); } return 0;
+        return Ok((amount * 0.03f64));
     }
     unsafe { *tier = 3i32; }
-    unsafe { *out_value = (amount * 0.07f64); } return 0;
+    return Ok((amount * 0.07f64));
+}
+#[no_mangle]
+pub extern "C" fn mlx_commission_checked(amount: f64, tier: *mut i32, out_value: *mut f64) -> i32 {
+    match ml_fn_commission_checked(amount, tier) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
 #[panic_handler]
@@ -150,13 +165,16 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_count_bounded(n: i32, cap: i32) -> i32 {
+fn ml_fn_count_bounded(n: i32, cap: i32) -> i32 {
     let mut i = 0i32;
     while ((i < n) && (i < cap)) {
         i = (i + 1i32);
     }
     return i;
+}
+#[no_mangle]
+pub extern "C" fn mlx_count_bounded(n: i32, cap: i32) -> i32 {
+    ml_fn_count_bounded(n, cap)
 }
 
 #[panic_handler]
@@ -188,29 +206,44 @@ fn ml_ceil(x: f64) -> f64 { let t = ml_trunc_raw(x); ml_sz(if t < x { t + 1.0 } 
 fn ml_round(x: f64) -> f64 { let t = ml_trunc_raw(x); if t != t { return t; } let d = x - t; ml_sz(if d >= 0.5 { t + 1.0 } else if d <= -0.5 { t - 1.0 } else { t }, x) }
 fn ml_trunc(x: f64) -> f64 { ml_sz(ml_trunc_raw(x), x) }
 
-#[no_mangle]
-pub extern "C" fn mlx_deduction(gross: f64) -> f64 {
+fn ml_fn_deduction(gross: f64) -> f64 {
     return ml_floor((gross * 0.045f64));
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_fl(x: f64) -> f64 {
+pub extern "C" fn mlx_deduction(gross: f64) -> f64 {
+    ml_fn_deduction(gross)
+}
+
+fn ml_fn_fl(x: f64) -> f64 {
     return ml_floor(x);
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_ce(x: f64) -> f64 {
+pub extern "C" fn mlx_fl(x: f64) -> f64 {
+    ml_fn_fl(x)
+}
+
+fn ml_fn_ce(x: f64) -> f64 {
     return ml_ceil(x);
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_ro(x: f64) -> f64 {
-    return ml_round(x);
+pub extern "C" fn mlx_ce(x: f64) -> f64 {
+    ml_fn_ce(x)
 }
 
+fn ml_fn_ro(x: f64) -> f64 {
+    return ml_round(x);
+}
+#[no_mangle]
+pub extern "C" fn mlx_ro(x: f64) -> f64 {
+    ml_fn_ro(x)
+}
+
+fn ml_fn_tr(x: f64) -> f64 {
+    return ml_trunc(x);
+}
 #[no_mangle]
 pub extern "C" fn mlx_tr(x: f64) -> f64 {
-    return ml_trunc(x);
+    ml_fn_tr(x)
 }
 
 #[panic_handler]
@@ -227,12 +260,15 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_discount(price: f64, vip: bool) -> f64 {
+fn ml_fn_discount(price: f64, vip: bool) -> f64 {
     if vip {
         return (price * 0.9f64);
     }
     return price;
+}
+#[no_mangle]
+pub extern "C" fn mlx_discount(price: f64, vip: bool) -> f64 {
+    ml_fn_discount(price, vip)
 }
 
 #[panic_handler]
@@ -249,13 +285,16 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_discount2(price: f64, vip: bool) -> f64 {
+fn ml_fn_discount2(price: f64, vip: bool) -> f64 {
     let rate = 0.9f64;
     if vip {
         return (price * rate);
     }
     return price;
+}
+#[no_mangle]
+pub extern "C" fn mlx_discount2(price: f64, vip: bool) -> f64 {
+    ml_fn_discount2(price, vip)
 }
 
 #[panic_handler]
@@ -272,13 +311,16 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_discount3(price: f64, vip: bool) -> f64 {
+fn ml_fn_discount3(price: f64, vip: bool) -> f64 {
     let mut result = price;
     if vip {
         result = (price * 0.9f64);
     }
     return result;
+}
+#[no_mangle]
+pub extern "C" fn mlx_discount3(price: f64, vip: bool) -> f64 {
+    ml_fn_discount3(price, vip)
 }
 
 #[panic_handler]
@@ -295,16 +337,19 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-fn vip_rate(vip: bool) -> f64 {
+fn ml_fn_vip_rate(vip: bool) -> f64 {
     if vip {
         return 0.9f64;
     }
     return 1.0f64;
 }
 
+fn ml_fn_discount4(price: f64, vip: bool) -> f64 {
+    return (price * ml_fn_vip_rate(vip));
+}
 #[no_mangle]
 pub extern "C" fn mlx_discount4(price: f64, vip: bool) -> f64 {
-    return (price * vip_rate(vip));
+    ml_fn_discount4(price, vip)
 }
 
 #[panic_handler]
@@ -321,9 +366,12 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+fn ml_fn_line_total(each: f64, qty: i32) -> f64 {
+    return (each * (qty as f64));
+}
 #[no_mangle]
 pub extern "C" fn mlx_line_total(each: f64, qty: i32) -> f64 {
-    return (each * (qty as f64));
+    ml_fn_line_total(each, qty)
 }
 
 #[panic_handler]
@@ -340,12 +388,15 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_negate_if(x: i32, flip: bool) -> i32 {
+fn ml_fn_negate_if(x: i32, flip: bool) -> i32 {
     if (!flip) {
         return x;
     }
     return (-x);
+}
+#[no_mangle]
+pub extern "C" fn mlx_negate_if(x: i32, flip: bool) -> i32 {
+    ml_fn_negate_if(x, flip)
 }
 
 #[panic_handler]
@@ -362,22 +413,31 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_boxes(qty: i32, per_box: i32) -> i32 {
+fn ml_fn_boxes(qty: i32, per_box: i32) -> i32 {
     return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } };
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_loose(qty: i32, per_box: i32) -> i32 {
-    return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_rem(__d) } };
+pub extern "C" fn mlx_boxes(qty: i32, per_box: i32) -> i32 {
+    ml_fn_boxes(qty, per_box)
 }
 
+fn ml_fn_loose(qty: i32, per_box: i32) -> i32 {
+    return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_rem(__d) } };
+}
+#[no_mangle]
+pub extern "C" fn mlx_loose(qty: i32, per_box: i32) -> i32 {
+    ml_fn_loose(qty, per_box)
+}
+
+fn ml_fn_boxes_checked(qty: i32, per_box: i32) -> Result<i32, i32> {
+    if (per_box == 0i32) {
+        return Err(1);
+    }
+    return Ok({ let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } });
+}
 #[no_mangle]
 pub extern "C" fn mlx_boxes_checked(qty: i32, per_box: i32, out_value: *mut i32) -> i32 {
-    if (per_box == 0i32) {
-        return 1;
-    }
-    unsafe { *out_value = { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } }; } return 0;
+    match ml_fn_boxes_checked(qty, per_box) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
 #[panic_handler]
@@ -394,7 +454,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-fn check_qty(qty: i32) -> Result<i32, i32> {
+fn ml_fn_check_qty(qty: i32) -> Result<i32, i32> {
     if (qty < 1i32) {
         return Err(1);
     }
@@ -404,29 +464,35 @@ fn check_qty(qty: i32) -> Result<i32, i32> {
     return Ok(qty);
 }
 
-fn safe_div(a: f64, b: f64) -> Result<f64, i32> {
+fn ml_fn_safe_div(a: f64, b: f64) -> Result<f64, i32> {
     if (b == 0.0f64) {
         return Err(2);
     }
     return Ok((a / b));
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_unit_price(total: f64, qty: i32, out_value: *mut f64) -> i32 {
-    let q = match check_qty(qty) { Ok(__v) => __v, Err(__e) => return __e };
-    match safe_div(total, (q as f64)) {
+fn ml_fn_unit_price(total: f64, qty: i32) -> Result<f64, i32> {
+    let q = match ml_fn_check_qty(qty) { Ok(__v) => __v, Err(__e) => return Err(__e) };
+    match ml_fn_safe_div(total, (q as f64)) {
         Ok(__v) => {
-            unsafe { *out_value = __v; } return 0;
+            return Ok(__v);
         }
-        Err(__e) => { return __e; }
+        Err(__e) => { return Err(__e); }
     }
 }
+#[no_mangle]
+pub extern "C" fn mlx_unit_price(total: f64, qty: i32, out_value: *mut f64) -> i32 {
+    match ml_fn_unit_price(total, qty) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
+}
 
+fn ml_fn_line_check(qty: i32, tier: *mut i32) -> Result<i32, i32> {
+    let q = match ml_fn_check_qty(qty) { Ok(__v) => __v, Err(__e) => return Err(__e) };
+    unsafe { *tier = 1i32; }
+    return Ok(q);
+}
 #[no_mangle]
 pub extern "C" fn mlx_line_check(qty: i32, tier: *mut i32, out_value: *mut i32) -> i32 {
-    let q = match check_qty(qty) { Ok(__v) => __v, Err(__e) => return __e };
-    unsafe { *tier = 1i32; }
-    unsafe { *out_value = q; } return 0;
+    match ml_fn_line_check(qty, tier) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
 #[panic_handler]
@@ -443,12 +509,15 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+fn ml_fn_safe_div(a: f64, b: f64) -> Result<f64, i32> {
+    if (b == 0.0f64) {
+        return Err(1);
+    }
+    return Ok((a / b));
+}
 #[no_mangle]
 pub extern "C" fn mlx_safe_div(a: f64, b: f64, out_value: *mut f64) -> i32 {
-    if (b == 0.0f64) {
-        return 1;
-    }
-    unsafe { *out_value = (a / b); } return 0;
+    match ml_fn_safe_div(a, b) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
 #[panic_handler]
@@ -508,75 +577,102 @@ fn ml_trunc_raw(x: f64) -> f64 {
 fn ml_sz(r: f64, x: f64) -> f64 { if r == 0.0 { x * 0.0 } else { r } }
 fn ml_floor(x: f64) -> f64 { let t = ml_trunc_raw(x); ml_sz(if t > x { t - 1.0 } else { t }, x) }
 
+fn ml_fn_is_big(n: i32) -> Result<bool, i32> {
+    if (n < 0i32) {
+        return Err(1);
+    }
+    return Ok((n > 100i32));
+}
 #[no_mangle]
 pub extern "C" fn mlx_is_big(n: i32, out_value: *mut bool) -> i32 {
-    if (n < 0i32) {
-        return 1;
-    }
-    unsafe { *out_value = (n > 100i32); } return 0;
+    match ml_fn_is_big(n) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
+fn ml_fn_bump(n: i32) -> Result<i32, i32> {
+    if (n < 0i32) {
+        return Err(1);
+    }
+    return Ok((n - 7i32));
+}
 #[no_mangle]
 pub extern "C" fn mlx_bump(n: i32, out_value: *mut i32) -> i32 {
-    if (n < 0i32) {
-        return 1;
-    }
-    unsafe { *out_value = (n - 7i32); } return 0;
+    match ml_fn_bump(n) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
+fn ml_fn_answer() -> Result<i32, i32> {
+    return Ok(42i32);
+}
 #[no_mangle]
 pub extern "C" fn mlx_answer(out_value: *mut i32) -> i32 {
-    unsafe { *out_value = 42i32; } return 0;
+    match ml_fn_answer() { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_pi_ish() -> f64 {
+fn ml_fn_pi_ish() -> f64 {
     return 3.5f64;
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_span(n: i32, lo: *mut i32, hi: *mut i32) -> i32 {
+pub extern "C" fn mlx_pi_ish() -> f64 {
+    ml_fn_pi_ish()
+}
+
+fn ml_fn_span(n: i32, lo: *mut i32, hi: *mut i32) -> i32 {
     unsafe { *lo = (n - 1i32); }
     unsafe { *hi = (n + 1i32); }
     return n;
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_split(x: f64, whole: *mut f64, negative: *mut bool) -> f64 {
+pub extern "C" fn mlx_span(n: i32, lo: *mut i32, hi: *mut i32) -> i32 {
+    ml_fn_span(n, lo, hi)
+}
+
+fn ml_fn_split(x: f64, whole: *mut f64, negative: *mut bool) -> f64 {
     unsafe { *whole = ml_floor(x); }
     unsafe { *negative = (x < 0.0f64); }
     return (x - ml_floor(x));
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_grade(n: i32, tier: *mut i32, out_value: *mut i32) -> i32 {
+pub extern "C" fn mlx_split(x: f64, whole: *mut f64, negative: *mut bool) -> f64 {
+    ml_fn_split(x, whole, negative)
+}
+
+fn ml_fn_grade(n: i32, tier: *mut i32) -> Result<i32, i32> {
     if (n < 0i32) {
-        return 1;
+        return Err(1);
     }
     unsafe { *tier = 1i32; }
-    unsafe { *out_value = (n * 10i32); } return 0;
+    return Ok((n * 10i32));
+}
+#[no_mangle]
+pub extern "C" fn mlx_grade(n: i32, tier: *mut i32, out_value: *mut i32) -> i32 {
+    match ml_fn_grade(n, tier) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_code_of(s: *const u8, out_value: *mut i32) -> i32 {
+fn ml_fn_code_of(s: *const u8) -> Result<i32, i32> {
     if ml_streq(s, b"ODD\0".as_ptr()) {
-        return 2;
+        return Err(2);
     }
     if ml_streq(s, b"KR\0".as_ptr()) {
-        unsafe { *out_value = 82i32; } return 0;
+        return Ok(82i32);
     }
-    unsafe { *out_value = 0i32; } return 0;
+    return Ok(0i32);
+}
+#[no_mangle]
+pub extern "C" fn mlx_code_of(s: *const u8, out_value: *mut i32) -> i32 {
+    match ml_fn_code_of(s) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_tag(n: i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+fn ml_fn_tag(n: i32) -> Result<*const u8, i32> {
     if (n < 0i32) {
-        return 1;
+        return Err(1);
     }
     if (n > 100i32) {
-        return ml_strout(b"BIG\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+        return Ok(b"BIG\0".as_ptr());
     }
-    return ml_strout(b"SMALL\0".as_ptr(), ml_buf, ml_cap, ml_needed);
+    return Ok(b"SMALL\0".as_ptr());
+}
+#[no_mangle]
+pub extern "C" fn mlx_tag(n: i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+    match ml_fn_tag(n) { Ok(__v) => ml_strout(__v, ml_buf, ml_cap, ml_needed), Err(__e) => __e }
 }
 
 #[panic_handler]
@@ -593,8 +689,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
-#[no_mangle]
-pub extern "C" fn mlx_sum_to(n: i32) -> i32 {
+fn ml_fn_sum_to(n: i32) -> i32 {
     let mut total = 0i32;
     let mut i = 1i32;
     while (i <= n) {
@@ -602,6 +697,10 @@ pub extern "C" fn mlx_sum_to(n: i32) -> i32 {
         i = (i + 1i32);
     }
     return total;
+}
+#[no_mangle]
+pub extern "C" fn mlx_sum_to(n: i32) -> i32 {
+    ml_fn_sum_to(n)
 }
 
 #[panic_handler]
@@ -628,8 +727,7 @@ fn ml_streq(a: *const u8, b: *const u8) -> bool {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn mlx_vat_rate(country: *const u8) -> f64 {
+fn ml_fn_vat_rate(country: *const u8) -> f64 {
     if ml_streq(country, b"KR\0".as_ptr()) {
         return 0.1f64;
     }
@@ -641,9 +739,12 @@ pub extern "C" fn mlx_vat_rate(country: *const u8) -> f64 {
     }
     return 0.0f64;
 }
-
 #[no_mangle]
-pub extern "C" fn mlx_issuer_of(bin: *const u8) -> i32 {
+pub extern "C" fn mlx_vat_rate(country: *const u8) -> f64 {
+    ml_fn_vat_rate(country)
+}
+
+fn ml_fn_issuer_of(bin: *const u8) -> i32 {
     if ml_streq(bin, b"4\0".as_ptr()) {
         return 1i32;
     }
@@ -652,10 +753,17 @@ pub extern "C" fn mlx_issuer_of(bin: *const u8) -> i32 {
     }
     return 0i32;
 }
+#[no_mangle]
+pub extern "C" fn mlx_issuer_of(bin: *const u8) -> i32 {
+    ml_fn_issuer_of(bin)
+}
 
+fn ml_fn_is_export_item(code: *const u8) -> bool {
+    return (!ml_streq(code, b"DOM\0".as_ptr()));
+}
 #[no_mangle]
 pub extern "C" fn mlx_is_export_item(code: *const u8) -> bool {
-    return (!ml_streq(code, b"DOM\0".as_ptr()));
+    ml_fn_is_export_item(code)
 }
 
 #[panic_handler]

@@ -31,7 +31,7 @@ fn a_try_call_lowers_to_a_match_on_result() {
     // `unwrap` or `expect`: a panic in a generated module hangs the calling host thread.
     let rust = compile_to_rust(QUOTE).expect("compile");
     assert!(
-        rust.contains("fn check_qty(qty: i32) -> Result<i32, i32>"),
+        rust.contains("fn ml_fn_check_qty(qty: i32) -> Result<i32, i32>"),
         "an internal fallible fn returns Result:\n{rust}"
     );
     assert!(rust.contains("Ok(") && rust.contains("Err("), "{rust}");
@@ -138,16 +138,30 @@ fn try_works_in_all_three_statement_positions() {
 }
 
 #[test]
-fn an_exported_callee_may_not_be_try_called_yet() {
-    // DP-F5. Not because it is broken — #95 fixed that — but because an exported fallible
-    // function's body is emitted against the C ABI while a `try` callee must return `Result`.
-    // Supporting both needs the wrapper refactor, which is its own slice (SPEC section 5.2).
-    let msg = err_of(
+fn an_exported_callee_may_now_be_try_called() {
+    // DP-F5, unlocked by SPEC-export-wrappers. The restriction was never about the feature —
+    // it was that an exported fallible function's body was emitted against the C ABI while a
+    // `try` callee needs `Result<T, i32>`. Now every function has ONE body in that shape and
+    // the C ABI lives in a thin adapter, so a rule can be exposed to the host AND reused
+    // inside the module.
+    //
+    // SPEC-fallible-calls section 0.1 measured what the old workaround cost: promoting a rule
+    // to its own export made its callers non-fallible, so the validation stopped being
+    // enforced by the ABI at all.
+    let rust = compile_to_rust(
         "error E = 1\n\
          export fn g(x: i32) -> i32! { if x < 0 { fail E } return x }\n\
          export fn f(x: i32) -> i32! { let y = try g(x) return y }",
+    )
+    .expect("an exported fallible callee is try-callable");
+    assert!(
+        rust.contains("ml_fn_g(x)"),
+        "the call reaches the BODY:\n{rust}"
     );
-    assert!(msg.contains("export"), "{msg}");
+    assert!(
+        rust.contains(r#"pub extern "C" fn mlx_g("#),
+        "...and the export still exists for the host:\n{rust}"
+    );
 }
 
 #[test]

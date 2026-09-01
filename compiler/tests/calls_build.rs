@@ -83,3 +83,53 @@ fn an_exported_callee_that_takes_a_string_builds() {
          }",
     );
 }
+
+#[test]
+fn a_target_keyword_as_a_function_name_builds() {
+    // DP-W4 removed the frontend rejection of `fn match`, on the ground that no user function
+    // name reaches the generated Rust any more. That ground is only true if the emission
+    // really is `ml_fn_<name>` everywhere — declaration AND call site — so this runs rustc
+    // rather than trusting the reasoning.
+    builds(
+        "kw_internal",
+        "fn match(x: i32) -> i32 { return x + 1 }\n\
+         fn type(x: i32) -> i32 { return match(x) }\n\
+         export fn f(x: i32) -> i32 { return type(x) }",
+    );
+}
+
+#[test]
+fn a_target_keyword_as_an_exported_name_still_builds() {
+    // This compiled before the refactor too, because the export was emitted as `mlx_type`.
+    // It is here as a REGRESSION guard: naming the body with the raw user name would have
+    // broken it, which is the measurement that decided DP-W1.
+    builds(
+        "kw_export",
+        "export fn type(x: i32) -> i32 { return x + 1 }\n\
+         export fn match(x: i32) -> i32 { return type(x) }",
+    );
+}
+
+#[test]
+fn a_generated_prefix_as_a_function_name_builds() {
+    // `fn ml_panic` used to collide with the emitted panic handler; it is now
+    // `ml_fn_ml_panic`. `export fn mlx_foo` beside `fn mlx_foo` used to be a duplicate.
+    builds(
+        "prefixes",
+        "fn ml_panic(x: i32) -> i32 { return x }\n\
+         fn mlx_foo(x: i32) -> i32 { return ml_panic(x) }\n\
+         export fn foo(x: i32) -> i32 { return mlx_foo(x) }",
+    );
+}
+
+#[test]
+fn an_exported_fallible_callee_builds() {
+    // DP-F5, unlocked by the refactor: an export is `try`-callable because its body is the
+    // same Rust-native shape as any other. Before this, typeck rejected it outright.
+    builds(
+        "exported_try",
+        "error E = 1\n\
+         export fn check(x: i32) -> i32! { if x < 0 { fail E } return x }\n\
+         export fn use_it(x: i32) -> i32! { let y = try check(x) return y * 2 }",
+    );
+}

@@ -198,3 +198,68 @@ fn a_three_level_chain_carries_the_deepest_code() {
     drop(m);
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// DP-F5, unlocked by the wrapper refactor: a rule can be exposed to the host AND reused
+/// inside the module, at the same time.
+///
+/// This is the thing SPEC-fallible-calls section 0.1 measured the cost of. The old workaround
+/// was to promote a shared rule to its own export — which made its callers NON-fallible, so
+/// the validation became advisory and the ABI stopped enforcing it. Here the caller keeps its
+/// status channel and the host still gets the rule as a first-class entry point.
+#[test]
+fn an_exported_rule_can_be_reused_inside_the_module_and_called_from_outside() {
+    const SRC: &str = "error E_BAD = 4\n\
+                       export fn check(x: i32) -> i32! {\n\
+                         if x < 1 { fail E_BAD }\n\
+                         return x\n\
+                       }\n\
+                       export fn doubled(x: i32) -> i32! {\n\
+                         let v = try check(x)\n\
+                         return v * 2\n\
+                       }";
+    let out = std::env::temp_dir().join(format!("mlc_fc_dpf5_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let arts = emit_artifacts(SRC, "reuse", &out).expect("emit reuse");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load reuse.dll");
+
+    let check: extern "C" fn(i32, *mut i32) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_check\0").unwrap()) };
+    let doubled: extern "C" fn(i32, *mut i32) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_doubled\0").unwrap()) };
+
+    // The host calls the shared rule directly — it is a real export, not an internal helper.
+    let mut v = -9i32;
+    assert_eq!(check(5, &mut v), 0);
+    assert_eq!(v, 5);
+    let mut v = -9i32;
+    assert_eq!(check(0, &mut v), 4);
+    assert_eq!(v, -9);
+
+    // ...and the other export reuses the SAME rule through `try`, keeping its own status.
+    let mut v = -9i32;
+    assert_eq!(doubled(5, &mut v), 0);
+    assert_eq!(v, 10);
+    let mut v = -9i32;
+    assert_eq!(
+        doubled(0, &mut v),
+        4,
+        "the shared rule's code, propagated — not a second copy of the check"
+    );
+    assert_eq!(v, -9);
+
+    // Both are exports; the reuse did not add or remove one.
+    drop(m);
+    let mut names = pe::read_exports(&arts.dll).expect("read exports");
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "ml_module_abi_version".to_string(),
+            "mlx_check".to_string(),
+            "mlx_doubled".to_string(),
+        ]
+    );
+
+    let _ = std::fs::remove_dir_all(&out);
+}

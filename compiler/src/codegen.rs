@@ -83,9 +83,9 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         )));
     }
 
-    // Declared `out` params become `*mut T`, in source order. D17's implicit `out_value` is
-    // appended after all of them below, which is DP-O1: the return value always comes last.
-    let mut params: Vec<String> = f
+    // Declared `out` params become `*mut T`, in source order — in the BODY as well as in the
+    // adapter, so the adapter forwards the pointer rather than re-deriving it.
+    let params: Vec<String> = f
         .params
         .iter()
         .map(|p| {
@@ -97,78 +97,97 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         })
         .collect();
 
-    // An internal function is a plain Rust `fn`: no `#[no_mangle]`, no `extern "C"`, no
-    // `mlx_` prefix. That is what keeps it out of the export table — measured in acceptance
-    // C, not asserted here (SPEC-calls section 2.3).
+    // ── The body. Every Mathless function has exactly one, and it is a plain Rust `fn`
+    // (SPEC-export-wrappers DP-W1). It carries the Rust-native shape: `T` when infallible,
+    // `Result<T, i32>` when fallible.
+    //
+    // The name is `ml_fn_<name>`, never the user's own. `ml_` is already reserved from user
+    // identifiers (#85), so no user name reaches the generated Rust as a function — which is
+    // why `export fn type` and `export fn match` keep compiling (measured: they compile today
+    // only because the `mlx_` prefix hides them from rustc's keyword list) and why the
+    // internal-name reserved-word check loses its reason to exist.
+    let (body_ret, abi) = if f.fallible {
+        (
+            format!("Result<{}, i32>", rust_type(f.ret)),
+            RetAbi::Fallible,
+        )
+    } else {
+        (rust_type(f.ret).to_string(), RetAbi::Plain)
+    };
+    let _ = writeln!(
+        out,
+        "fn ml_fn_{}({}) -> {} {{",
+        f.name,
+        params.join(", "),
+        body_ret
+    );
+    for s in &f.body {
+        emit_stmt(s, 1, abi, out);
+    }
+    out.push_str("}\n");
+
+    // An internal function stops here: no `#[no_mangle]`, so it never reaches the export
+    // table (measured in acceptance C, not asserted here).
     if !f.exported {
-        // A fallible internal function returns `Result<T, i32>` (DP-F6). This is the shape
-        // #67 was missing: without it `fail` lowered to a plain `return <code>`, which for
-        // `-> i32!` silently returned the error code as an ordinary value.
-        let (ret_ty, abi) = if f.fallible {
-            (
-                format!("Result<{}, i32>", rust_type(f.ret)),
-                RetAbi::InternalResult,
-            )
-        } else {
-            (rust_type(f.ret).to_string(), RetAbi::Plain)
-        };
-        let _ = writeln!(out, "fn {}({}) -> {} {{", f.name, params.join(", "), ret_ty);
-        for s in &f.body {
-            emit_stmt(s, 1, abi, out);
-        }
-        out.push_str("}\n");
         return Ok(());
     }
 
-    // `write!` into a String is infallible; the `_ =` documents that.
+    // ── The adapter. This is the ONLY place the C ABI is spoken, and it contains no logic:
+    // it forwards the arguments, then converts the body's Rust-native result into D17's
+    // status + out-param or Q12's buffer triple.
+    //
+    // DP-W2 puts it immediately after its body, so the two halves of one function read
+    // together.
+    let args: Vec<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
+    let call = format!("ml_fn_{}({})", f.name, args.join(", "));
+    let mut sig = params;
+
     out.push_str("#[no_mangle]\n");
-    let abi = if f.ret == IrType::Str {
-        RetAbi::StringBuffer
-    } else if f.fallible {
-        RetAbi::Status
-    } else {
-        RetAbi::Plain
-    };
-    if abi == RetAbi::StringBuffer {
-        // SPEC-string-return: the Q12 triple IS the return value, so it goes last — DP-O1
-        // unchanged, the return value is simply three slots wide instead of one.
-        //
-        // `ml_buf` is `*mut u8`, NOT `*mut *const u8`: the module copies bytes into the
-        // host's buffer, it does not hand back a pointer. Returning a pointer to module
-        // memory would work in every test and be wrong the moment the module is unloaded.
-        //
-        // The `ml_` prefix is not decoration — it is already reserved for compiler-generated
-        // identifiers (#85), so a user parameter can never shadow the capacity.
-        params.push("ml_buf: *mut u8".to_string());
-        params.push("ml_cap: i32".to_string());
-        params.push("ml_needed: *mut i32".to_string());
+    if f.ret == IrType::Str {
+        // Q12: the module never allocates; `ml_strout` copies into the host's buffer and
+        // returns the status. Truncation is a failure, and it writes nothing (DP-T2).
+        sig.push("ml_buf: *mut u8".to_string());
+        sig.push("ml_cap: i32".to_string());
+        sig.push("ml_needed: *mut i32".to_string());
         let _ = writeln!(
             out,
             "pub extern \"C\" fn mlx_{}({}) -> i32 {{",
             f.name,
-            params.join(", ")
+            sig.join(", ")
+        );
+        let _ = writeln!(
+            out,
+            "    match {call} {{ Ok(__v) => ml_strout(__v, ml_buf, ml_cap, ml_needed), Err(__e) => __e }}"
         );
     } else if f.fallible {
-        // D17: a fallible fn returns an `i32` status and delivers its value through a
-        // `*mut T` out-param appended after the declared parameters.
-        params.push(format!("out_value: *mut {}", rust_type(f.ret)));
+        // D17: an `i32` status return plus a `*mut T` out-param, appended after every
+        // declared out (DP-O1 — the return value is always last).
+        //
+        // `*out_value` is written ONLY on the success arm. Writing it first and choosing the
+        // status afterwards would compile, would keep the status correct, and would clobber
+        // the host's variable on the failure path — which DP-E3 says the host may then read
+        // as untouched.
+        sig.push(format!("out_value: *mut {}", rust_type(f.ret)));
         let _ = writeln!(
             out,
             "pub extern \"C\" fn mlx_{}({}) -> i32 {{",
             f.name,
-            params.join(", ")
+            sig.join(", ")
+        );
+        let _ = writeln!(
+            out,
+            "    match {call} {{ Ok(__v) => {{ unsafe {{ *out_value = __v; }} 0 }} Err(__e) => __e }}"
         );
     } else {
+        // Infallible: the value IS the C return, so the adapter is a forwarding call.
         let _ = writeln!(
             out,
             "pub extern \"C\" fn mlx_{}({}) -> {} {{",
             f.name,
-            params.join(", "),
+            sig.join(", "),
             rust_type(f.ret)
         );
-    }
-    for s in &f.body {
-        emit_stmt(s, 1, abi, out);
+        let _ = writeln!(out, "    {call}");
     }
     out.push_str("}\n");
     Ok(())
@@ -184,30 +203,30 @@ fn rust_type(t: IrType) -> &'static str {
     }
 }
 
-/// How a function delivers its result to the caller. Three shapes, and `return` lowers
-/// differently under each — keeping them in one enum is what stops a new one being added
-/// as a second bool that some call site forgets to thread through.
+/// How a function BODY returns. Only two shapes, because a body never speaks the C ABI —
+/// that lives in the adapter (SPEC-export-wrappers).
+///
+/// This used to have four variants, two of them C-facing (`Status` for D17's status +
+/// out-param, `StringBuffer` for Q12's triple). Splitting exports into a body plus an adapter
+/// deleted both: `return` and `fail` now lower one way for an infallible function and one way
+/// for a fallible one, whether or not anyone exports it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RetAbi {
-    /// Infallible: the value IS the C return.
+    /// Infallible: `return e` is `return e`.
     Plain,
-    /// D17 fallible scalar: `i32` status + `out_value: *mut T`.
-    Status,
-    /// SPEC-string-return: `i32` status + the Q12 triple `(ml_buf, ml_cap, ml_needed)`.
-    StringBuffer,
-    /// SPEC-fallible-calls: an INTERNAL fallible function. It is a plain Rust `fn`, not bound
-    /// by the C ABI at all, so it returns `Result<T, i32>` — the only shape that needs no
-    /// invented value on the failure path (DP-F6). `Option` would lose the D17 code.
-    InternalResult,
+    /// Fallible: `Result<T, i32>` — the only shape needing no invented value on the failure
+    /// path (DP-F6). `Option` would lose the D17 code.
+    Fallible,
 }
 
 impl RetAbi {
-    /// How a propagating failure leaves a function with this ABI. The three C-facing shapes
-    /// return the bare status; an internal one re-wraps it so its own caller can propagate.
+    /// How a propagating failure leaves a body with this shape.
     fn propagate(self) -> &'static str {
         match self {
-            RetAbi::InternalResult => "return Err(__e)",
-            _ => "return __e",
+            RetAbi::Fallible => "return Err(__e)",
+            // Unreachable from source: typeck requires a `try` caller to be fallible. Kept
+            // total so hand-built IR cannot fall through to something worse.
+            RetAbi::Plain => "return __e",
         }
     }
 }
@@ -216,27 +235,10 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
     let pad = "    ".repeat(indent);
     match s {
         IrStmt::Return(e) => match abi {
-            // The helper does everything the Q12 table promises and returns the status, so
-            // `return` here is a tail call: success 0, truncation negative, and on truncation
-            // it has written nothing (DP-T2 — the fail-safe was considered and rejected).
-            RetAbi::StringBuffer => {
-                let _ = writeln!(
-                    out,
-                    "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
-                    emit_expr(e)
-                );
-            }
-            // Success: write the value through the out-param, return status 0 (D17).
-            RetAbi::Status => {
-                let _ = writeln!(
-                    out,
-                    "{pad}unsafe {{ *out_value = {}; }} return 0;",
-                    emit_expr(e)
-                );
-            }
-            // An internal fallible fn hands its value back as `Ok`, so its caller can tell
-            // success from a propagated status without a sentinel value.
-            RetAbi::InternalResult => {
+            // A fallible body hands its value back as `Ok`, so its caller — the adapter, or
+            // another Mathless function through `try` — can tell success from a propagated
+            // status without a sentinel value.
+            RetAbi::Fallible => {
                 let _ = writeln!(out, "{pad}return Ok({});", emit_expr(e));
             }
             RetAbi::Plain => {
@@ -244,14 +246,13 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             }
         },
         IrStmt::Fail(code) => {
-            // Failure: return the positive domain code; the out-param is left untouched.
-            //
-            // An internal fallible fn wraps it instead, so the code survives the hop. Emitting
-            // a bare `return <code>` there is exactly the silent wrong answer #67 measured:
-            // for `-> i32!` it returned the error code as an ordinary value.
-            if abi == RetAbi::InternalResult {
+            // The domain code, wrapped so it survives the hop to whoever unwraps it. Emitting
+            // a bare `return <code>` here is exactly the silent wrong answer #67 measured: for
+            // `-> i32!` the code came back as an ordinary value.
+            if abi == RetAbi::Fallible {
                 let _ = writeln!(out, "{pad}return Err({code});");
             } else {
+                // Unreachable from source — `fail` requires a fallible function.
                 let _ = writeln!(out, "{pad}return {code};");
             }
         }
@@ -268,7 +269,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             dest, callee, args, ..
         } => {
             let call = format!(
-                "{callee}({})",
+                "ml_fn_{callee}({})",
                 args.iter().map(emit_expr).collect::<Vec<_>>().join(", ")
             );
             let prop = abi.propagate();
@@ -371,27 +372,25 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
-        IrExprKind::Call {
-            name,
-            args,
-            exported,
-        } => {
+        IrExprKind::Call { name, args } => {
             let args: Vec<String> = args.iter().map(emit_expr).collect();
             // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). That is
-            // safe because `reserved::generated_prefix` rejects `ml_` on parameters, locals
-            // and internal function names — when this comment claimed the prefix was "already
-            // reserved" it was only true of internal FUNCTION names, and
+            // safe because `reserved::generated_prefix` rejects `ml_` on PARAMETERS and
+            // LOCALS, which are still emitted raw — when this comment once claimed the prefix
+            // was "already reserved" it was only true of function names, and
             // `export fn f(ml_floor: f64) -> f64 { return floor(ml_floor) }` emitted
-            // `ml_floor(ml_floor)` and died in rustc.
+            // `ml_floor(ml_floor)` and died in rustc (#85).
+            //
+            // Function names no longer need the rule: since the wrapper refactor a user
+            // function is `ml_fn_<name>`, which cannot collide with `ml_floor` (DP-W4).
             if crate::typeck::BUILTIN_ROUNDERS.contains(&name.as_str()) {
                 format!("ml_{name}({})", args.join(", "))
-            } else if *exported {
-                // An export is emitted as `mlx_<name>`; the bare name does not exist in the
-                // generated crate. DP-C3 says an export is callable like any other function,
-                // and it was not — the call emitted `helper(x)` and rustc could not find it.
-                format!("mlx_{name}({})", args.join(", "))
             } else {
-                format!("{name}({})", args.join(", "))
+                // Every Mathless function is one body named `ml_fn_<name>`, exported or not,
+                // so a call site no longer has to know which it is. Before the wrapper
+                // refactor this branch chose between `mlx_<name>` and the bare name, and
+                // choosing wrong meant the generated crate did not build (#95).
+                format!("ml_fn_{name}({})", args.join(", "))
             }
         }
         IrExprKind::Cast { to, operand } => {

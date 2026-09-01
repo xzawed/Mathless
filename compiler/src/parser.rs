@@ -237,6 +237,14 @@ impl Parser {
             }
             Token::Return => {
                 self.pos += 1;
+                if self.peek() == &Token::Try {
+                    let (callee, args) = self.parse_try_call()?;
+                    return Ok(Stmt::TryCall {
+                        dest: TryDest::Return,
+                        callee,
+                        args,
+                    });
+                }
                 let e = self.parse_expr()?;
                 Ok(Stmt::Return(e))
             }
@@ -256,6 +264,14 @@ impl Parser {
                 };
                 let name = self.ident("variable name")?;
                 self.eat(&Token::Assign, "'='")?;
+                if self.peek() == &Token::Try {
+                    let (callee, args) = self.parse_try_call()?;
+                    return Ok(Stmt::TryCall {
+                        dest: TryDest::Let { name, mutable },
+                        callee,
+                        args,
+                    });
+                }
                 let value = self.parse_expr()?;
                 Ok(Stmt::Let {
                     name,
@@ -268,6 +284,14 @@ impl Parser {
             Token::Ident(_) if self.peek_at(1) == &Token::Assign => {
                 let name = self.ident("variable name")?;
                 self.pos += 1; // '='
+                if self.peek() == &Token::Try {
+                    let (callee, args) = self.parse_try_call()?;
+                    return Ok(Stmt::TryCall {
+                        dest: TryDest::Assign(name),
+                        callee,
+                        args,
+                    });
+                }
                 let value = self.parse_expr()?;
                 Ok(Stmt::Assign { name, value })
             }
@@ -275,6 +299,47 @@ impl Parser {
                 "expected statement (if|while|return|fail|let|assignment), found {other:?}"
             )),
         }
+    }
+
+    /// `try IDENT ( args )` — the ONLY shape `try` accepts (DP-F2/DP-F3).
+    ///
+    /// The grammar, not the typechecker, is what forbids `try` inside an expression: no AST
+    /// node exists for a try-call, so `1 + try f(x)`, `f(try g(x))` and `if try f(x)` cannot be
+    /// built. That is deliberate — it makes the `i32` division guard's right-operand-first
+    /// evaluation and the `&&` short-circuit hazard unreachable rather than merely tested.
+    ///
+    /// Only a CALL may follow. `try x` or `try (a + b)` is refused here with a message that
+    /// says what `try` is for, rather than failing later as a type error about something else.
+    fn parse_try_call(&mut self) -> Result<(String, Vec<Expr>), ParseError> {
+        self.pos += 1; // `try`
+        let Token::Ident(_) = self.peek() else {
+            return self.err(format!(
+                "`try` must be followed by a call to a fallible function, as in \
+                 `let x = try f(a)` — found {:?}",
+                self.peek()
+            ));
+        };
+        let callee = self.ident("function name")?;
+        if self.peek() != &Token::LParen {
+            return self.err(format!(
+                "`try {callee}` must be a call — write `try {callee}(…)`. `try` marks a call \
+                 whose failure exits this function; it is not a prefix on a value"
+            ));
+        }
+        self.pos += 1; // '('
+        let mut args = Vec::new();
+        if self.peek() != &Token::RParen {
+            loop {
+                args.push(self.parse_expr()?);
+                if self.peek() == &Token::Comma {
+                    self.pos += 1;
+                    continue;
+                }
+                break;
+            }
+        }
+        self.eat(&Token::RParen, "')'")?;
+        Ok((callee, args))
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {

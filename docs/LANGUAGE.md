@@ -67,10 +67,16 @@
 - **`fn NAME(params) -> T { … }`** — `export` 없는 **내부 함수**. 호출식 `NAME(args)`로 부른다.
   export되지 않으므로 export 심볼 집합이 늘지 않는다(실측). **재귀는 금지**(직접·상호) — 스택
   오버플로가 호스트 프로세스를 죽이기 때문이며, `while`의 비종료와 달리 정적으로 판정 가능하다
+- **실패 가능 함수 호출** `let x = try f(a)` · `x = try f(a)` · `return try f(a)` — 피호출자가
+  실패하면 **호출자가 그 자리에서 즉시 반환**하며 status는 피호출자의 코드 **그대로**다.
+  **호출자도 `-> T!`여야 한다**(status 채널이 필요하다). `try`는 **문장 형태**이므로 식 안에
+  들어갈 수 없다(`1 + try f(x)`·`f(try g(x))`·`if try f(x)`는 파서가 거부). v1의 피호출자는
+  **내부 `fn`만**이고, `out` 파라미터가 있거나 `-> string!`인 함수는 아직 부를 수 없다.
+  **C ABI는 바뀌지 않는다** — 생성 헤더는 평범한 D17 실패 가능 export 그대로다(SPEC-fallible-calls)
 - **실패 가능 함수**: `-> T!` 표식 + `error NAME = N` 선언 + `fail NAME` 문
   (D17 lowering = i32 status 반환 + out-param, 실패 시 out 미변경).
-  **`export fn`에만 붙는다** — D17은 호스트 경계 규약이고 내부 호출 규약은 없다. 내부 `fn`에 `!`를
-  붙이면 typeck이 거부한다(SPEC-calls §5.3)
+  **내부 `fn`도 `-> T!`가 될 수 있다**(#97이 #67의 금지를 해제했다) — 다만 `try`로만 부를 수 있고,
+  내부에서는 C ABI가 아니라 `Result<T, i32>`로 내려간다. `export fn`의 lowering은 D17 그대로다
 - `if cond { … }` — **`else` 없음**
 - `while cond { … }` — 반복. `break`/`continue`는 아직 없다(함수 탈출은 `return`)
 - **단항 연산자** `-e`(f64/i32) · `!e`(bool). `-`의 오버플로는 wrap — `-i32::MIN == i32::MIN`(측정)

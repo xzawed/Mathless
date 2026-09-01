@@ -99,6 +99,29 @@ pub enum IrStmt {
         name: String,
         value: IrExpr,
     },
+    /// `<dest> = try <callee>(<args>)` — call a fallible internal function and propagate its
+    /// status on failure (SPEC-fallible-calls). A statement, never an expression.
+    TryCall {
+        dest: IrTryDest,
+        callee: String,
+        args: Vec<IrExpr>,
+        /// The callee's success type — what the destination receives.
+        ty: IrType,
+    },
+}
+
+/// Where a [`IrStmt::TryCall`] puts the value it received.
+#[derive(Debug, PartialEq)]
+pub enum IrTryDest {
+    Let {
+        name: String,
+        mutable: bool,
+    },
+    /// A mutable local.
+    Assign(String),
+    /// An `out` parameter — a write THROUGH a pointer, like [`IrStmt::AssignOut`].
+    AssignOut(String),
+    Return,
 }
 
 /// A type-annotated expression.
@@ -185,5 +208,18 @@ pub enum IrBinOp {
 /// plus divergence typing, and `while 1 == 1` would immediately fall outside whatever rule we
 /// wrote (SPEC-while DP-W2).
 pub fn block_always_returns(body: &[IrStmt]) -> bool {
-    matches!(body.last(), Some(IrStmt::Return(_) | IrStmt::Fail(_)))
+    matches!(
+        body.last(),
+        Some(
+            IrStmt::Return(_)
+                | IrStmt::Fail(_)
+                // `return try f(x)` leaves the function on BOTH arms — the value on success,
+                // the propagated status on failure — so it terminates a block exactly as a
+                // plain `return` does.
+                | IrStmt::TryCall {
+                    dest: IrTryDest::Return,
+                    ..
+                }
+        )
+    )
 }

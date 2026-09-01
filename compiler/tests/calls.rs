@@ -194,35 +194,34 @@ fn an_exported_name_may_still_look_like_a_prefix() {
 }
 
 #[test]
-fn an_internal_fallible_function_is_rejected() {
-    // D17's error ABI is a HOST-BOUNDARY convention (i32 status + an out-param appended to
-    // the export's signature). There is no internal calling convention for it, and DP-C1
-    // already forbids calling a fallible callee — so a non-exported `-> T!` is unreachable
-    // by construction. It used to compile: codegen emits non-exported fns with
-    // `fallible = false` hardcoded, so `fail E` lowered to a plain `return <code>;`.
-    let err = compile_to_ir(
+fn an_internal_function_may_be_fallible_now() {
+    // #67 rejected this, and SPEC-calls section 5.3 recorded why: codegen had no shape for an
+    // internal `-> T!` (it emitted `fallible = false`, so `fail E` became a plain
+    // `return <code>` — the error code returned as an ordinary value), and DP-C1 made the
+    // function uncallable anyway, so building the machinery would have been dead code.
+    //
+    // SPEC-fallible-calls lifts it, exactly as section 5.3 promised it would be lifted
+    // "가산적으로": `try` supplies the call form, codegen supplies `Result<T, i32>`. Kept as
+    // a test rather than deleted, so the unlock stays deliberate.
+    compile_to_rust(
         "error E = 1\nfn g(x: i32) -> i32! { if x < 0 { fail E } return x }\n\
-         export fn f(x: i32) -> i32 { return x }",
+         export fn f(x: i32) -> i32! { return try g(x) }",
     )
-    .unwrap_err();
-    let msg = format!("{err:?}").to_lowercase();
-    assert!(msg.contains("fallible"), "{err:?}");
-    assert!(
-        msg.contains("export"),
-        "the fix must be named in the message: {err:?}"
-    );
+    .expect("an internal fallible fn is legal once it can be called");
 }
 
 #[test]
-fn an_internal_fallible_function_is_rejected_at_the_source_for_every_return_type() {
-    // The measured symptom differed by type and neither form was acceptable: `-> i32!`
-    // built and silently returned the error code as an ordinary value, while `-> f64!` and
-    // `-> bool!` died inside rustc (E0308) and surfaced only as "cargo build of generated
-    // crate failed" — a backend error with no source position. Both are now typeck errors.
+fn a_fallible_callee_still_needs_a_caller_that_can_propagate() {
+    // The declaration ban is gone; the ABI reason behind it is not. A non-fallible caller has
+    // no status channel, so a propagated failure would have nowhere to go — and the old
+    // symptom was exactly that: for `-> i32!` the code came back as an ordinary value.
+    //
+    // Checked for every return type, because the old defect differed by type: `f64!` and
+    // `bool!` died inside rustc with no source position, while `i32!` compiled and lied.
     for (ty, ok) in [("i32", "0"), ("f64", "0.0"), ("bool", "true")] {
         let src = format!(
             "error E = 1\nfn g(x: i32) -> {ty}! {{ if x < 0 {{ fail E }} return {ok} }}\n\
-             export fn f(x: i32) -> i32 {{ return x }}"
+             export fn f(x: i32) -> i32 {{ let y = try g(x) return x }}"
         );
         let err = compile_to_ir(&src).unwrap_err();
         let msg = format!("{err:?}").to_lowercase();

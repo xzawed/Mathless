@@ -1,0 +1,73 @@
+// WW1b: the export shapes that had NO end-to-end coverage before the wrapper refactor.
+//
+// Each one is here because a mis-written C-ABI adapter for it would COMPILE and return a
+// plausible wrong value. They are grouped in one module so the oracle can load them together.
+//
+// The sharpest is `bump` below. For a `-> i32!` function the value and the status are both
+// i32, so an adapter written as `match body(x) { Ok(v) => v, Err(e) => e }` type-checks,
+// never writes *out_value, and reports every non-zero success as an error code. For `f64!`
+// and `bool!` the same mistake is a hard type error — which is exactly why a harness built
+// only around safe_div (f64) would miss it.
+
+error E_NEG = 1
+error E_ODD = 2
+
+// `-> bool!` — appeared nowhere in the repo before this.
+export fn is_big(n: i32) -> bool! {
+  if n < 0 { fail E_NEG }
+  return n > 100
+}
+
+// `-> i32!` — the shape where a wrong adapter type-checks. `n - 7` is chosen so that a
+// SUCCESS can return 0 (bump(7)) and so that a success can return exactly the value of an
+// error code (bump(8) == 1 == E_NEG). Under the wrong adapter the first reads as OK by
+// accident and the second reads as a failure.
+export fn bump(n: i32) -> i32! {
+  if n < 0 { fail E_NEG }
+  return n - 7
+}
+
+// Zero parameters, and fallible: the C declaration is `(int32_t* out_value)`, not `(void)`.
+export fn answer() -> i32! {
+  return 42
+}
+
+// Zero parameters, infallible: this one IS `(void)`.
+export fn pi_ish() -> f64 { return 3.5 }
+
+// TWO SAME-TYPED out params. Nothing at any level covered this, and rustc cannot catch a
+// swap between them — both are `int32_t*`.
+export fn span(n: i32, out lo: i32, out hi: i32) -> i32 {
+  lo = n - 1
+  hi = n + 1
+  return n
+}
+
+// `out` params that are NOT i32: every loaded out in the repo was an i32 before this.
+export fn split(x: f64, out whole: f64, out negative: bool) -> f64 {
+  whole = floor(x)
+  negative = x < 0.0
+  return x - floor(x)
+}
+
+// Fallible WITH a declared out of the SAME type as the return — the shape where the two
+// trailing `int32_t*` slots can be transposed silently.
+export fn grade(n: i32, out tier: i32) -> i32! {
+  if n < 0 { fail E_NEG }
+  tier = 1
+  return n * 10
+}
+
+// A fallible function taking a string: Status + `*const u8`, absent at every level before.
+export fn code_of(s: string) -> i32! {
+  if s == "ODD" { fail E_ODD }
+  if s == "KR" { return 82 }
+  return 0
+}
+
+// A Q12 string return whose other parameters are NOT strings.
+export fn tag(n: i32) -> string! {
+  if n < 0 { fail E_NEG }
+  if n > 100 { return "BIG" }
+  return "SMALL"
+}

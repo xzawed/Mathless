@@ -1,0 +1,91 @@
+Mathless Compiler Output Exception
+==================================
+
+Version 1.0, 2026-09-02
+
+
+0. What this is, in one sentence
+
+   What `mlc` produces from your source is yours. Running the compiler does not
+   put this project's licence terms on the files it writes for you.
+
+
+1. Scope
+
+   This exception applies to "Compiler Output": the files `mlc` generates from
+   input you supply. Today that is
+
+     - the native module (`.dll`),
+     - the generated C header (`.h`),
+     - the generated Delphi import unit (`.pas`),
+     - the intermediate Rust source `mlc` emits on the way to the module,
+
+   together with any future generated artifact of the same kind.
+
+   It applies whether or not the Compiler Output contains text copied verbatim
+   from templates inside this project. It does, and substantially: a generated
+   header is mostly our prose. In one measurement, `discount.h` was 39 lines, of
+   which 1 came from the user's source and 38 from our templates; the Delphi unit
+   was 19 lines, 1 and 18. That proportion is the reason this document exists.
+
+
+2. Grant
+
+   You may use, copy, modify, distribute and sell Compiler Output for any
+   purpose, under terms of your choosing, with no obligation arising from
+   LICENSE-APACHE or LICENSE-MIT on account of that output.
+
+   In particular, and for the avoidance of doubt:
+
+     - you need not reproduce this project's copyright notice, licence text or
+       attribution in, or alongside, Compiler Output;
+     - you need not disclose the source you compiled;
+     - you may distribute Compiler Output in closed-source and commercial
+       products.
+
+   No condition of LICENSE-APACHE or LICENSE-MIT applies to Compiler Output
+   solely because that output was produced by this software.
+
+
+3. What this does NOT cover
+
+   This exception is about output, and nothing else. It does not change the
+   licence of:
+
+     - the compiler and its source (`compiler/`), the hosts, the tests or the
+       documentation in this repository — those stay Apache-2.0 OR MIT;
+     - any file of this project you copy into your own tree by hand rather than
+       receiving as Compiler Output. `runtime/ml_abi.h` is such a file: it is
+       hand-written, and (measured 2026-09-02) nothing copies or includes it, so
+       it is not Compiler Output today;
+     - your own input source, which was never ours.
+
+   It grants no trademark rights, and no patent rights beyond those already
+   granted by LICENSE-APACHE.
+
+
+4. Why it is worded as an exception rather than left implicit
+
+   Apache-2.0 and MIT are permissive, not obligation-free: both ask that the
+   notice be preserved in redistributed copies. Read strictly, that could be
+   taken to follow our template text into every header a user ships. The point of
+   this project is that a user's algorithm goes out as a protected module without
+   our terms riding along (DECISIONS.md D04), so the question is answered here
+   in writing instead of being left to inference.
+
+   The shape of the problem is a known one — the GNU Compiler Collection carries
+   a Runtime Library Exception for the same reason, though under a copyleft
+   licence the stakes there are far higher than attribution.
+
+
+5. Not legal advice
+
+   This text was written by the project, not by a lawyer, and it is not legal
+   advice. If your use depends on it, have your own counsel read it.
+
+
+6. Relationship to the other licences
+
+   Where this exception and LICENSE-APACHE or LICENSE-MIT could be read to
+   conflict as applied to Compiler Output, this exception governs. Everywhere
+   else, they govern unchanged.

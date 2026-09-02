@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ml_oracle::pe;
+
+mod common;
 use mlc::emit::emit_artifacts;
 
 /// `vcvars64.bat` for the newest installed MSVC, or `None` if MSVC isn't installed.
@@ -168,9 +170,10 @@ fn a_real_c_host_loads_and_calls_the_module() {
         return;
     };
 
-    let work = std::env::temp_dir().join(format!("mlc_gate_d_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&work);
-    std::fs::create_dir_all(&work).unwrap();
+    // A guard, not a bare path: this test builds 14 DLLs and runs a child host process that
+    // loads them, so its tree is the biggest one and the most likely to lose the unlock race
+    // (measured — it leaked despite removing at the end). `TempOut` retries.
+    let work = common::TempOut::new("gate_d");
 
     // The very same artifacts `mlc build` gives a user.
     let discount = emit_artifacts(
@@ -344,6 +347,4 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         );
         assert!(!ours.is_empty(), "an empty import set would be suspicious");
     }
-
-    let _ = std::fs::remove_dir_all(&work);
 }

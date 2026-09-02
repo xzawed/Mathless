@@ -12,11 +12,12 @@ use std::path::Path;
 
 use mlc::emit::emit_artifacts;
 
-fn fresh_out(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("mlc_emit_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+mod common;
+use common::TempOut;
+
+/// Hold the returned guard for the body of the test — dropping it deletes the tree.
+fn fresh_out(tag: &str) -> TempOut {
+    TempOut::new(&format!("emit_{tag}"))
 }
 
 #[test]

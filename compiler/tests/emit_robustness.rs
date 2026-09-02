@@ -9,17 +9,20 @@
 //!    into `out_dir`, so a failure part-way through does not leave a `.dll` with no bindings
 //!    next to it — a partial set a host could still load.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use mlc::emit::emit_artifacts;
 
+mod common;
+use common::TempOut;
+
 const SRC: &str = "export fn f(a: f64) -> f64 { return a }";
 
-fn fresh_out(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mlc_rb_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// The returned guard must be held for the body of the test: dropping it deletes the tree.
+/// It used to be a bare `PathBuf` cleaned only on the way IN, which leaked one tree per run
+/// forever (see `common/mod.rs`).
+fn fresh_out(tag: &str) -> TempOut {
+    TempOut::new(&format!("rb_{tag}"))
 }
 
 fn entries(dir: &Path) -> Vec<String> {
@@ -145,7 +148,7 @@ fn the_cli_explains_a_bad_module_name_instead_of_failing_in_cargo() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_mlc"))
         .args(["build".as_ref(), src.as_os_str()])
         .arg("-o")
-        .arg(&dir)
+        .arg(dir.path())
         .output()
         .expect("run mlc");
 

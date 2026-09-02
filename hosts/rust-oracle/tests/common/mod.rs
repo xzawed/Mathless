@@ -69,6 +69,54 @@ impl Drop for TempOut {
     }
 }
 
+/// This file exists **twice** — once per crate's `tests/` tree — because an integration test
+/// can only include a module from its own crate, and a shared helper crate would be a new
+/// workspace member for four call sites (`CLAUDE.md`: build only what is actually used).
+///
+/// The duplication is deliberate; the drift is not. This test is what makes it safe: edit one
+/// copy and the suite fails until the other matches.
+#[test]
+fn the_two_copies_of_this_helper_are_identical() {
+    let root = workspace_root();
+    let a = root.join("compiler/tests/common/mod.rs");
+    let b = root.join("hosts/rust-oracle/tests/common/mod.rs");
+    let (ta, tb) = (
+        std::fs::read_to_string(&a).expect("compiler copy"),
+        std::fs::read_to_string(&b).expect("oracle copy"),
+    );
+    if ta == tb {
+        return;
+    }
+    // Report the first differing LINE, not the two files. `assert_eq!` on the whole text
+    // prints both copies in full — several screens of noise for a one-line drift.
+    let (mut la, mut lb) = (ta.lines(), tb.lines());
+    let mut n = 0;
+    loop {
+        n += 1;
+        match (la.next(), lb.next()) {
+            (Some(x), Some(y)) if x == y => continue,
+            (x, y) => panic!(
+                "the two copies of tests/common/mod.rs have diverged at line {n}:\n  \
+                 {}\n    {:?}\n  {}\n    {:?}\n\
+                 Copy one over the other; they are meant to be byte-identical.",
+                a.display(),
+                x.unwrap_or("<end of file>"),
+                b.display(),
+                y.unwrap_or("<end of file>"),
+            ),
+        }
+    }
+}
+
+/// Walk up from this crate's manifest dir until the directory holding `Cargo.lock`.
+fn workspace_root() -> PathBuf {
+    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    while !dir.join("Cargo.lock").is_file() {
+        assert!(dir.pop(), "no Cargo.lock above CARGO_MANIFEST_DIR");
+    }
+    dir
+}
+
 /// `remove_dir_all` with a bounded retry. Returns `Ok` if the directory is gone.
 fn remove_with_retry(dir: &Path) -> std::io::Result<()> {
     const ATTEMPTS: u32 = 10;

@@ -158,5 +158,12 @@ Licensed under either of
 at your option. This is the Rust ecosystem's usual pair: MIT keeps things simple and
 GPLv2-compatible, and Apache-2.0 adds an explicit patent grant.
 
+**What `mlc` produces from your source is yours** — see
+[LICENSE-OUTPUT-EXCEPTION](LICENSE-OUTPUT-EXCEPTION). The generated `.dll`, `.h` and `.pas`
+carry no obligation from the licences above, even though a generated header is mostly our
+template text (measured: `discount.h` is 39 lines, 1 from your source and 38 from ours — which
+is exactly why the exception is written down rather than assumed). It covers **output only**;
+the compiler itself stays Apache-2.0 OR MIT. It is not legal advice.
+
 Unless you say otherwise, any contribution you intentionally submit for inclusion in this work,
 as defined in the Apache-2.0 license, is dual licensed the same way, with no extra terms.

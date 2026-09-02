@@ -95,7 +95,7 @@ fn a_failure_moving_the_bindings_leaves_no_partial_output() {
     std::fs::create_dir(out.join("pmod.h")).unwrap();
 
     let err = emit_artifacts(SRC, "pmod", &out).unwrap_err();
-    assert!(matches!(err, mlc::emit::EmitError::Io(_)), "{err:?}");
+    assert!(matches!(err, mlc::emit::EmitError::Io { .. }), "{err:?}");
     assert!(
         !out.join("pmod.dll").exists(),
         "a failed build must not leave a lone .dll: {:?}",
@@ -105,6 +105,38 @@ fn a_failure_moving_the_bindings_leaves_no_partial_output() {
         !out.join("pmod.pas").exists(),
         "nor a lone .pas: {:?}",
         entries(&out)
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn an_io_failure_says_which_path_and_what_it_was_doing() {
+    // STATUS §5-5.8. The message used to be `io error: <os text>` and nothing else. Measured
+    // on this machine that reads:
+    //
+    //     mlc: io error: 액세스가 거부되었습니다. (os error 5)
+    //
+    // — no path, no operation, and the OS text is localised, so it is not even searchable.
+    // The retrospective that filed this item took eight steps to find the cause; the path
+    // makes it one.
+    let out = fresh_out("iomsg");
+    std::fs::create_dir(out.join("emsg.h")).unwrap();
+
+    let err = emit_artifacts(SRC, "emsg", &out).unwrap_err();
+    let shown = err.to_string();
+    assert!(
+        shown.contains("emsg.h"),
+        "the message must name the file it failed on: {shown}"
+    );
+    assert!(
+        shown.contains(&out.path().display().to_string()),
+        "and where that file is: {shown}"
+    );
+    // The operation matters as much as the path: "could not write it" and "could not move it
+    // into place" send you to different places.
+    assert!(
+        shown.contains("moving") || shown.contains("writing") || shown.contains("creating"),
+        "the message must say what it was doing: {shown}"
     );
 }
 
@@ -124,7 +156,7 @@ fn a_failed_rebuild_does_not_destroy_the_previous_good_artifacts() {
     std::fs::create_dir(out.join("rmod.pas")).unwrap();
 
     let err = emit_artifacts("export fn g(a: f64) -> f64 { return a }", "rmod", &out).unwrap_err();
-    assert!(matches!(err, mlc::emit::EmitError::Io(_)), "{err:?}");
+    assert!(matches!(err, mlc::emit::EmitError::Io { .. }), "{err:?}");
     assert!(
         out.join("rmod.dll").is_file(),
         "the previous .dll must be restored: {:?}",

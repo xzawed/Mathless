@@ -29,7 +29,18 @@ pub struct Artifacts {
 #[derive(Debug)]
 pub enum EmitError {
     Compile(CompileError),
-    Io(std::io::Error),
+    /// A filesystem step failed, with the path and the operation that failed.
+    ///
+    /// Both halves are load-bearing (STATUS §5-5.8). The message used to be
+    /// `io error: <os text>`, which on a localised Windows reads
+    /// `액세스가 거부되었습니다. (os error 5)` — no path, no operation, and not even
+    /// searchable. The retrospective that filed the item spent eight steps finding the cause.
+    Io {
+        /// What was being attempted, as a gerund: "moving", "writing", "creating".
+        doing: &'static str,
+        path: PathBuf,
+        source: std::io::Error,
+    },
     /// The module name is not usable as a crate / header-guard / unit name.
     InvalidModuleName(String),
     /// A move into `out_dir` failed **and** the artifacts that were displaced could not be
@@ -47,7 +58,11 @@ impl std::fmt::Display for EmitError {
         match self {
             // `CompileError` names its own stage and position, so don't re-prefix it.
             EmitError::Compile(e) => write!(f, "{e}"),
-            EmitError::Io(e) => write!(f, "io error: {e}"),
+            EmitError::Io {
+                doing,
+                path,
+                source,
+            } => write!(f, "io error {doing} {}: {source}", path.display()),
             EmitError::InvalidModuleName(msg) => write!(f, "{msg}"),
             EmitError::RollbackIncomplete {
                 source,
@@ -72,10 +87,21 @@ impl From<CompileError> for EmitError {
     }
 }
 
-impl From<std::io::Error> for EmitError {
-    fn from(e: std::io::Error) -> Self {
-        EmitError::Io(e)
-    }
+/// Attach the path and the operation to a filesystem error.
+///
+/// There is deliberately **no** `From<std::io::Error>` impl: a bare `?` would produce an
+/// error with no context, which is the defect this replaces. Every call site has to say what
+/// it was doing and to which file — and the compiler now makes it.
+fn io<T>(
+    r: std::io::Result<T>,
+    doing: &'static str,
+    path: impl Into<PathBuf>,
+) -> Result<T, EmitError> {
+    r.map_err(|source| EmitError::Io {
+        doing,
+        path: path.into(),
+        source,
+    })
 }
 
 static BUILD_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -146,9 +172,15 @@ static WINDOWS_DEVICE_NAMES: &[&str] = &[
 fn publish(stage: &Path, out_dir: &Path, names: &[String]) -> Result<(), EmitError> {
     // (destination, its backup) for each completed move, most recent last.
     let mut done: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
-    let fail = |e: std::io::Error, stranded: Vec<PathBuf>| {
+    // `path` is the destination the move was aiming at — the one thing a user needs in order
+    // to know what to look at (STATUS §5-5.8).
+    let fail = |e: std::io::Error, path: PathBuf, stranded: Vec<PathBuf>| {
         if stranded.is_empty() {
-            EmitError::Io(e)
+            EmitError::Io {
+                doing: "moving into place",
+                path,
+                source: e,
+            }
         } else {
             EmitError::RollbackIncomplete {
                 source: e,
@@ -168,7 +200,7 @@ fn publish(stage: &Path, out_dir: &Path, names: &[String]) -> Result<(), EmitErr
                 if b.exists() {
                     stranded.push(b);
                 }
-                return Err(fail(e, stranded));
+                return Err(fail(e, dest.clone(), stranded));
             }
             Some(b)
         } else {
@@ -183,7 +215,7 @@ fn publish(stage: &Path, out_dir: &Path, names: &[String]) -> Result<(), EmitErr
                 }
             }
             stranded.extend(rollback(&mut done));
-            return Err(fail(e, stranded));
+            return Err(fail(e, dest.clone(), stranded));
         }
         done.push((dest, backup));
     }
@@ -243,14 +275,14 @@ pub fn emit_artifacts(
     // through can't leave a `.dll` with no bindings beside it — a partial set a host could
     // still load. The stage lives INSIDE `out_dir` so the moves stay on one volume (a
     // cross-volume rename would fail), and it is removed on every path.
-    std::fs::create_dir_all(out_dir)?;
+    io(std::fs::create_dir_all(out_dir), "creating", out_dir)?;
     let stage = out_dir.join(format!(
         ".mlc-stage-{}-{}",
         std::process::id(),
         BUILD_SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&stage);
-    std::fs::create_dir_all(&stage)?;
+    io(std::fs::create_dir_all(&stage), "creating", &stage)?;
 
     let names = [
         format!("{module_name}.dll"),
@@ -267,7 +299,12 @@ pub fn emit_artifacts(
         let build_and_copy = || -> Result<(), EmitError> {
             let built = codegen::build_cdylib(&rust, module_name, &build_root)
                 .map_err(|e| EmitError::Compile(CompileError::Codegen(e)))?;
-            std::fs::copy(&built, stage.join(&names[0]))?;
+            let dest = stage.join(&names[0]);
+            io(
+                std::fs::copy(&built, &dest),
+                "copying the module into",
+                &dest,
+            )?;
             Ok(())
         };
         let result = build_and_copy();
@@ -276,13 +313,20 @@ pub fn emit_artifacts(
 
         // Bindings: the `.h` is verified by the C host (acceptance D); the `.pas` is not.
         // unit name to equal the file stem, so the unit name IS the module name.
-        std::fs::write(
-            stage.join(&names[1]),
-            header::emit_c_header(&ir, module_name),
+        let header_path = stage.join(&names[1]);
+        io(
+            std::fs::write(&header_path, header::emit_c_header(&ir, module_name)),
+            "writing",
+            &header_path,
         )?;
-        std::fs::write(
-            stage.join(&names[2]),
-            header::emit_delphi_unit(&ir, module_name, module_name),
+        let unit_path = stage.join(&names[2]);
+        io(
+            std::fs::write(
+                &unit_path,
+                header::emit_delphi_unit(&ir, module_name, module_name),
+            ),
+            "writing",
+            &unit_path,
         )?;
 
         publish(&stage, out_dir, &names)
@@ -352,6 +396,41 @@ mod tests {
         assert!(backup.is_file(), "and must still exist to be recovered");
 
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// STATUS §5-5.6 said this branch's `Display` had no test. It does now.
+    ///
+    /// The message is the only instruction a user gets in the one situation where `mlc`
+    /// leaves files behind ON PURPOSE, so it has to name the directory and say the files must
+    /// be moved back by hand. Getting that wrong turns a recoverable state into a lost one.
+    ///
+    /// **What is still not covered, and why:** constructing this variant END-TO-END through
+    /// `emit_artifacts`. Reaching it needs `rollback` to fail, which needs a destination that
+    /// exists and cannot be removed — and every path that fills `done` puts a plain, unlocked
+    /// file there. Producing that state from outside would take a race (something locking the
+    /// file between the move and the unwind), not a filesystem arrangement. The branch is
+    /// defensive; the logic under it is tested directly above.
+    #[test]
+    fn the_rollback_incomplete_message_names_the_directory_and_the_count() {
+        let stage = PathBuf::from("C:/tmp/.mlc-stage-1-0");
+        let e = EmitError::RollbackIncomplete {
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+            stage_dir: stage.clone(),
+            stranded: vec![stage.join("m.dll.prev"), stage.join("m.h.prev")],
+        };
+        let shown = e.to_string();
+        assert!(
+            shown.contains(&stage.display().to_string()),
+            "the user cannot recover the files without the directory: {shown}"
+        );
+        assert!(
+            shown.contains('2'),
+            "the count tells them how many to look for: {shown}"
+        );
+        assert!(
+            shown.contains("by hand"),
+            "and that nothing else will do it for them: {shown}"
+        );
     }
 
     #[test]

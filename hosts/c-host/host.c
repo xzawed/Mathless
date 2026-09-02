@@ -43,6 +43,7 @@
 #include "vat.h"
 #include "carrier.h"
 #include "quote.h"
+#include "receipt.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);
@@ -65,6 +66,11 @@ typedef int32_t (*carrier_name_fn)(const char *, char *, int32_t, int32_t *);
 typedef int32_t (*carrier_label_fn)(const char *, int32_t *, char *, int32_t, int32_t *);
 typedef int32_t (*unit_price_fn)(double, int32_t, double *);
 typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
+/* The concat slice does not change the C ABI: a built string is declared exactly like a
+   borrowed one was, with the same Q12 buffer triple. These types say so at compile time. */
+typedef int32_t (*full_name_fn)(const char *, const char *, char *, int32_t, int32_t *);
+typedef int32_t (*receipt_line_fn)(const char *, int32_t, int32_t, char *, int32_t, int32_t *);
+typedef int32_t (*int_to_str_fn)(int32_t, char *, int32_t, int32_t *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -126,6 +132,15 @@ _Static_assert(_Generic(&mlx_unit_price, unit_price_fn: 1, default: 0),
                "generated mlx_unit_price signature changed");
 _Static_assert(_Generic(&mlx_line_check, line_check_fn: 1, default: 0),
                "generated mlx_line_check signature changed");
+/* A BUILT string must reach C with the same three slots a borrowed one used. If the slice had
+   leaked its lowering into the boundary - a length in, a pointer out, anything - these stop
+   compiling, which is the cheapest place to find out. */
+_Static_assert(_Generic(&mlx_full_name, full_name_fn: 1, default: 0),
+               "generated mlx_full_name signature changed");
+_Static_assert(_Generic(&mlx_receipt_line, receipt_line_fn: 1, default: 0),
+               "generated mlx_receipt_line signature changed");
+_Static_assert(_Generic(&mlx_label, int_to_str_fn: 1, default: 0),
+               "generated mlx_label signature changed");
 
 static int failures = 0;
 
@@ -590,6 +605,78 @@ int main(int argc, char **argv) {
     FreeLibrary(l);
     FreeLibrary(h4);
     FreeLibrary(lt);
+
+    /* --- receipt.dll: strings the module BUILDS (SPEC-string-concat) --- */
+    HMODULE rc = load(dir, "receipt.dll", expected_abi, ML_RECEIPT_IFACE_HASH);
+    if (rc == NULL) {
+        return 1;
+    }
+    {
+        full_name_fn full_name = (full_name_fn)sym(rc, "mlx_full_name");
+        receipt_line_fn rline = (receipt_line_fn)sym(rc, "mlx_receipt_line");
+        int_to_str_fn label = (int_to_str_fn)sym(rc, "mlx_label");
+        int_to_str_fn summary = (int_to_str_fn)sym(rc, "mlx_summary");
+        if (full_name && rline && label && summary) {
+            char b[64];
+            int32_t need = -1;
+
+            memset(b, 0, sizeof b);
+            check(full_name("Gildong", "Hong", b, (int32_t)sizeof b, &need) == 0 &&
+                      strcmp(b, "Hong Gildong") == 0,
+                  "full_name concatenates two borrowed parameters");
+
+            memset(b, 0, sizeof b);
+            check(rline("WIDGET", 3, 15000, b, (int32_t)sizeof b, &need) == 0 &&
+                      strcmp(b, "WIDGET x 3 = 45000") == 0,
+                  "receipt_line builds digits the module produced");
+
+            /* i32::MIN is the boundary that bites: it has no positive counterpart, so the
+               magnitude has to be taken unsigned. A wrong answer here is a wrong invoice. */
+            memset(b, 0, sizeof b);
+            check(label(-2147483647 - 1, b, (int32_t)sizeof b, &need) == 0 &&
+                      strcmp(b, "-2147483648") == 0,
+                  "label(i32::MIN) renders exactly");
+            memset(b, 0, sizeof b);
+            check(label(0, b, (int32_t)sizeof b, &need) == 0 && strcmp(b, "0") == 0,
+                  "label(0) is one digit, not none");
+
+            /* Truncation by ONE byte: a failure that writes nothing (Q12, DP-T2 rejected).
+               The canary is what makes "nothing" measurable rather than assumed. */
+            unsigned char canary[64];
+            memset(canary, 0xAA, sizeof canary);
+            need = -1;
+            int32_t st = rline("WIDGET", 3, 15000, (char *)canary, 18, &need);
+            check(st < 0, "one byte short is a FAILURE, not a short success");
+            check(need == 19, "needed is exact on the failure path too");
+            int untouched = 1;
+            for (size_t i = 0; i < sizeof canary; i++) {
+                if (canary[i] != 0xAA) {
+                    untouched = 0;
+                    break;
+                }
+            }
+            check(untouched, "a failed build writes not one byte of the buffer");
+
+            /* The probe still converges in two calls when the result is built. */
+            need = -1;
+            check(rline("WIDGET", 3, 15000, NULL, 0, &need) < 0 && need == 19,
+                  "probe with cap 0 and a NULL buffer reports the exact length");
+
+            /* A domain failure leaves the buffer alone as well (D17). */
+            memset(canary, 0xAA, sizeof canary);
+            check(summary(0, (char *)canary, (int32_t)sizeof canary, &need) == ML_ERR_E_NO_ITEMS,
+                  "summary(0) reports the declared domain code");
+            untouched = 1;
+            for (size_t i = 0; i < sizeof canary; i++) {
+                if (canary[i] != 0xAA) {
+                    untouched = 0;
+                    break;
+                }
+            }
+            check(untouched, "a domain failure writes nothing either");
+        }
+    }
+    FreeLibrary(rc);
 
     /* --- the gate must actually REFUSE (SPEC-iface-hash section 3-F) ---
      *

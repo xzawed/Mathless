@@ -58,8 +58,14 @@ impl AsRef<Path> for TempOut {
 
 impl Drop for TempOut {
     fn drop(&mut self) {
-        // A tree we could not delete must not fail an otherwise green test — but it must not
-        // be invisible either, which is exactly how 976 MB accumulated unnoticed.
+        // A tree we could not delete must not fail an otherwise green test.
+        //
+        // The warning is NOT a reliable alarm, and saying otherwise would be the kind of
+        // overclaim this repository keeps catching: cargo captures stderr for a test that
+        // passes, so this line is only seen under `--nocapture` or when the test fails. It
+        // was measured being swallowed exactly that way. Counting the trees before and after
+        // a run is what actually detects a leak; this message only explains one you already
+        // suspect.
         if let Err(e) = remove_with_retry(&self.0) {
             eprintln!(
                 "warning: leaked temp tree {} ({e}) — see STATUS 5-5",

@@ -246,6 +246,13 @@ fn a_real_c_host_loads_and_calls_the_module() {
     let quote = emit_artifacts(include_str!("../../../examples/quote.mls"), "quote", &work)
         .expect("emit quote");
 
+    let receipt = emit_artifacts(
+        include_str!("../../../examples/receipt.mls"),
+        "receipt",
+        &work,
+    )
+    .expect("emit receipt");
+
     // A drifted `pack`: the two parameters of `boxes` are swapped and nothing else changes.
     // Both versions are `int32_t mlx_boxes(int32_t, int32_t)` in C, so this is the drift the
     // ABI cannot see and the host's `_Static_assert` cannot catch — the measured case where
@@ -323,6 +330,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &vat.dll,
         &carrier.dll,
         &quote.dll,
+        &receipt.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

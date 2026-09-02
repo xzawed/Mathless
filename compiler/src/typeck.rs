@@ -339,8 +339,16 @@ fn check_function(
     // (case-insensitive) Delphi import unit would see `x` and `X` as the same param.
     let mut seen_params: HashSet<String> = HashSet::new();
     let mut params = Vec::with_capacity(f.params.len());
+    // An EXPORTED parameter name is written into the `.h` and the `.pas`; an internal one is
+    // not (measured: zero occurrences of either). So the languages it must avoid follow from
+    // where it lands, not from a single global list — STATUS §4-2.
+    let name_scope = if f.exported {
+        crate::reserved::NameScope::Bindings
+    } else {
+        crate::reserved::NameScope::GeneratedModule
+    };
     for p in &f.params {
-        let targets = crate::reserved::reserving_targets(&p.name);
+        let targets = crate::reserved::reserving_targets_in(&p.name, name_scope);
         if !targets.is_empty() {
             return Err(TypeError::new(format!(
                 "function '{}': parameter '{}' is a reserved word in {} — rename it",
@@ -686,8 +694,12 @@ fn check_try_call(
             IrTryDest::Return
         }
         ast::TryDest::Let { name, mutable } => {
-            // Same reserved-name policy a plain `let` gets — the binding is emitted raw.
-            let targets = crate::reserved::reserving_targets(name);
+            // Same reserved-name policy a plain `let` gets — emitted raw into the module, and
+            // present in no binding (STATUS §4-2).
+            let targets = crate::reserved::reserving_targets_in(
+                name,
+                crate::reserved::NameScope::GeneratedModule,
+            );
             if !targets.is_empty() {
                 return Err(TypeError::new(format!(
                     "function '{fname}': local '{name}' is a reserved word in {}",
@@ -910,8 +922,12 @@ fn check_stmt(
                      Compare it in place, or return it directly, instead of binding it"
                 )));
             }
-            // Local names honour the same reserved-word policy as parameters (all targets).
-            let targets = crate::reserved::reserving_targets(name);
+            // A local is emitted raw into the generated module and appears in no binding —
+            // measured as zero occurrences in the `.h` and the `.pas` (STATUS §4-2).
+            let targets = crate::reserved::reserving_targets_in(
+                name,
+                crate::reserved::NameScope::GeneratedModule,
+            );
             if !targets.is_empty() {
                 return Err(TypeError::new(format!(
                     "function '{fname}': local '{name}' is a reserved word in {} — rename it",

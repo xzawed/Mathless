@@ -8,12 +8,12 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 #[test]
 fn oracle_loads_and_calls_the_packaged_module() {
     let src = include_str!("../../../examples/discount.mls");
-    let out = std::env::temp_dir().join(format!("mlc_emit_oracle_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("emit_oracle");
 
     let arts = emit_artifacts(src, "discount", &out).expect("emit_artifacts");
 

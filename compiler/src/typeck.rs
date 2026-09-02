@@ -1208,9 +1208,15 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                     | (IrType::I32, IrType::Str)
             );
             if !ok {
-                let hint = if to == IrType::Str {
+                // The hint has to fit the SOURCE type, not just the target: telling someone
+                // casting a `bool` to "convert to whole units first" is advice for a problem
+                // they do not have. Caught by reading the rejection-list transcript, which is
+                // what that list is for.
+                let hint = if to == IrType::Str && operand.ty == IrType::F64 {
                     " — only `i32 as string` exists; for a decimal, convert to whole units \
                      first (for example `round(x * 100.0) as i32`)"
+                } else if to == IrType::Str {
+                    " — only `i32 as string` exists"
                 } else if operand.ty == IrType::Str {
                     " — a string is opaque bytes to the module; reading a number out of text \
                      is not part of this language"

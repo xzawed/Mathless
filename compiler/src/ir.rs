@@ -163,6 +163,18 @@ pub enum IrExprKind {
         lhs: Box<IrExpr>,
         rhs: Box<IrExpr>,
     },
+    /// A string built by appending pieces into the caller's buffer
+    /// (SPEC-string-concat §2.3). **Always flat and always in source order** — the
+    /// typechecker collapses `a + b + c` into one node with three pieces, never a tree.
+    ///
+    /// Flatness is not cosmetic. The length has to be counted before a single byte is
+    /// written (Q12: a truncated call leaves the buffer untouched), and with a flat list
+    /// that count is a sum over the pieces. Every piece has type `Str`; a piece that is a
+    /// `Cast { to: Str }` is decimal digits the module produces, and any other piece is
+    /// bytes it borrows — from the source or from the host.
+    ///
+    /// A lone string is NOT wrapped in this: `return a` keeps the #92 path exactly.
+    Concat(Vec<IrExpr>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

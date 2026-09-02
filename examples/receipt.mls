@@ -1,0 +1,35 @@
+// string-concat slice: the business rules that were measured blocked before it.
+//
+// Every returned string is built straight into the host's Q12 buffer — the module has no
+// allocator, so there is no intermediate value anywhere. Truncation is still a failure that
+// writes nothing, exactly as it was for a borrowed string.
+//
+// Note what is NOT here: no `f64 as string`. Decimal money reduces to whole units first
+// (`round(x * 100.0) as i32`), which was measured returning correct values through a real C
+// host before this slice existed. Formatting a float is a convenience, not a capability.
+
+// R2: pure concatenation of two borrowed parameters. Nothing is produced by the module.
+export fn full_name(first: string, last: string) -> string! {
+  return last + " " + first
+}
+
+// R1: the module produces digits here — the first time it produces any byte at all (DP-K9:
+// ASCII '-' and '0'-'9' only, which is the same in every encoding DP-S2 left undecided).
+export fn receipt_line(item: string, qty: i32, unit_price: i32) -> string! {
+  return item + " x " + (qty as string) + " = " + ((qty * unit_price) as string)
+}
+
+// A number on its own is a one-piece build, not a special case.
+export fn label(n: i32) -> string! {
+  return n as string
+}
+
+// Composes with the rest of the language: a domain error still returns a positive status and
+// leaves the buffer untouched (D17), and a literal return is still the borrowed path (#92).
+error E_NO_ITEMS = 1
+
+export fn summary(count: i32) -> string! {
+  if count == 0 { fail E_NO_ITEMS }
+  if count == 1 { return "1 item" }
+  return (count as string) + " items"
+}

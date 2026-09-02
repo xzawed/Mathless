@@ -801,19 +801,32 @@ fn check_stmt(
                     e.ty
                 )));
             }
-            // DP-T5: v1 may return a string LITERAL or a `string` parameter, nothing else.
-            // The restriction is what keeps DP-S2 ("opaque bytes") literally true — every
-            // returned byte is either an ASCII byte from the source (DP-S4) or a byte the
-            // host itself handed in. The moment the module *produces* bytes (concatenation,
-            // number formatting) that justification is gone, and DP-S2 has to be reopened.
+            // A returned string is either BORROWED (a literal, or a `string` parameter) or
+            // BUILT here and now, straight into the caller's buffer.
+            //
+            // DP-T5 used to allow only the borrowed forms. SPEC-string-concat opens the built
+            // form and reopens DP-S2 with it, narrowly: the only bytes the module produces are
+            // ASCII `-` and `0`-`9` (DP-K9), which are the same bytes in every encoding this
+            // project has left undecided. Borrowed pieces stay opaque and are copied verbatim.
+            //
+            // `return` is the ONLY position a built string may appear in (DP-K3), and that is
+            // enforced where the string could otherwise escape — see `no_built_string` below.
+            // The reason is the diagnostic that has always been right: there is nowhere for it
+            // to live. Building it here works precisely because the destination already exists.
+            let e = if ret == IrType::Str {
+                flatten_concat(e)
+            } else {
+                e
+            };
             if ret == IrType::Str
-                && !matches!(e.kind, IrExprKind::ConstStr(_) | IrExprKind::Var { .. })
+                && !matches!(
+                    e.kind,
+                    IrExprKind::ConstStr(_) | IrExprKind::Var { .. } | IrExprKind::Concat(_)
+                )
             {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': only a string literal or a `string` parameter may be \
-                     returned — building a new string (concatenation, formatting) is a later \
-                     slice, because the module has no allocator and every returned byte must \
-                     come from the source or from the host"
+                    "function '{fname}': a returned string must be a literal, a `string` \
+                     parameter, or a concatenation of those and `i32 as string`"
                 )));
             }
             Ok(IrStmt::Return(e))
@@ -946,6 +959,85 @@ fn check_stmt(
     }
 }
 
+/// Collapse a `string` `+` tree into one flat, source-ordered [`IrExprKind::Concat`].
+///
+/// Anything that is not a string `+` is returned untouched — in particular a lone literal or
+/// parameter keeps the #92 shape exactly, so the existing lowering is not disturbed.
+///
+/// Flat matters: codegen has to sum the piece lengths before writing a byte (Q12), and a sum
+/// over a list needs no recursion in the emitted module.
+fn flatten_concat(e: IrExpr) -> IrExpr {
+    fn is_concat(e: &IrExpr) -> bool {
+        e.ty == IrType::Str
+            && matches!(
+                e.kind,
+                IrExprKind::Binary {
+                    op: IrBinOp::Add,
+                    ..
+                }
+            )
+    }
+    fn collect(e: IrExpr, out: &mut Vec<IrExpr>) {
+        if is_concat(&e) {
+            let IrExprKind::Binary { lhs, rhs, .. } = e.kind else {
+                unreachable!("is_concat just matched Binary");
+            };
+            collect(*lhs, out);
+            collect(*rhs, out);
+        } else {
+            out.push(e);
+        }
+    }
+    // A lone `n as string` is a built string too — one piece, produced by the module rather
+    // than borrowed. It takes the same append path, so it becomes a one-piece list rather
+    // than a special case in codegen.
+    if !is_concat(&e) {
+        if matches!(e.kind, IrExprKind::Cast { .. }) && e.ty == IrType::Str {
+            return IrExpr {
+                ty: IrType::Str,
+                kind: IrExprKind::Concat(vec![e]),
+            };
+        }
+        return e;
+    }
+    let mut pieces = Vec::new();
+    collect(e, &mut pieces);
+    IrExpr {
+        ty: IrType::Str,
+        kind: IrExprKind::Concat(pieces),
+    }
+}
+
+/// Is this a string the module BUILDS, as opposed to one it borrows?
+///
+/// A built string exists only while it is being written into the caller's buffer, so it may
+/// appear in exactly one place: the `return` of a `-> string!` function (DP-K3). Everywhere
+/// else it would need somewhere to live, and the module has no allocator.
+fn is_built_string(e: &IrExpr) -> bool {
+    e.ty == IrType::Str
+        && matches!(
+            e.kind,
+            IrExprKind::Concat(_)
+                | IrExprKind::Cast { .. }
+                | IrExprKind::Binary {
+                    op: IrBinOp::Add,
+                    ..
+                }
+        )
+}
+
+/// Refuse a built string outside `return`, naming the position so the message is actionable.
+fn reject_built_string(e: &IrExpr, fname: &str, position: &str) -> Result<(), TypeError> {
+    if is_built_string(e) {
+        return Err(TypeError::new(format!(
+            "function '{fname}': a built string cannot be used {position} — the module has no \
+             allocator, so a concatenation or `i32 as string` exists only while it is written \
+             into the caller's buffer, which happens at `return`"
+        )));
+    }
+    Ok(())
+}
+
 fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExpr, TypeError> {
     match e {
         Expr::Number(n) => Ok(IrExpr {
@@ -1036,6 +1128,9 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                         arg.ty
                     )));
                 }
+                // A borrowed string may be passed on; a built one may not (DP-K3). The callee
+                // would receive a pointer to bytes that were never written anywhere.
+                reject_built_string(&arg, fname, &format!("as argument {} to '{name}'", i + 1))?;
                 checked.push(arg);
             }
             Ok(IrExpr {
@@ -1079,19 +1174,35 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
         Expr::Cast { to, operand } => {
             let operand = check_expr(operand, scope, fname, sigs)?;
             let to = ir_type(*to);
-            // Numeric only. `bool` is neither a source nor a target: numbers are not truthy
-            // and truth is not numeric, which is the stance conditions already take.
+            // Numeric only, plus `i32 as string`. `bool` is neither a source nor a target:
+            // numbers are not truthy and truth is not numeric, which is the stance conditions
+            // already take.
+            //
+            // `i32 as string` is the ONLY way into `string` (DP-K5/K6). `f64 as string` is out
+            // of scope because it is not needed, not because it is hard: decimal money reduces
+            // to integer cents with `round(x*100.0) as i32`, and that was measured through a
+            // real host. Nothing converts OUT of `string` — parsing text is a different slice,
+            // and `as` must not look like it does that.
             let ok = matches!(
                 (operand.ty, to),
                 (IrType::I32, IrType::F64)
                     | (IrType::F64, IrType::I32)
                     | (IrType::I32, IrType::I32)
                     | (IrType::F64, IrType::F64)
+                    | (IrType::I32, IrType::Str)
             );
             if !ok {
+                let hint = if to == IrType::Str {
+                    " — only `i32 as string` exists; for a decimal, convert to whole units \
+                     first (for example `round(x * 100.0) as i32`)"
+                } else if operand.ty == IrType::Str {
+                    " — a string is opaque bytes to the module; reading a number out of text \
+                     is not part of this language"
+                } else {
+                    " — `as` converts between f64 and i32 only, and bool is not convertible"
+                };
                 return Err(TypeError::new(format!(
-                    "function '{fname}': cannot cast {} to {to} — `as` converts between f64 \
-                     and i32 only, and bool is not convertible",
+                    "function '{fname}': cannot cast {} to {to}{hint}",
                     operand.ty
                 )));
             }
@@ -1119,6 +1230,13 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             }
             let lhs = check_expr(lhs, scope, fname, sigs)?;
             let rhs = check_expr(rhs, scope, fname, sigs)?;
+            // Comparing a BUILT string would need its bytes to exist before the caller's
+            // buffer is in play (DP-K3). Concatenating two of them is fine — that is one
+            // longer append, not a second place to live.
+            if matches!(op, BinOp::Eq | BinOp::Ne) {
+                reject_built_string(&lhs, fname, "on the left of a comparison")?;
+                reject_built_string(&rhs, fname, "on the right of a comparison")?;
+            }
             let (irop, ty) = check_binop(*op, lhs.ty, rhs.ty, fname)?;
             Ok(IrExpr {
                 ty,
@@ -1148,6 +1266,20 @@ fn check_binop(
             ))),
         },
         // Same numeric type on both sides; no implicit i32/f64 mixing (DP-I2).
+        //
+        // `+` also concatenates two strings (SPEC-string-concat DP-K2). It does NOT accept a
+        // string and a number: DP-K1 keeps the no-implicit-conversion rule exactly as strict
+        // for strings as it already is for `f64` and `i32`, so `n as string` is required. The
+        // message says so rather than only refusing — the fix is one token away.
+        BinOp::Add if lt == IrType::Str || rt == IrType::Str => match (lt, rt) {
+            (IrType::Str, IrType::Str) => Ok((map_op(op), IrType::Str)),
+            (IrType::Str, other) | (other, IrType::Str) => Err(TypeError::new(format!(
+                "function '{fname}': cannot concatenate string and {other} — this language \
+                 never converts implicitly, so write `<{other} expression> as string` \
+                 (only `i32 as string` exists today)"
+            ))),
+            _ => unreachable!("guarded on one side being Str"),
+        },
         BinOp::Add | BinOp::Sub | BinOp::Mul => match (lt, rt) {
             (IrType::F64, IrType::F64) => Ok((map_op(op), IrType::F64)),
             (IrType::I32, IrType::I32) => Ok((map_op(op), IrType::I32)),

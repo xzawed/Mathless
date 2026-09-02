@@ -26,6 +26,9 @@
   `LoadLibraryA` + `GetProcAddress`).
   **`ml_runtime_*` / `ml_module_*` 로더 API는 없다.**
 - 모듈이 export하는 것은 **`mlx_<함수명>` + `ml_module_abi_version` + `ml_iface_hash`뿐**(PE 리더로 측정).
+- **모듈이 만드는 문자열 바이트는 ASCII `-`와 `0`–`9`뿐이다**(2026-09-02, 연결 슬라이스). 그 밖의
+  바이트는 전부 **빌린 것**이다 — 소스 리터럴이거나 호스트가 넘긴 파라미터이며, 모듈은 해석하지 않는다.
+  숫자는 모든 후보 인코딩에서 같은 바이트이므로 **인코딩은 여전히 미확정**이다(DP-S2).
 - 마샬링은 **스칼라만**: `f64`/`bool`/`i32`. 실패 가능 함수는 D17대로
   `int32_t mlx_f(<params>, T* out_value)`. **명시적 `out` 파라미터**도 스칼라로 지원한다 —
   선언 순서대로 `T*`로 나가고, D17의 `out_value`가 언제나 맨 마지막이다(SPEC-out-params DP-O1).

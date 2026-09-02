@@ -101,11 +101,18 @@ fn only_a_literal_or_a_parameter_may_be_returned() {
     compile_to_rust("export fn f(s: string) -> string! { return \"KR\" }").expect("literal");
     compile_to_rust("export fn f(s: string) -> string! { return s }").expect("parameter echo");
 
+    // SPEC-string-concat opened the built form: a concatenation, and `i32 as string`. Every
+    // OTHER way of producing a string is still rejected, and a type mismatch is still a type
+    // mismatch — `return n` where `n` is an i32 does not quietly format anything (DP-K1).
+    compile_to_rust("export fn f(a: string, b: string) -> string! { return a + b }")
+        .expect("concatenation, since SPEC-string-concat");
+    compile_to_rust("export fn f(n: i32) -> string! { return n as string }").expect("digits");
+
     for src in [
-        // Concatenation and formatting are the NEXT slice; they are what R2/R6 need.
-        "export fn f(a: string, b: string) -> string! { return a + b }",
         "export fn f(n: i32) -> string! { return n }",
         "export fn f(b: bool) -> string! { return b }",
+        // Still no implicit conversion, which is the whole of DP-K1.
+        "export fn f(a: string, n: i32) -> string! { return a + n }",
     ] {
         assert!(compile_to_ir(src).is_err(), "{src} must be rejected");
     }

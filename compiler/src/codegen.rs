@@ -63,6 +63,7 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
 
     emit_string_helper(module, &mut out);
     emit_strout_helper(module, &mut out);
+    emit_concat_helpers(module, &mut out);
     emit_rounding_helpers(module, &mut out);
 
     for f in &module.functions {
@@ -118,7 +119,14 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     // why `export fn type` and `export fn match` keep compiling (measured: they compile today
     // only because the `mlx_` prefix hides them from rustc's keyword list) and why the
     // internal-name reserved-word check loses its reason to exist.
-    let (body_ret, abi) = if f.fallible {
+    let mut body_params = params.clone();
+    let (body_ret, abi) = if f.ret == IrType::Str {
+        // Q12's triple goes to the BODY, not just the adapter — see RetAbi::StringOut.
+        body_params.push("ml_buf: *mut u8".to_string());
+        body_params.push("ml_cap: i32".to_string());
+        body_params.push("ml_needed: *mut i32".to_string());
+        ("i32".to_string(), RetAbi::StringOut)
+    } else if f.fallible {
         (
             format!("Result<{}, i32>", rust_type(f.ret)),
             RetAbi::Fallible,
@@ -130,7 +138,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         out,
         "fn ml_fn_{}({}) -> {} {{",
         f.name,
-        params.join(", "),
+        body_params.join(", "),
         body_ret
     );
     for s in &f.body {
@@ -156,21 +164,25 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
 
     out.push_str("#[no_mangle]\n");
     if f.ret == IrType::Str {
-        // Q12: the module never allocates; `ml_strout` copies into the host's buffer and
-        // returns the status. Truncation is a failure, and it writes nothing (DP-T2).
+        // Q12: the module never allocates. The body already speaks the buffer protocol
+        // (RetAbi::StringOut), so this adapter has nothing to convert — it forwards. That is
+        // the point of the split: the C ABI is spoken in exactly one place, and here it is
+        // identical to what it was before this slice (asserted byte-for-byte in the golden).
         sig.push("ml_buf: *mut u8".to_string());
         sig.push("ml_cap: i32".to_string());
         sig.push("ml_needed: *mut i32".to_string());
+        let args_with_buf = {
+            let mut a: Vec<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
+            a.extend(["ml_buf", "ml_cap", "ml_needed"]);
+            a.join(", ")
+        };
         let _ = writeln!(
             out,
             "pub extern \"C\" fn mlx_{}({}) -> i32 {{",
             f.name,
             sig.join(", ")
         );
-        let _ = writeln!(
-            out,
-            "    match {call} {{ Ok(__v) => ml_strout(__v, ml_buf, ml_cap, ml_needed), Err(__e) => __e }}"
-        );
+        let _ = writeln!(out, "    ml_fn_{}({})", f.name, args_with_buf);
     } else if f.fallible {
         // D17: an `i32` status return plus a `*mut T` out-param, appended after every
         // declared out (DP-O1 — the return value is always last).
@@ -229,6 +241,13 @@ enum RetAbi {
     /// Fallible: `Result<T, i32>` — the only shape needing no invented value on the failure
     /// path (DP-F6). `Option` would lose the D17 code.
     Fallible,
+    /// `-> string!`: the body itself takes the Q12 buffer triple and returns the status.
+    ///
+    /// It has to. A built string (SPEC-string-concat) has no representation to hand back —
+    /// the module has no allocator, so the bytes exist only once they are in the caller's
+    /// buffer. Giving the BODY the buffer is what lets `return a + b` mean "append, then
+    /// report", and it makes the adapter a pure forward with no logic at all.
+    StringOut,
 }
 
 impl RetAbi {
@@ -236,6 +255,10 @@ impl RetAbi {
     fn propagate(self) -> &'static str {
         match self {
             RetAbi::Fallible => "return Err(__e)",
+            // A string body already returns the status directly, so a propagated code needs
+            // no wrapping. Not reachable from source today — DP-W3 keeps `try` off `-> string!`
+            // exports — but correct if that opens.
+            RetAbi::StringOut => "return __e",
             // Unreachable from source: typeck requires a `try` caller to be fallible. Kept
             // total so hand-built IR cannot fall through to something worse.
             RetAbi::Plain => "return __e",
@@ -256,6 +279,19 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             RetAbi::Plain => {
                 let _ = writeln!(out, "{pad}return {};", emit_expr(e));
             }
+            // A string return IS the write into the caller's buffer.
+            RetAbi::StringOut => match &e.kind {
+                // Built here: pieces appended in order (SPEC-string-concat §2.3).
+                IrExprKind::Concat(pieces) => emit_concat_return(pieces, indent, out),
+                // Borrowed: one pointer, the #92 path, unchanged.
+                _ => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
+                        emit_expr(e)
+                    );
+                }
+            },
         },
         IrStmt::Fail(code) => {
             // The domain code, wrapped so it survives the hop to whoever unwraps it. Emitting
@@ -263,6 +299,11 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             // `-> i32!` the code came back as an ordinary value.
             if abi == RetAbi::Fallible {
                 let _ = writeln!(out, "{pad}return Err({code});");
+            } else if abi == RetAbi::StringOut {
+                // The body already returns the status directly, so the domain code IS the
+                // return value. `ml_needed` is deliberately left alone: D17 says a failed call
+                // writes no out-param, and `needed` is one.
+                let _ = writeln!(out, "{pad}return {code};");
             } else {
                 // Unreachable from source — `fail` requires a fallible function.
                 let _ = writeln!(out, "{pad}return {code};");
@@ -377,6 +418,12 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
 
 fn emit_expr(e: &IrExpr) -> String {
     match &e.kind {
+        // A concatenation is not an expression in the emitted Rust: it has no value until it
+        // is written into the caller's buffer, which is what `emit_concat_return` does. Typeck
+        // confines it to `return` (DP-K3) precisely so this arm is unreachable.
+        IrExprKind::Concat(_) => unreachable!(
+            "a built string is only lowered at `return` — typeck rejects every other position"
+        ),
         // A static, NUL-terminated byte array: no allocation, and the NUL makes the module's
         // view of the bytes identical to the C caller's (DP-S1).
         IrExprKind::ConstStr(s) => format!("b\"{s}\\0\".as_ptr()"),
@@ -547,6 +594,146 @@ fn emit_strout_helper(module: &IrModule, out: &mut String) {
     );
 }
 
+/// Emit `return <pieces appended into the caller's buffer>` (SPEC-string-concat §2.3).
+///
+/// Two passes, and the order is the contract:
+///
+/// 1. Sum every piece's length, plus one for the NUL, into `__n`, and publish it through
+///    `*ml_needed` — the host's `cap = *needed` retry depends on it being exact even when the
+///    call fails.
+/// 2. `cap < __n` returns `-1` having written **nothing**. Q12 says a truncated call leaves
+///    the buffer untouched, DP-T2 confirmed that table unchanged, and with no allocator there
+///    is nowhere to stage a partial result anyway.
+/// 3. Only then append, in source order, and terminate.
+///
+/// `ml_ilen` and `ml_wint` must agree to the byte or pass 2 walks off the end of the host's
+/// buffer. They agree by construction: `ml_wint` asks `ml_ilen` for the width and fills that
+/// exact span right-to-left (SPEC §5.2).
+fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
+    let pad = "    ".repeat(indent);
+    // Pass 1 — count. One byte for the NUL is always needed, so `__n` starts at 1 and an
+    // empty result is 1, never 0. That keeps `*needed == 0` impossible, exactly as #92.
+    let _ = writeln!(out, "{pad}let mut __n: i32 = 1;");
+    for p in pieces {
+        match &p.kind {
+            IrExprKind::Cast { operand, .. } => {
+                let _ = writeln!(out, "{pad}__n += ml_ilen({});", emit_expr(operand));
+            }
+            _ => {
+                let _ = writeln!(out, "{pad}__n += ml_slen({});", emit_expr(p));
+            }
+        }
+    }
+    let _ = writeln!(out, "{pad}unsafe {{ *ml_needed = __n; }}");
+    let _ = writeln!(out, "{pad}if ml_cap < __n {{ return -1; }}");
+    // Pass 2 — append. `__o` is the running offset; every helper returns the next one.
+    let _ = writeln!(out, "{pad}let mut __o: i32 = 0;");
+    for p in pieces {
+        match &p.kind {
+            IrExprKind::Cast { operand, .. } => {
+                let _ = writeln!(
+                    out,
+                    "{pad}__o = ml_wint(ml_buf, __o, {});",
+                    emit_expr(operand)
+                );
+            }
+            _ => {
+                let _ = writeln!(out, "{pad}__o = ml_wstr(ml_buf, __o, {});", emit_expr(p));
+            }
+        }
+    }
+    let _ = writeln!(out, "{pad}unsafe {{ *ml_buf.add(__o as usize) = 0; }}");
+    let _ = writeln!(out, "{pad}return 0;");
+}
+
+/// Does this module build a string anywhere? Only then are the concat helpers emitted.
+fn builds_strings(module: &IrModule) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::Concat(_) => true,
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand)
+            }
+            IrExprKind::Call { args, .. } => args.iter().any(in_expr),
+            _ => false,
+        }
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            IrStmt::Return(e) => in_expr(e),
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond) || in_stmts(body)
+            }
+            IrStmt::Let { value, .. } | IrStmt::Assign { value, .. } => in_expr(value),
+            _ => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
+/// The three append helpers. Emitted only when the module concatenates.
+///
+/// Every rule that keeps this safe is written next to the code that carries it, because the
+/// failure mode here is writing past the host's buffer:
+///
+/// - **`ml_ilen` is the single source of width.** `ml_wint` calls it rather than counting
+///   again, so pass 1 and pass 2 cannot disagree (SPEC §5.2).
+/// - **`i32::MIN` never gets negated.** `-2147483648` has no positive counterpart, so the
+///   magnitude is taken in `u32` (`wrapping_neg`), where it fits exactly.
+/// - **No slicing, no indexing.** Raw `ptr::add` only: a panic in a generated module enters
+///   `ml_panic`'s `loop {}` and hangs the calling host thread (STATUS §5-4), so the goal is
+///   code that cannot panic.
+/// - **Digits are ASCII `-` and `0`-`9` only** (DP-K9), which is the same byte sequence in
+///   every encoding this project has deliberately left undecided (DP-S2).
+fn emit_concat_helpers(module: &IrModule, out: &mut String) {
+    if !builds_strings(module) {
+        return;
+    }
+    out.push_str(
+        "fn ml_slen(src: *const u8) -> i32 {\n\
+         \x20   let mut n: i32 = 0;\n\
+         \x20   loop {\n\
+         \x20       if unsafe { *src.add(n as usize) } == 0 { return n; }\n\
+         \x20       n += 1;\n\
+         \x20   }\n\
+         }\n\n\
+         fn ml_ilen(v: i32) -> i32 {\n\
+         \x20   // Width of the decimal form, sign included. `0` is one digit, not zero.\n\
+         \x20   let neg = v < 0;\n\
+         \x20   let mut m: u32 = if neg { (v as u32).wrapping_neg() } else { v as u32 };\n\
+         \x20   let mut n: i32 = if neg { 2 } else { 1 };\n\
+         \x20   while m >= 10 { m /= 10; n += 1; }\n\
+         \x20   n\n\
+         }\n\n\
+         fn ml_wstr(buf: *mut u8, off: i32, src: *const u8) -> i32 {\n\
+         \x20   let mut i: i32 = 0;\n\
+         \x20   loop {\n\
+         \x20       let b = unsafe { *src.add(i as usize) };\n\
+         \x20       if b == 0 { return off + i; }\n\
+         \x20       unsafe { *buf.add((off + i) as usize) = b; }\n\
+         \x20       i += 1;\n\
+         \x20   }\n\
+         }\n\n\
+         fn ml_wint(buf: *mut u8, off: i32, v: i32) -> i32 {\n\
+         \x20   // Width comes from ml_ilen, the same function pass 1 used, then the span is\n\
+         \x20   // filled right-to-left. Two counts that could drift would be a buffer overrun.\n\
+         \x20   let w = ml_ilen(v);\n\
+         \x20   let neg = v < 0;\n\
+         \x20   let mut m: u32 = if neg { (v as u32).wrapping_neg() } else { v as u32 };\n\
+         \x20   let mut i = off + w;\n\
+         \x20   loop {\n\
+         \x20       i -= 1;\n\
+         \x20       unsafe { *buf.add(i as usize) = b'0' + (m % 10) as u8; }\n\
+         \x20       m /= 10;\n\
+         \x20       if m == 0 { break; }\n\
+         \x20   }\n\
+         \x20   if neg { unsafe { *buf.add((i - 1) as usize) = b'-'; } }\n\
+         \x20   off + w\n\
+         }\n\n",
+    );
+}
+
 /// Does this module compare strings anywhere? Only then is the helper emitted.
 fn compares_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
@@ -628,6 +815,12 @@ fn used_rounders(module: &IrModule) -> Vec<&'static str> {
             IrExprKind::Binary { lhs, rhs, .. } => {
                 walk_expr(lhs, found);
                 walk_expr(rhs, found);
+            }
+            // A rounder can sit inside a piece: `"total " + (round(x) as i32 as string)`.
+            IrExprKind::Concat(pieces) => {
+                for p in pieces {
+                    walk_expr(p, found);
+                }
             }
             IrExprKind::ConstF64(_)
             | IrExprKind::ConstI32(_)

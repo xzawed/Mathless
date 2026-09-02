@@ -141,5 +141,8 @@ fn the_staged_host_exists_and_says_it_is_unverified() {
         "the staged host must keep saying it is unverified: {}",
         host_dpr.display()
     );
-    assert!(text.contains("GATE_DELPHI_OK"), "the success marker is missing");
+    assert!(
+        text.contains("GATE_DELPHI_OK"),
+        "the success marker is missing"
+    );
 }

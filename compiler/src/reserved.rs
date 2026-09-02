@@ -12,9 +12,29 @@
 //! Target keywords are only half the problem. codegen also injects its OWN identifiers into
 //! the same emitted scope, and those need reserving as well — see [`generated_prefix`].
 
-/// Return the target languages that reserve `name` (empty if the name is safe everywhere).
+/// Where a name can actually end up, which is what decides the languages it must avoid
+/// (STATUS §4-2, decided 2026-09-02 on the measurement below).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameScope {
+    /// The name is written verbatim into the generated bindings: the module name (crate name,
+    /// header guard, unit name) and an **exported** function's parameters.
+    ///
+    /// Measured: `export fn price_of(quantity: i32, discount_rate: f64)` emits
+    /// `function mlx_price_of(quantity: Integer; discount_rate: Double)` into the `.pas`.
+    Bindings,
+    /// The name never leaves the generated module: an **internal** function's parameters, and
+    /// every local.
+    ///
+    /// Measured: an internal parameter and a local appeared **zero** times in the generated
+    /// `.h` and `.pas`. So Pascal cannot be reached from here — and cannot become reachable,
+    /// because Delphi is a *binding* target, never a codegen target. C is still checked:
+    /// D19 keeps the C-emit backend slot open, and that backend would put this name in C.
+    GeneratedModule,
+}
+
+/// Return the target languages that reserve `name` (empty if it is safe in `scope`).
 /// Rust and C are case-sensitive; Pascal is case-insensitive.
-pub fn reserving_targets(name: &str) -> Vec<&'static str> {
+pub fn reserving_targets_in(name: &str, scope: NameScope) -> Vec<&'static str> {
     let mut targets = Vec::new();
     if RUST.contains(&name) {
         targets.push("Rust");
@@ -22,10 +42,15 @@ pub fn reserving_targets(name: &str) -> Vec<&'static str> {
     if C.contains(&name) {
         targets.push("C");
     }
-    if PASCAL.iter().any(|k| k.eq_ignore_ascii_case(name)) {
+    if scope == NameScope::Bindings && PASCAL.iter().any(|k| k.eq_ignore_ascii_case(name)) {
         targets.push("Pascal");
     }
     targets
+}
+
+/// Every target, for a name that reaches the bindings.
+pub fn reserving_targets(name: &str) -> Vec<&'static str> {
+    reserving_targets_in(name, NameScope::Bindings)
 }
 
 /// Prefixes that codegen owns. A user name carrying one of these lands in the SAME emitted

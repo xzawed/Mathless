@@ -34,8 +34,9 @@ fn delphi_type(t: IrType) -> &'static str {
     }
 }
 
-fn guard_name(dll_name: &str) -> String {
-    let sanitized: String = dll_name
+/// The module name as it appears inside a macro name: uppercased, non-alphanumerics to `_`.
+fn macro_stem(dll_name: &str) -> String {
+    dll_name
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {
@@ -44,8 +45,21 @@ fn guard_name(dll_name: &str) -> String {
                 '_'
             }
         })
-        .collect();
-    format!("ML_{sanitized}_H")
+        .collect()
+}
+
+fn guard_name(dll_name: &str) -> String {
+    format!("ML_{}_H", macro_stem(dll_name))
+}
+
+/// Name of the interface-fingerprint constant this header pins.
+///
+/// **Module-prefixed on purpose (DP-H10).** `ML_ERR_*` is emitted without a prefix, so two
+/// generated headers in one host collide on a shared error name (STATUS §5-5.4, open with
+/// Q14). A fingerprint is per-module by definition, so an unprefixed `ML_IFACE_HASH` would
+/// not merely collide — the second header would silently redefine the first host's guard.
+fn iface_hash_macro(dll_name: &str) -> String {
+    format!("ML_{}_IFACE_HASH", macro_stem(dll_name))
 }
 
 /// Emit a C header exposing the module's exports. `dll_name` is the module name
@@ -75,6 +89,56 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
     let _ = writeln!(s, "#include <stdint.h>");
     let _ = writeln!(s, "#include <stdbool.h>");
+    s.push('\n');
+    // The interface fingerprint, next to the declarations it certifies. Putting the usage
+    // in the header rather than only in HOST_ABI.md is deliberate: `runtime/ml_abi.h` is
+    // this repo's own example of a contract nobody includes (STATUS §5-5.3).
+    let _ = writeln!(
+        s,
+        "/* Interface fingerprint of THIS header. Compare it against the module's"
+    );
+    let _ = writeln!(
+        s,
+        " * ml_iface_hash() right after loading, and REFUSE the module when they differ:"
+    );
+    let _ = writeln!(
+        s,
+        " * export names are identical across incompatible interfaces, so resolution"
+    );
+    let _ = writeln!(
+        s,
+        " * succeeds and the call is then a wrong value or an access violation (measured)."
+    );
+    let _ = writeln!(s, " *");
+    // NOTE: no nested comment markers here. A `/* ... */` inside this block would close it
+    // at the FIRST `*/`, turning the remaining lines into code — MSVC C4138 and a broken
+    // `/W4 /WX` build. A `contains()` assertion cannot see that; the header has to be
+    // compiled, which is what acceptance D does.
+    let _ = writeln!(
+        s,
+        " *   if (ml_iface_hash() != {}) {{",
+        iface_hash_macro(dll_name)
+    );
+    let _ = writeln!(
+        s,
+        " *       return -1;      // built against a different interface: call nothing"
+    );
+    let _ = writeln!(s, " *   }}");
+    let _ = writeln!(s, " *");
+    let _ = writeln!(
+        s,
+        " * A change to a function BODY does not change this value; a change to a name,"
+    );
+    let _ = writeln!(
+        s,
+        " * type, parameter order, out-ness or error code does. */"
+    );
+    let _ = writeln!(
+        s,
+        "#define {} 0x{:016X}ULL",
+        iface_hash_macro(dll_name),
+        crate::iface::fingerprint(module)
+    );
     s.push('\n');
     // DP-T6: the truncation status lives OUTSIDE the `ML_ERR_` namespace. That namespace is
     // the module's own (and Q14 already records that it is emitted without a module prefix,
@@ -117,6 +181,7 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
 
     let _ = writeln!(s, "uint32_t ml_module_abi_version(void);");
+    let _ = writeln!(s, "uint64_t ml_iface_hash(void);");
     let provenance = error_provenance(module);
     // Bindings describe the module's SURFACE: internal functions are not callable by a host
     // and must not appear here (SPEC-calls section 2.3).
@@ -320,6 +385,14 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     s.push('\n');
     let _ = writeln!(s, "const");
     let _ = writeln!(s, "  ML_MODULE = '{dll_name}.dll';");
+    // Interface fingerprint of this unit — compare against ml_iface_hash after loading and
+    // refuse the module when they differ (see the C header for the full note).
+    let _ = writeln!(
+        s,
+        "  {}: UInt64 = ${:016X};",
+        iface_hash_macro(dll_name),
+        crate::iface::fingerprint(module)
+    );
     // D17 error codes (module-defined, positive i32).
     for e in &module.errors {
         let _ = writeln!(s, "  ML_ERR_{} = {};", e.name, e.code);
@@ -328,6 +401,10 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     let _ = writeln!(
         s,
         "function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;"
+    );
+    let _ = writeln!(
+        s,
+        "function ml_iface_hash: UInt64; cdecl; external ML_MODULE;"
     );
     for f in module.functions.iter().filter(|f| f.exported) {
         let _ = writeln!(s, "{} cdecl; external ML_MODULE;", delphi_signature(f));

@@ -67,7 +67,7 @@ fn the_wrapper_refactor_did_not_grow_the_export_surface() {
 
         for e in &exports {
             assert!(
-                e == "ml_module_abi_version" || e.starts_with("mlx_"),
+                e == "ml_module_abi_version" || e == "ml_iface_hash" || e.starts_with("mlx_"),
                 "{name}: unexpected export {e} — a body must never be #[no_mangle]"
             );
             assert!(
@@ -75,12 +75,16 @@ fn the_wrapper_refactor_did_not_grow_the_export_surface() {
                 "{name}: the body {e} reached the export table"
             );
         }
-        // Every `export fn` in the source, and nothing else.
+        // Every `export fn` in the source, plus the two reserved symbols, and nothing else.
+        // The reserved count went 1 → 2 with the interface-fingerprint slice; it is spelled
+        // out here rather than hidden in a magic `+ 2` so the next slice that adds one has to
+        // say so.
+        const RESERVED_EXPORTS: usize = 2; // ml_module_abi_version, ml_iface_hash
         let declared = src.matches("export fn ").count();
         assert_eq!(
             exports.len(),
-            declared + 1,
-            "{name}: {} exports for {declared} `export fn` + the ABI symbol: {exports:?}",
+            declared + RESERVED_EXPORTS,
+            "{name}: {} exports for {declared} `export fn` + {RESERVED_EXPORTS} reserved: {exports:?}",
             exports.len()
         );
     }

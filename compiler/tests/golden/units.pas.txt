@@ -13,8 +13,10 @@ interface
 
 const
   ML_MODULE = 'add.dll';
+  ML_ADD_IFACE_HASH: UInt64 = $224A2953E2699E31;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_add(a: Integer; b: Integer): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -47,9 +49,11 @@ interface
 
 const
   ML_MODULE = 'carrier.dll';
+  ML_CARRIER_IFACE_HASH: UInt64 = $C8D1191E339AAF6E;
   ML_ERR_E_UNKNOWN_SCAC = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_carrier_name(scac: PAnsiChar; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_carrier_label(scac: PAnsiChar; out tier: Integer; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 
@@ -70,9 +74,11 @@ interface
 
 const
   ML_MODULE = 'commission.dll';
+  ML_COMMISSION_IFACE_HASH: UInt64 = $8120E9C099B13F94;
   ML_ERR_E_NEGATIVE = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_commission(amount: Double; out tier: Integer): Double; cdecl; external ML_MODULE;
 function mlx_commission_checked(amount: Double; out tier: Integer; out out_value: Double): Integer; cdecl; external ML_MODULE;
 
@@ -93,8 +99,10 @@ interface
 
 const
   ML_MODULE = 'count_bounded.dll';
+  ML_COUNT_BOUNDED_IFACE_HASH: UInt64 = $E83F762BFBFC9CA4;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_count_bounded(n: Integer; cap: Integer): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -114,8 +122,10 @@ interface
 
 const
   ML_MODULE = 'deduction.dll';
+  ML_DEDUCTION_IFACE_HASH: UInt64 = $B2B1F335D1DC7105;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_deduction(gross: Double): Double; cdecl; external ML_MODULE;
 function mlx_fl(x: Double): Double; cdecl; external ML_MODULE;
 function mlx_ce(x: Double): Double; cdecl; external ML_MODULE;
@@ -139,8 +149,10 @@ interface
 
 const
   ML_MODULE = 'discount.dll';
+  ML_DISCOUNT_IFACE_HASH: UInt64 = $05697A6FAFD68344;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_discount(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -160,8 +172,10 @@ interface
 
 const
   ML_MODULE = 'discount2.dll';
+  ML_DISCOUNT2_IFACE_HASH: UInt64 = $EE1B0032D821B816;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_discount2(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -181,8 +195,10 @@ interface
 
 const
   ML_MODULE = 'discount3.dll';
+  ML_DISCOUNT3_IFACE_HASH: UInt64 = $0532D4F36E005A3B;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_discount3(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -202,8 +218,10 @@ interface
 
 const
   ML_MODULE = 'discount4.dll';
+  ML_DISCOUNT4_IFACE_HASH: UInt64 = $5C3F47E3EB635EF8;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_discount4(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -223,8 +241,10 @@ interface
 
 const
   ML_MODULE = 'line_total.dll';
+  ML_LINE_TOTAL_IFACE_HASH: UInt64 = $2B4FBE9547EC2453;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_line_total(each: Double; qty: Integer): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -244,8 +264,10 @@ interface
 
 const
   ML_MODULE = 'negate_if.dll';
+  ML_NEGATE_IF_IFACE_HASH: UInt64 = $F05D0C1F381CF156;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_negate_if(x: Integer; flip: Boolean): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -265,9 +287,11 @@ interface
 
 const
   ML_MODULE = 'pack.dll';
+  ML_PACK_IFACE_HASH: UInt64 = $DA0077B3A04515AB;
   ML_ERR_E_EMPTY_BOX = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_boxes(qty: Integer; per_box: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_loose(qty: Integer; per_box: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_boxes_checked(qty: Integer; per_box: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
@@ -289,10 +313,12 @@ interface
 
 const
   ML_MODULE = 'quote.dll';
+  ML_QUOTE_IFACE_HASH: UInt64 = $159CAA5FE5CB3400;
   ML_ERR_E_BAD_QTY = 1;
   ML_ERR_E_DIV0 = 2;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_unit_price(total: Double; qty: Integer; out out_value: Double): Integer; cdecl; external ML_MODULE;
 function mlx_line_check(qty: Integer; out tier: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
 
@@ -313,9 +339,11 @@ interface
 
 const
   ML_MODULE = 'safe_div.dll';
+  ML_SAFE_DIV_IFACE_HASH: UInt64 = $91118FB2AED9DEE5;
   ML_ERR_DIV_BY_ZERO = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_safe_div(a: Double; b: Double; out out_value: Double): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -348,10 +376,12 @@ interface
 
 const
   ML_MODULE = 'shapes.dll';
+  ML_SHAPES_IFACE_HASH: UInt64 = $EBBDE5676601568D;
   ML_ERR_E_NEG = 1;
   ML_ERR_E_ODD = 2;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_is_big(n: Integer; out out_value: Boolean): Integer; cdecl; external ML_MODULE;
 function mlx_bump(n: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_answer(out out_value: Integer): Integer; cdecl; external ML_MODULE;
@@ -379,8 +409,10 @@ interface
 
 const
   ML_MODULE = 'sum_to.dll';
+  ML_SUM_TO_IFACE_HASH: UInt64 = $D3FC526CA957505A;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_sum_to(n: Integer): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -413,8 +445,10 @@ interface
 
 const
   ML_MODULE = 'vat.dll';
+  ML_VAT_IFACE_HASH: UInt64 = $7CE7BE3A0EEE106C;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
+function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
 function mlx_vat_rate(country: PAnsiChar): Double; cdecl; external ML_MODULE;
 function mlx_issuer_of(bin: PAnsiChar): Integer; cdecl; external ML_MODULE;
 function mlx_is_export_item(code: PAnsiChar): Boolean; cdecl; external ML_MODULE;

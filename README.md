@@ -106,7 +106,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 ```sh
 mlc build discount.mls -o out/
-#  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version
+#  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C header
 #  out/discount.pas   Delphi import unit
 ```

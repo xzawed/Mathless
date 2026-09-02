@@ -16,11 +16,25 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_ADD_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_ADD_IFACE_HASH 0x224A2953E2699E31ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 int32_t mlx_add(int32_t a, int32_t b);
 
 #ifdef __cplusplus
@@ -45,6 +59,19 @@ int32_t mlx_add(int32_t a, int32_t b);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_CARRIER_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_CARRIER_IFACE_HASH 0xC8D1191E339AAF6EULL
+
 /* Q12 caller-allocates protocol: a buffer too small to hold the
  * result, NUL included. Truncation is a FAILURE, not a short
  * success - nothing is written, and *ml_needed is the exact size
@@ -60,6 +87,7 @@ extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 /* may fail with: ML_ERR_E_UNKNOWN_SCAC */
 int32_t mlx_carrier_name(const char* scac, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);
 /* may fail with: (no domain error) */
@@ -87,6 +115,19 @@ int32_t mlx_carrier_label(const char* scac, int32_t* tier, char* ml_buf, int32_t
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_COMMISSION_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_COMMISSION_IFACE_HASH 0x8120E9C099B13F94ULL
+
 #define ML_ERR_E_NEGATIVE 1
 
 #ifdef __cplusplus
@@ -94,6 +135,7 @@ extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_commission(double amount, int32_t* tier);
 /* may fail with: ML_ERR_E_NEGATIVE */
 int32_t mlx_commission_checked(double amount, int32_t* tier, double* out_value);
@@ -120,11 +162,25 @@ int32_t mlx_commission_checked(double amount, int32_t* tier, double* out_value);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_COUNT_BOUNDED_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_COUNT_BOUNDED_IFACE_HASH 0xE83F762BFBFC9CA4ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 int32_t mlx_count_bounded(int32_t n, int32_t cap);
 
 #ifdef __cplusplus
@@ -149,11 +205,25 @@ int32_t mlx_count_bounded(int32_t n, int32_t cap);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_DEDUCTION_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_DEDUCTION_IFACE_HASH 0xB2B1F335D1DC7105ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_deduction(double gross);
 double mlx_fl(double x);
 double mlx_ce(double x);
@@ -182,11 +252,25 @@ double mlx_tr(double x);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_DISCOUNT_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_DISCOUNT_IFACE_HASH 0x05697A6FAFD68344ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_discount(double price, bool vip);
 
 #ifdef __cplusplus
@@ -211,11 +295,25 @@ double mlx_discount(double price, bool vip);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_DISCOUNT2_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_DISCOUNT2_IFACE_HASH 0xEE1B0032D821B816ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_discount2(double price, bool vip);
 
 #ifdef __cplusplus
@@ -240,11 +338,25 @@ double mlx_discount2(double price, bool vip);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_DISCOUNT3_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_DISCOUNT3_IFACE_HASH 0x0532D4F36E005A3BULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_discount3(double price, bool vip);
 
 #ifdef __cplusplus
@@ -269,11 +381,25 @@ double mlx_discount3(double price, bool vip);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_DISCOUNT4_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_DISCOUNT4_IFACE_HASH 0x5C3F47E3EB635EF8ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_discount4(double price, bool vip);
 
 #ifdef __cplusplus
@@ -298,11 +424,25 @@ double mlx_discount4(double price, bool vip);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_LINE_TOTAL_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_LINE_TOTAL_IFACE_HASH 0x2B4FBE9547EC2453ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_line_total(double each, int32_t qty);
 
 #ifdef __cplusplus
@@ -327,11 +467,25 @@ double mlx_line_total(double each, int32_t qty);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_NEGATE_IF_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_NEGATE_IF_IFACE_HASH 0xF05D0C1F381CF156ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 int32_t mlx_negate_if(int32_t x, bool flip);
 
 #ifdef __cplusplus
@@ -356,6 +510,19 @@ int32_t mlx_negate_if(int32_t x, bool flip);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_PACK_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_PACK_IFACE_HASH 0xDA0077B3A04515ABULL
+
 #define ML_ERR_E_EMPTY_BOX 1
 
 #ifdef __cplusplus
@@ -363,6 +530,7 @@ extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 int32_t mlx_boxes(int32_t qty, int32_t per_box);
 int32_t mlx_loose(int32_t qty, int32_t per_box);
 /* may fail with: ML_ERR_E_EMPTY_BOX */
@@ -390,6 +558,19 @@ int32_t mlx_boxes_checked(int32_t qty, int32_t per_box, int32_t* out_value);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_QUOTE_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_QUOTE_IFACE_HASH 0x159CAA5FE5CB3400ULL
+
 #define ML_ERR_E_BAD_QTY 1
 #define ML_ERR_E_DIV0 2
 
@@ -398,6 +579,7 @@ extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 /* may fail with: ML_ERR_E_BAD_QTY, ML_ERR_E_DIV0 */
 int32_t mlx_unit_price(double total, int32_t qty, double* out_value);
 /* may fail with: ML_ERR_E_BAD_QTY */
@@ -425,6 +607,19 @@ int32_t mlx_line_check(int32_t qty, int32_t* tier, int32_t* out_value);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_SAFE_DIV_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_SAFE_DIV_IFACE_HASH 0x91118FB2AED9DEE5ULL
+
 #define ML_ERR_DIV_BY_ZERO 1
 
 #ifdef __cplusplus
@@ -432,6 +627,7 @@ extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 /* may fail with: ML_ERR_DIV_BY_ZERO */
 int32_t mlx_safe_div(double a, double b, double* out_value);
 
@@ -457,6 +653,19 @@ int32_t mlx_safe_div(double a, double b, double* out_value);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_SHAPES_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_SHAPES_IFACE_HASH 0xEBBDE5676601568DULL
+
 /* Q12 caller-allocates protocol: a buffer too small to hold the
  * result, NUL included. Truncation is a FAILURE, not a short
  * success - nothing is written, and *ml_needed is the exact size
@@ -473,6 +682,7 @@ extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 /* may fail with: ML_ERR_E_NEG */
 int32_t mlx_is_big(int32_t n, bool* out_value);
 /* may fail with: ML_ERR_E_NEG */
@@ -511,11 +721,25 @@ int32_t mlx_tag(int32_t n, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_SUM_TO_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_SUM_TO_IFACE_HASH 0xD3FC526CA957505AULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 int32_t mlx_sum_to(int32_t n);
 
 #ifdef __cplusplus
@@ -540,11 +764,25 @@ int32_t mlx_sum_to(int32_t n);
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Interface fingerprint of THIS header. Compare it against the module's
+ * ml_iface_hash() right after loading, and REFUSE the module when they differ:
+ * export names are identical across incompatible interfaces, so resolution
+ * succeeds and the call is then a wrong value or an access violation (measured).
+ *
+ *   if (ml_iface_hash() != ML_VAT_IFACE_HASH) {
+ *       return -1;      // built against a different interface: call nothing
+ *   }
+ *
+ * A change to a function BODY does not change this value; a change to a name,
+ * type, parameter order, out-ness or error code does. */
+#define ML_VAT_IFACE_HASH 0x7CE7BE3A0EEE106CULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 uint32_t ml_module_abi_version(void);
+uint64_t ml_iface_hash(void);
 double mlx_vat_rate(const char* country);
 int32_t mlx_issuer_of(const char* bin);
 bool mlx_is_export_item(const char* code);

@@ -10,6 +10,7 @@ pub mod codegen;
 pub mod emit;
 pub mod error;
 pub mod header;
+pub mod iface;
 pub mod ir;
 pub mod lexer;
 pub mod parser;

@@ -59,8 +59,8 @@ pub fn generated_prefix_reason(prefix: &str) -> &'static str {
     match prefix {
         "mlx_" => "exported functions are emitted as `mlx_<name>` (D18)",
         "ml_" => {
-            "the runtime namespace: `ml_module_abi_version`, the panic handler, and the \
-                  rounding helpers"
+            "the runtime namespace: `ml_module_abi_version`, `ml_iface_hash`, the panic \
+                  handler, and the rounding helpers"
         }
         _ => "compiler temporaries such as the `__d` divisor binding in the `i32 /` guard",
     }

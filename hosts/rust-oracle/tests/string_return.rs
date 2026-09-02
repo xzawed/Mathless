@@ -298,6 +298,7 @@ fn the_module_gains_no_export_and_its_imports_are_compared_not_claimed() {
     assert_eq!(
         names,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_carrier_label".to_string(),
             "mlx_carrier_name".to_string(),

@@ -398,6 +398,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// STATUS §5-5.6 said this branch's `Display` had no test. It does now.
+    ///
+    /// The message is the only instruction a user gets in the one situation where `mlc`
+    /// leaves files behind ON PURPOSE, so it has to name the directory and say the files must
+    /// be moved back by hand. Getting that wrong turns a recoverable state into a lost one.
+    ///
+    /// **What is still not covered, and why:** constructing this variant END-TO-END through
+    /// `emit_artifacts`. Reaching it needs `rollback` to fail, which needs a destination that
+    /// exists and cannot be removed — and every path that fills `done` puts a plain, unlocked
+    /// file there. Producing that state from outside would take a race (something locking the
+    /// file between the move and the unwind), not a filesystem arrangement. The branch is
+    /// defensive; the logic under it is tested directly above.
+    #[test]
+    fn the_rollback_incomplete_message_names_the_directory_and_the_count() {
+        let stage = PathBuf::from("C:/tmp/.mlc-stage-1-0");
+        let e = EmitError::RollbackIncomplete {
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+            stage_dir: stage.clone(),
+            stranded: vec![stage.join("m.dll.prev"), stage.join("m.h.prev")],
+        };
+        let shown = e.to_string();
+        assert!(
+            shown.contains(&stage.display().to_string()),
+            "the user cannot recover the files without the directory: {shown}"
+        );
+        assert!(
+            shown.contains('2'),
+            "the count tells them how many to look for: {shown}"
+        );
+        assert!(
+            shown.contains("by hand"),
+            "and that nothing else will do it for them: {shown}"
+        );
+    }
+
     #[test]
     fn rollback_without_a_backup_just_drops_what_we_added() {
         let d = tmp("nobackup");

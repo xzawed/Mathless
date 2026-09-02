@@ -13,10 +13,13 @@
  *     look exports up BY NAME, call. No import library, no link-time binding - the host is
  *     never rebuilt when the module is replaced.
  *
- * What it does NOT prove: anything about Delphi (`.pas` stays DRAFT), and it is not a check
- * that a host *rejects* an ABI major mismatch - that remains a contract on hosts, unimplemented.
+ *   - A host REFUSES a module it was not built for. Every module below passes a load-time
+ *     gate (abi version + interface fingerprint) before a single call, and with a third
+ *     argument the host is handed a deliberately drifted module and must turn it away.
  *
- * usage: host <artifact_dir> <expected_abi_version>
+ * What it does NOT prove: anything about Delphi (`.pas` stays DRAFT).
+ *
+ * usage: host <artifact_dir> <expected_abi_version> [drifted_module.dll]
  */
 /* <math.h> is here for the rounding checks: DP-R3 says the module's floor/ceil/round/trunc
    match C's exactly, so the honest test is to call both and compare - including signbit(),
@@ -42,6 +45,7 @@
 #include "quote.h"
 
 typedef uint32_t (*abi_version_fn)(void);
+typedef uint64_t (*iface_hash_fn)(void);
 typedef double (*discount_fn)(double, bool);
 typedef int32_t (*safe_div_fn)(double, double, double *);
 typedef int32_t (*sum_to_fn)(int32_t);
@@ -69,6 +73,8 @@ typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
    mismatched pointer. */
 _Static_assert(_Generic(&ml_module_abi_version, abi_version_fn: 1, default: 0),
                "generated ml_module_abi_version signature changed");
+_Static_assert(_Generic(&ml_iface_hash, iface_hash_fn: 1, default: 0),
+               "generated ml_iface_hash signature changed");
 _Static_assert(_Generic(&mlx_discount, discount_fn: 1, default: 0),
                "generated mlx_discount signature changed");
 _Static_assert(_Generic(&mlx_safe_div, safe_div_fn: 1, default: 0),
@@ -132,7 +138,7 @@ static void check(int ok, const char *what) {
     }
 }
 
-static HMODULE load(const char *dir, const char *name) {
+static HMODULE load_raw(const char *dir, const char *name) {
     char path[MAX_PATH];
     if (snprintf(path, sizeof path, "%s\\%s", dir, name) >= (int)sizeof path) {
         printf("  FAIL path too long for %s\n", name);
@@ -144,6 +150,57 @@ static HMODULE load(const char *dir, const char *name) {
         printf("  FAIL LoadLibraryA(%s) -> error %lu\n", path, GetLastError());
         failures++;
     }
+    return m;
+}
+
+/* The load-time gate (DP-H8/H9). Returns 1 only if the module is the one this host was
+ * built against.
+ *
+ * Both halves matter and neither is decoration:
+ *   - the ABI version was already a documented host duty, but HOST_ABI recorded the
+ *     rejection path as unimplemented; here it is implemented.
+ *   - the interface fingerprint is the half the version cannot do. Two modules with
+ *     incompatible signatures report the same version, export the same names, and resolve
+ *     identically - measured, with a wrong return value in one case and 0xC0000005 in the
+ *     other (SPEC-iface-hash section 0.1).
+ *
+ * Deliberately silent about WHAT differs beyond the numbers: the host is not a diagnostic
+ * tool for the module author, and printing signatures would leak the module's surface. */
+static int gate(HMODULE m, const char *name, unsigned long expected_abi, uint64_t pinned) {
+    abi_version_fn abi = (abi_version_fn)(void *)GetProcAddress(m, "ml_module_abi_version");
+    iface_hash_fn hash = (iface_hash_fn)(void *)GetProcAddress(m, "ml_iface_hash");
+    if (abi == NULL || hash == NULL) {
+        printf("  refuse %s: a reserved symbol is missing\n", name);
+        return 0;
+    }
+    if (abi() != (uint32_t)expected_abi) {
+        printf("  refuse %s: module abi %u, host built for %lu\n", name, abi(), expected_abi);
+        return 0;
+    }
+    if (hash() != pinned) {
+        printf("  refuse %s: interface %016llX, header pinned %016llX\n", name,
+               (unsigned long long)hash(), (unsigned long long)pinned);
+        return 0;
+    }
+    return 1;
+}
+
+/* Every module this host loads passes the gate before a single call is made. Before this
+ * slice only discount.dll and safe_div.dll compared even the version; the other eleven
+ * compared nothing. */
+static HMODULE load(const char *dir, const char *name, unsigned long expected_abi,
+                    uint64_t pinned) {
+    HMODULE m = load_raw(dir, name);
+    if (m == NULL) {
+        return NULL;
+    }
+    if (!gate(m, name, expected_abi, pinned)) {
+        FreeLibrary(m);
+        printf("  FAIL %s did not pass the load-time gate\n", name);
+        failures++;
+        return NULL;
+    }
+    printf("  ok   %s passed the abi + interface gate\n", name);
     return m;
 }
 
@@ -167,7 +224,7 @@ int main(int argc, char **argv) {
     printf("mathless c host: loading from %s\n", dir);
 
     /* --- discount.dll: the scalar happy path (SPEC section 3-B) --- */
-    HMODULE d = load(dir, "discount.dll");
+    HMODULE d = load(dir, "discount.dll", expected_abi, ML_DISCOUNT_IFACE_HASH);
     if (d == NULL) {
         return 1;
     }
@@ -180,7 +237,7 @@ int main(int argc, char **argv) {
     }
 
     /* --- safe_div.dll: the D17 error path, status + out-param --- */
-    HMODULE s = load(dir, "safe_div.dll");
+    HMODULE s = load(dir, "safe_div.dll", expected_abi, ML_SAFE_DIV_IFACE_HASH);
     if (s == NULL) {
         return 1;
     }
@@ -203,7 +260,7 @@ int main(int argc, char **argv) {
 
     /* --- sum_to.dll: a loop. Until the `while` slice every Mathless function terminated
        trivially; this call is the first one whose return depends on the loop finishing. --- */
-    HMODULE w = load(dir, "sum_to.dll");
+    HMODULE w = load(dir, "sum_to.dll", expected_abi, ML_SUM_TO_IFACE_HASH);
     if (w == NULL) {
         return 1;
     }
@@ -214,7 +271,7 @@ int main(int argc, char **argv) {
     }
 
     /* --- negate_if.dll: unary `-` and `!`. --- */
-    HMODULE u = load(dir, "negate_if.dll");
+    HMODULE u = load(dir, "negate_if.dll", expected_abi, ML_NEGATE_IF_IFACE_HASH);
     if (u == NULL) {
         return 1;
     }
@@ -225,7 +282,7 @@ int main(int argc, char **argv) {
     }
 
     /* --- count_bounded.dll: two conditions in one loop header (`&&`). --- */
-    HMODULE l = load(dir, "count_bounded.dll");
+    HMODULE l = load(dir, "count_bounded.dll", expected_abi, ML_COUNT_BOUNDED_IFACE_HASH);
     if (l == NULL) {
         return 1;
     }
@@ -237,7 +294,7 @@ int main(int argc, char **argv) {
 
     /* --- discount4.dll: an internal helper decides the rate. The helper is NOT exported, so
        GetProcAddress must fail for it - that is the D04/D05 claim, checked from the host. --- */
-    HMODULE h4 = load(dir, "discount4.dll");
+    HMODULE h4 = load(dir, "discount4.dll", expected_abi, ML_DISCOUNT4_IFACE_HASH);
     if (h4 == NULL) {
         return 1;
     }
@@ -250,7 +307,7 @@ int main(int argc, char **argv) {
     check(GetProcAddress(h4, "mlx_vip_rate") == NULL, "...not under the mlx_ prefix either");
 
     /* --- line_total.dll: a cast lets a count meet a price. --- */
-    HMODULE lt = load(dir, "line_total.dll");
+    HMODULE lt = load(dir, "line_total.dll", expected_abi, ML_LINE_TOTAL_IFACE_HASH);
     if (lt == NULL) {
         return 1;
     }
@@ -263,7 +320,7 @@ int main(int argc, char **argv) {
     /* --- pack.dll: i32 `/` and `%` are TOTAL. Both edge cases are the ones where C's own
        integer division is undefined behaviour, so a C host is exactly the right place to
        check that the module RETURNS a defined value instead of trapping. --- */
-    HMODULE pk = load(dir, "pack.dll");
+    HMODULE pk = load(dir, "pack.dll", expected_abi, ML_PACK_IFACE_HASH);
     if (pk == NULL) {
         return 1;
     }
@@ -295,7 +352,7 @@ int main(int argc, char **argv) {
 
     /* --- commission.dll: a declared `out` parameter. The host allocates; the module writes
        through the pointer. This is the case that could not be expressed at all before. --- */
-    HMODULE cm = load(dir, "commission.dll");
+    HMODULE cm = load(dir, "commission.dll", expected_abi, ML_COMMISSION_IFACE_HASH);
     if (cm == NULL) {
         return 1;
     }
@@ -334,7 +391,7 @@ int main(int argc, char **argv) {
     /* --- deduction.dll: the rounding builtins. A C host is the right place to check these,
        because DP-R3 says they match <math.h> exactly - so this compares the module against
        the C library sitting right next to it, not against our own expectations. --- */
-    HMODULE dd = load(dir, "deduction.dll");
+    HMODULE dd = load(dir, "deduction.dll", expected_abi, ML_DEDUCTION_IFACE_HASH);
     if (dd == NULL) {
         return 1;
     }
@@ -367,7 +424,7 @@ int main(int argc, char **argv) {
     /* --- vat.dll: string INPUT parameters (SPEC-string-input sections 3-B and 3-B2).
        A C host is the right place for this one: it passes ordinary C string literals, which
        is what DP-S1 chose the ABI for, and the comparison is byte equality up to the NUL. --- */
-    HMODULE vt = load(dir, "vat.dll");
+    HMODULE vt = load(dir, "vat.dll", expected_abi, ML_VAT_IFACE_HASH);
     if (vt == NULL) {
         return 1;
     }
@@ -406,7 +463,7 @@ int main(int argc, char **argv) {
        ZEROED before every call - DP-T2 chose "the module writes nothing on failure" over the
        Annex K fail-safe, so a correct host does not read a buffer it did not initialise. That
        is the habit this example is here to show. --- */
-    HMODULE cr = load(dir, "carrier.dll");
+    HMODULE cr = load(dir, "carrier.dll", expected_abi, ML_CARRIER_IFACE_HASH);
     if (cr == NULL) {
         return 1;
     }
@@ -487,7 +544,7 @@ int main(int argc, char **argv) {
        (SPEC-fallible-calls section 3-D). What this proves from the C side is that the
        propagation is invisible here: `mlx_unit_price` looks and behaves like any other D17
        fallible export, and the code it returns is the helper's own. --- */
-    HMODULE qt = load(dir, "quote.dll");
+    HMODULE qt = load(dir, "quote.dll", expected_abi, ML_QUOTE_IFACE_HASH);
     if (qt == NULL) {
         return 1;
     }
@@ -533,6 +590,32 @@ int main(int argc, char **argv) {
     FreeLibrary(l);
     FreeLibrary(h4);
     FreeLibrary(lt);
+
+    /* --- the gate must actually REFUSE (SPEC-iface-hash section 3-F) ---
+     *
+     * argv[3], when present, names a module in `dir` built from a CHANGED pack interface:
+     * `boxes(qty, per_box)` became `boxes(per_box, qty)`. That drift is invisible to C -
+     * both are `int32_t mlx_boxes(int32_t, int32_t)` - so name resolution succeeds and the
+     * call returns a plausible wrong number. Measured: 33 became 0.
+     *
+     * A gate that is merely present proves nothing (`runtime/ml_abi.h` is this repo's own
+     * example of a contract nobody calls), so the refusal is exercised here, and the two
+     * checks below say WHY it is the fingerprint doing the work: the symbol still resolves,
+     * and the ABI version still matches. */
+    if (argc >= 4) {
+        HMODULE drift = load_raw(dir, argv[3]);
+        if (drift != NULL) {
+            check(!gate(drift, argv[3], expected_abi, ML_PACK_IFACE_HASH),
+                  "the gate refuses a module whose interface drifted");
+            check(GetProcAddress(drift, "mlx_boxes") != NULL,
+                  "control: the drifted module still resolves mlx_boxes by name");
+            abi_version_fn drift_abi =
+                (abi_version_fn)(void *)GetProcAddress(drift, "ml_module_abi_version");
+            check(drift_abi != NULL && drift_abi() == (uint32_t)expected_abi,
+                  "control: the drifted module still reports the expected abi version");
+            FreeLibrary(drift);
+        }
+    }
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

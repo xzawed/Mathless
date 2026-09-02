@@ -21,11 +21,13 @@ fn the_internal_helper_is_not_exported() {
         !rust.contains("mlx_vip_rate"),
         "an internal fn must not get the export prefix:\n{rust}"
     );
-    // Exactly one `#[no_mangle]` per exported item: mlx_discount4 and ml_module_abi_version.
+    // Exactly one `#[no_mangle]` per exported item: mlx_discount4 plus the two reserved
+    // symbols, ml_module_abi_version and ml_iface_hash. The count is the point — an
+    // internal helper must not add one.
     assert_eq!(
         rust.matches("#[no_mangle]").count(),
-        2,
-        "only the ABI symbol and the one export may be no_mangle:\n{rust}"
+        3,
+        "only the two reserved symbols and the one export may be no_mangle:\n{rust}"
     );
 }
 

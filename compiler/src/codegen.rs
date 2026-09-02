@@ -49,6 +49,18 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
         crate::abi::ML_MODULE_ABI_VERSION
     );
 
+    // The interface fingerprint (SPEC-iface-hash). The version above is a constant and so
+    // says nothing about THIS module's signatures — measured: two modules with incompatible
+    // interfaces both reported 1, resolved every symbol, and then returned a wrong number
+    // and an access violation. A host compares this value against the constant its header
+    // pinned and refuses the module when they differ.
+    out.push_str("#[no_mangle]\n");
+    let _ = writeln!(
+        out,
+        "pub extern \"C\" fn ml_iface_hash() -> u64 {{ 0x{:016X} }}\n",
+        crate::iface::fingerprint(module)
+    );
+
     emit_string_helper(module, &mut out);
     emit_strout_helper(module, &mut out);
     emit_rounding_helpers(module, &mut out);

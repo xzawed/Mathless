@@ -105,6 +105,7 @@ fn the_export_surface_is_unchanged_in_shape() {
     assert_eq!(
         names,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_ce".to_string(),
             "mlx_deduction".to_string(),

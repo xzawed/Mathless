@@ -14,6 +14,9 @@
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x224A2953E2699E31 }
+
 fn ml_fn_add(a: i32, b: i32) -> i32 {
     let sum = (a + b);
     return sum;
@@ -36,6 +39,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xC8D1191E339AAF6E }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;
@@ -118,6 +124,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x8120E9C099B13F94 }
+
 fn ml_fn_commission(amount: f64, tier: *mut i32) -> f64 {
     if (amount < 1000000.0f64) {
         unsafe { *tier = 1i32; }
@@ -165,6 +174,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xE83F762BFBFC9CA4 }
+
 fn ml_fn_count_bounded(n: i32, cap: i32) -> i32 {
     let mut i = 0i32;
     while ((i < n) && (i < cap)) {
@@ -190,6 +202,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xB2B1F335D1DC7105 }
 
 const ML_INTEGRAL: f64 = 9007199254740992.0;
 fn ml_trunc_raw(x: f64) -> f64 {
@@ -260,6 +275,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x05697A6FAFD68344 }
+
 fn ml_fn_discount(price: f64, vip: bool) -> f64 {
     if vip {
         return (price * 0.9f64);
@@ -284,6 +302,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xEE1B0032D821B816 }
 
 fn ml_fn_discount2(price: f64, vip: bool) -> f64 {
     let rate = 0.9f64;
@@ -311,6 +332,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x0532D4F36E005A3B }
+
 fn ml_fn_discount3(price: f64, vip: bool) -> f64 {
     let mut result = price;
     if vip {
@@ -336,6 +360,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x5C3F47E3EB635EF8 }
 
 fn ml_fn_vip_rate(vip: bool) -> f64 {
     if vip {
@@ -366,6 +393,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x2B4FBE9547EC2453 }
+
 fn ml_fn_line_total(each: f64, qty: i32) -> f64 {
     return (each * (qty as f64));
 }
@@ -387,6 +417,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xF05D0C1F381CF156 }
 
 fn ml_fn_negate_if(x: i32, flip: bool) -> i32 {
     if (!flip) {
@@ -412,6 +445,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xDA0077B3A04515AB }
 
 fn ml_fn_boxes(qty: i32, per_box: i32) -> i32 {
     return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } };
@@ -453,6 +489,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x159CAA5FE5CB3400 }
 
 fn ml_fn_check_qty(qty: i32) -> Result<i32, i32> {
     if (qty < 1i32) {
@@ -509,6 +548,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x91118FB2AED9DEE5 }
+
 fn ml_fn_safe_div(a: f64, b: f64) -> Result<f64, i32> {
     if (b == 0.0f64) {
         return Err(1);
@@ -533,6 +575,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xEBBDE5676601568D }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;
@@ -689,6 +734,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0xD3FC526CA957505A }
+
 fn ml_fn_sum_to(n: i32) -> i32 {
     let mut total = 0i32;
     let mut i = 1i32;
@@ -716,6 +764,9 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 
 #[no_mangle]
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
+
+#[no_mangle]
+pub extern "C" fn ml_iface_hash() -> u64 { 0x7CE7BE3A0EEE106C }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;

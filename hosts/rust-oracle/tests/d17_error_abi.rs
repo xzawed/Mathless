@@ -41,6 +41,7 @@ fn oracle_calls_fallible_success_and_failure_paths() {
     assert_eq!(
         exports,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_safe_div".to_string(),
         ]

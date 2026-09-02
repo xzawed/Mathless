@@ -103,6 +103,7 @@ fn the_module_gains_no_export_and_no_import() {
     assert_eq!(
         names,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_is_export_item".to_string(),
             "mlx_issuer_of".to_string(),

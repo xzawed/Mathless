@@ -243,6 +243,22 @@ fn a_real_c_host_loads_and_calls_the_module() {
     let quote = emit_artifacts(include_str!("../../../examples/quote.mls"), "quote", &work)
         .expect("emit quote");
 
+    // A drifted `pack`: the two parameters of `boxes` are swapped and nothing else changes.
+    // Both versions are `int32_t mlx_boxes(int32_t, int32_t)` in C, so this is the drift the
+    // ABI cannot see and the host's `_Static_assert` cannot catch — the measured case where
+    // `boxes(100, 3)` quietly returned 0 instead of 33. The host must refuse it (WH6).
+    let drifted_pack = "\
+export fn boxes(per_box: i32, qty: i32) -> i32 { return qty / per_box }
+export fn loose(qty: i32, per_box: i32) -> i32 { return qty % per_box }
+error E_EMPTY_BOX = 1
+export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
+  if per_box == 0 { fail E_EMPTY_BOX }
+  return qty / per_box
+}
+";
+    let drift = emit_artifacts(drifted_pack, "pack_drift", &work).expect("emit drifted pack");
+    assert!(drift.dll.exists());
+
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("c-host")
@@ -273,7 +289,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &vcvars,
         &work,
         &format!(
-            "\"{}\" \"{}\" {}",
+            "\"{}\" \"{}\" {} pack_drift.dll",
             work.join("host.exe").display(),
             work.display(),
             mlc::ML_MODULE_ABI_VERSION

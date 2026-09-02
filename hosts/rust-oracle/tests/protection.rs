@@ -19,16 +19,20 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     let _ = std::fs::remove_dir_all(&workdir);
     let dll = build_cdylib(&rust, "discount_w6", &workdir).expect("build");
 
-    // Export table = exactly the reserved version symbol + the mlx_ function (D18).
+    // Export table = exactly the two reserved symbols + the mlx_ function (D18).
+    // `ml_iface_hash` joined `ml_module_abi_version` with the interface-fingerprint slice;
+    // the proxy this test reports therefore moved from 2 exports to 3, and SECURITY.md
+    // section on P0 measurements was updated in the same PR rather than left stale.
     let mut exports = pe::read_exports(&dll).expect("read exports");
     exports.sort();
     assert_eq!(
         exports,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_discount".to_string(),
         ],
-        "module must export only ml_module_abi_version + mlx_discount"
+        "module must export only ml_iface_hash + ml_module_abi_version + mlx_discount"
     );
 
     // Analysis-cost proxies (measured/reported, not a reversing-difficulty claim).

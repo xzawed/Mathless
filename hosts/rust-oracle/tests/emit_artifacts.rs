@@ -34,6 +34,7 @@ fn oracle_loads_and_calls_the_packaged_module() {
     assert_eq!(
         exports,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_discount".to_string(),
         ]

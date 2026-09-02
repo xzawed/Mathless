@@ -155,6 +155,7 @@ fn the_helpers_stay_out_of_the_export_table() {
     assert_eq!(
         names,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_line_check".to_string(),
             "mlx_unit_price".to_string(),
@@ -255,6 +256,7 @@ fn an_exported_rule_can_be_reused_inside_the_module_and_called_from_outside() {
     assert_eq!(
         names,
         vec![
+            "ml_iface_hash".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_check".to_string(),
             "mlx_doubled".to_string(),

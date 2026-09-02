@@ -18,7 +18,9 @@
 - **코드:** **6,028 LOC**(Rust + C 호스트, 테스트 제외) + 테스트 **6,635 LOC**. `src`에 TODO/FIXME 없음.
   서드파티 의존성 **0개**(`Cargo.lock`에 로컬 크레이트 둘뿐).
 - **수용 A/B/C/D 전부 통과.** **단 D는 C 쪽만이다** — MSVC로 빌드한 C11 호스트가 산출 DLL을
-  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **체크 94개**).
+  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **체크 108개** — 2026-09-02에
+  94개에서 늘었다: 로드하는 모듈 13개 전부가 버전+지문 게이트를 통과해야 하고, 드리프트 모듈 거부가
+  추가됐다. 그전에는 게이트가 아니라 **버전 비교 2개**뿐이었다).
   **Delphi는 미검증**(`dcc64` 부재를 실측 확인) → 생성 `.pas`는 DRAFT 유지. D14의 공식 쌍 중 **C만 증명됨**.
 - **산출물:** `mlc build <f.mls> -o <dir>` → `.dll` + `.h` + `.pas`. `discount.dll` = **9,728 B**,
   export는 **정확히 3개**(`mlx_*` + `ml_module_abi_version` + `ml_iface_hash`, 자체 PE 리더 +

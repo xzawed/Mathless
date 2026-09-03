@@ -258,7 +258,7 @@ fn unique_build_root() -> PathBuf {
     std::env::temp_dir().join(format!("mlc-build-{}-{n}", std::process::id()))
 }
 
-/// Compile `src` and write the three deliverables for `module_name` into `out_dir`,
+/// Compile `src` and write the four deliverables for `module_name` into `out_dir`,
 /// returning their paths. `out_dir` is created if missing. The DLL is built in a private
 /// temp tree that is deleted before returning (no build litter in `out_dir`).
 ///
@@ -278,7 +278,7 @@ pub fn emit_artifacts(
     // Back end: IR → extern "C" Rust → cdylib DLL, in a private self-cleaning build tree.
     let rust = codegen::emit(&ir).map_err(|e| EmitError::Compile(CompileError::Codegen(e)))?;
 
-    // Stage all three deliverables next to their destination, then move them into place.
+    // Stage all four deliverables next to their destination, then move them into place.
     // Nothing reaches `out_dir` until everything has been produced, so a failure part-way
     // through can't leave a `.dll` with no bindings beside it — a partial set a host could
     // still load. The stage lives INSIDE `out_dir` so the moves stay on one volume (a

@@ -76,12 +76,16 @@ out-param으로 내려가며, 값을 여러 개 돌려주려면 `out` 파라미�
 `.pas` Delphi import unit, 그리고 `.lib` 임포트 라이브러리입니다 — 헤더를 include하고 링크하면
 실행 시점에 심볼을 하나씩 찾지 않아도 됩니다.
 
-**측정된 호스트 경로 두 개.** Rust `kernel32` 오라클이 모듈을 로드해 호출합니다. MSVC로 빌드한 실제
+**측정된 호스트 경로 세 개.** Rust `kernel32` 오라클이 모듈을 로드해 호출합니다. MSVC로 빌드한 실제
 C 호스트도 마찬가지입니다. 이 호스트는 생성된 헤더를 컴파일하고 `LoadLibrary`와 `GetProcAddress`로
-export를 찾습니다.
+export를 찾습니다. 그리고 두 번째 C 호스트는 **평범한 방식**으로 합니다 — 헤더를 `#include`하고
+함께 배달된 `.lib`을 링크해 그냥 호출하며, 실행 시점 조회가 **한 번도 없습니다**. 두 C 호스트 모두
+호출 전에 모듈의 인터페이스 지문을 확인하고, 어긋난 모듈은 거부합니다.
 
 수용 A, B, C, D가 모두 통과합니다. 컴파일되고, 오라클이 호출하고, export·크기 프록시가 유지되며,
-실제 C 호스트가 같은 모듈을 로드합니다. strip된 `no_std` 빌드는 약 9.7 KB이고 의도한 심볼 세 개
+실제 C 호스트가 같은 모듈을 로드합니다. strip된 `no_std` 빌드는 약 9.0~9.5 KB입니다 — **정확한
+바이트 수는 머신에 따라 다릅니다**(실측: 이 머신 9,728 B, GitHub `windows-latest` 9,216 B. 같은
+핀된 rustc이며, 핀은 rustc를 덮지 MSVC 링커를 덮지 않습니다). 의도한 심볼 세 개
 (`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash`)만 export합니다. 이 개수는
 `dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지 않습니다.
 
@@ -132,7 +136,7 @@ C 호스트가 `discount.dll`을 로드해 `mlx_discount(100.0, true)`를 호출
 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | C ABI, 호스트 연동, 생존성 계약 |
 | [docs/SECURITY.md](docs/SECURITY.md) | 보호 목표와 단계, 측정된 프록시 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → 확장 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 확정 결정(D01–D22)과 기각된 대안 |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 확정 결정(D01–D23)과 기각된 대안 |
 | [docs/slices/](docs/slices/README.md) | 기능 슬라이스 SPEC — 작업의 단위 — 과 그 상태 |
 
 ## 기여

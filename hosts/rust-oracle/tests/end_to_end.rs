@@ -15,7 +15,9 @@ fn compiles_discount_mls_and_calls_it_via_oracle() {
     // fixed name would race two concurrent `cargo test` runs.
     let workdir = std::env::temp_dir().join(format!("mlc_e2e_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&workdir);
-    let dll = build_cdylib(&rust, "discount", &workdir).expect("build cdylib");
+    let dll = build_cdylib(&rust, "discount", &workdir)
+        .expect("build cdylib")
+        .dll;
     assert!(dll.exists(), "dll not produced at {}", dll.display());
 
     // B: the oracle loads the compiler's output and the typed call works.

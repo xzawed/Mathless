@@ -75,8 +75,9 @@ extra `out` parameters to return several values. Internal `fn` declarations can 
 other, but recursion is rejected at compile time.
 [docs/LANGUAGE.md](docs/LANGUAGE.md) keeps the definitive list.
 
-**The CLI.** `mlc build <file.mls> -o <dir>` writes three files side by side: the `.dll` module,
-a `.h` C header, and a `.pas` Delphi import unit.
+**The CLI.** `mlc build <file.mls> -o <dir>` writes four files side by side: the `.dll` module,
+a `.h` C header, a `.pas` Delphi import unit, and a `.lib` import library so a C host can
+link against the header instead of resolving every symbol at run time.
 
 **Two host paths, both measured.** A Rust `kernel32` oracle loads the module and calls it. So
 does a real C host built with MSVC, which compiles the generated header and resolves the exports
@@ -110,6 +111,7 @@ mlc build discount.mls -o out/
 #  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C header
 #  out/discount.pas   Delphi import unit
+#  out/discount.lib   MSVC import library (link-time binding)
 ```
 
 A C host loads `discount.dll`, calls `mlx_discount(100.0, true)`, and gets `90.0` back. The host

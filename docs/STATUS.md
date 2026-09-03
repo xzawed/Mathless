@@ -28,7 +28,8 @@
   > **이 숫자는 정적 `grep -c 'check('`으로 세지 않는다** — 그것은 105를 준다. 게이트가 출력하는
   > 모듈당 한 줄은 `check()`를 거치지 않기 때문이다. 세는 대상이 다르면 값도 다르다.
   **Delphi는 미검증**(`dcc64` 부재를 실측 확인) → 생성 `.pas`는 DRAFT 유지. D14의 공식 쌍 중 **C만 증명됨**.
-- **산출물:** `mlc build <f.mls> -o <dir>` → `.dll` + `.h` + `.pas`. `discount.dll`은
+- **산출물:** `mlc build <f.mls> -o <dir>` → `.dll` + `.h` + `.pas` + **`.lib`**(MSVC 임포트
+  라이브러리, 2026-09-03 추가 — `SPEC-linkable-bindings` §3-A). `discount.dll`은
   **이 머신에서 9,728 B, GitHub `windows-latest`에서 9,216 B**다 —
   **크기는 머신에 따라 다르다(2026-09-03 실측, D3에서 발견)**. 같은 커밋·같은 핀된 rustc 1.97.1인데
   `FileAlignment` 한 블록만큼 어긋난다: `rust-toolchain.toml`의 핀은 **rustc를 덮지 MSVC `link.exe`와

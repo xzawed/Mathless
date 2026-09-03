@@ -255,6 +255,54 @@ fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits
     );
 }
 
+/// The artifact set, checked against the emitter rather than against a remembered list.
+///
+/// `SPEC-linkable-bindings` §3-F. The set went from three files to four in that slice, and
+/// the number appears in prose in three documents — the exact shape that drifted for the
+/// export count and the gated-module count before it. So the extensions are read out of
+/// `emit_artifacts`'s `names` array, and every document that describes the set has to name
+/// each one.
+///
+/// A fifth artifact fails this test until the documents mention it.
+#[test]
+fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
+    let emit_rs = read("compiler/src/emit.rs");
+    let start = emit_rs
+        .find("let names = [")
+        .expect("emit.rs no longer has the `names` array this test reads the artifact set from");
+    let end = emit_rs[start..]
+        .find("];")
+        .expect("unterminated `names` array")
+        + start;
+    let block = &emit_rs[start..end];
+
+    let marker = "format!(\"{module_name}";
+    let mut exts: Vec<&str> = Vec::new();
+    for (i, _) in block.match_indices(marker) {
+        let rest = &block[i + marker.len()..];
+        if let Some(close) = rest.find('"') {
+            exts.push(&rest[..close]);
+        }
+    }
+    exts.sort_unstable();
+    exts.dedup();
+    assert!(
+        exts.len() >= 3,
+        "recovered only {exts:?} from emit.rs — has the array's shape changed?"
+    );
+
+    for doc in ["README.md", "README.ko.md", "docs/HOST_ABI.md"] {
+        let text = read(doc);
+        for ext in &exts {
+            assert!(
+                text.contains(&format!("`{ext}`")),
+                "{doc} describes what `mlc build` writes but never mentions `{ext}`, which \
+                 emit.rs packages. The artifact set is {exts:?}"
+            );
+        }
+    }
+}
+
 /// A `const NAME: u64 = 1_234;` literal, read out of Rust source text.
 fn u64_const(src: &str, name: &str) -> u64 {
     let marker = format!("const {name}: u64 = ");

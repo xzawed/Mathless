@@ -75,13 +75,13 @@ fn rejects_a_module_name_that_would_escape_the_generated_cargo_toml() {
 
 #[cfg(windows)]
 #[test]
-fn a_successful_build_leaves_exactly_the_three_artifacts() {
+fn a_successful_build_leaves_exactly_the_four_artifacts() {
     // No staging directory, no build litter.
     let out = fresh_out("ok");
     emit_artifacts(SRC, "okmod", &out).expect("emit");
     assert_eq!(
         entries(&out),
-        vec!["okmod.dll", "okmod.h", "okmod.pas"],
+        vec!["okmod.dll", "okmod.h", "okmod.lib", "okmod.pas"],
         "only the deliverables remain"
     );
 }

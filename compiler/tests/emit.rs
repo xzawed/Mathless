@@ -21,23 +21,24 @@ fn fresh_out(tag: &str) -> TempOut {
 }
 
 #[test]
-fn emit_artifacts_writes_the_three_consumable_files() {
+fn emit_artifacts_writes_the_four_consumable_files() {
     let src = include_str!("../../examples/discount.mls");
     let out = fresh_out("contract");
 
     let arts = emit_artifacts(src, "discount", &out).expect("emit_artifacts");
 
-    // The three deliverables land in the output dir under the module name.
+    // The four deliverables land in the output dir under the module name.
     assert_eq!(arts.dll, out.join("discount.dll"));
     assert_eq!(arts.header, out.join("discount.h"));
     assert_eq!(arts.delphi_unit, out.join("discount.pas"));
-    for p in [&arts.dll, &arts.header, &arts.delphi_unit] {
+    assert_eq!(arts.import_lib, out.join("discount.lib"));
+    for p in [&arts.dll, &arts.header, &arts.delphi_unit, &arts.import_lib] {
         assert!(p.exists(), "missing artifact: {}", p.display());
     }
 
-    // No build litter is left in the output dir — exactly the three files.
+    // No build litter is left in the output dir — exactly the four files.
     let count = std::fs::read_dir(&out).unwrap().count();
-    assert_eq!(count, 3, "output dir must contain exactly the 3 artifacts");
+    assert_eq!(count, 4, "output dir must contain exactly the 4 artifacts");
 
     // The .dll is a real PE image (MZ magic), not an empty/placeholder file.
     let dll = std::fs::read(&arts.dll).unwrap();

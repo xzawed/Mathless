@@ -360,6 +360,60 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         );
     }
 
+    // `SPEC-linkable-bindings` §3-C: the generated headers compile as C++ too.
+    //
+    // Every header emits `#ifdef __cplusplus extern "C" {`, and until now nothing in the tree
+    // had ever run a C++ compiler over one — `HOST_ABI.md` puts C and C++ jointly first, and
+    // half of joint first place was unproven. Like N1 this is a coverage extension rather
+    // than a fix: measured beforehand, all eighteen already compile.
+    //
+    // ONE translation unit per header, so each is checked for being self-contained, and all
+    // of them in a single `cl` invocation so it costs one process. `/TP` compiles a `.cpp`
+    // as C++ regardless of extension; the flags otherwise match the C gate.
+    let mut header_stems: Vec<String> = std::fs::read_dir(&*work)
+        .expect("read artifact dir")
+        .filter_map(|e| {
+            let p = e.expect("dir entry").path();
+            if p.extension().and_then(|x| x.to_str()) != Some("h") {
+                return None;
+            }
+            Some(p.file_stem()?.to_str()?.to_string())
+        })
+        .collect();
+    header_stems.sort();
+    assert!(
+        header_stems.len() >= 18,
+        "expected every example's header in the artifact dir, found {}: {header_stems:?}",
+        header_stems.len()
+    );
+
+    let mut cpp_units: Vec<String> = Vec::new();
+    for stem in &header_stems {
+        let name = format!("cpp_{stem}.cpp");
+        std::fs::write(
+            work.join(&name),
+            format!("#include \"{stem}.h\"\nint cpp_probe_{stem}(void) {{ return 0; }}\n"),
+        )
+        .expect("write C++ probe");
+        cpp_units.push(name);
+    }
+    let cpp = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /TP /W4 /WX /c /I\"{}\" {}",
+            work.display(),
+            cpp_units.join(" ")
+        ),
+    );
+    assert!(
+        cpp.status.success(),
+        "a generated header is not valid C++ under /W4 /WX (the failing file is named \
+         below):\n{}\n{}",
+        String::from_utf8_lossy(&cpp.stdout),
+        String::from_utf8_lossy(&cpp.stderr)
+    );
+
     // Compile the C host against the GENERATED headers (`/I` the artifact dir).
     let compile = run_in_msvc_env(
         &vcvars,

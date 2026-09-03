@@ -172,6 +172,53 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
 /// MSVC exists; this costs nothing and runs on the ubuntu job too.
 ///
 /// Written after exactly that: an em dash in a comment failed the C build.
+/// Acceptance D is the only thing in this repository that compiles a generated `.h` as C.
+/// An example whose header is not included there has a surface no C compiler has ever
+/// read: the Rust oracle checks the module's behaviour, not whether the header it ships
+/// beside it is valid C11 under `/W4 /WX`.
+///
+/// This was measured as a real hole — 14 of 18 — and the worst of the four outside it was
+/// `shapes`, the file written to collect "export shapes where a mis-written C ABI adapter
+/// would compile and return a plausible wrong value" (`STATUS.md` N1).
+#[test]
+fn every_example_header_is_compiled_by_the_c_host() {
+    let host_c = read("hosts/c-host/host.c");
+    let dir = repo_root().join("examples");
+
+    let mut examples: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .filter_map(|entry| {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("mls") {
+                return None;
+            }
+            Some(path.file_stem()?.to_str()?.to_string())
+        })
+        .collect();
+    examples.sort();
+
+    assert!(
+        examples.len() >= 18,
+        "found only {} example(s) under examples/ — the corpus does not shrink, so this is \
+         more likely a path problem than a deletion",
+        examples.len()
+    );
+
+    let missing: Vec<&String> = examples
+        .iter()
+        .filter(|stem| !host_c.contains(&format!("#include \"{stem}.h\"")))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "hosts/c-host/host.c does not include the generated header for {} of {} examples: \
+         {missing:?}. Their headers are never compiled as C, so an invalid one ships \
+         unnoticed. Emit them in c_host.rs and include them here",
+        missing.len(),
+        examples.len()
+    );
+}
+
 #[test]
 fn the_c_sources_are_ascii_only() {
     // One call per C source compiled under /WX. A second one is a second line.

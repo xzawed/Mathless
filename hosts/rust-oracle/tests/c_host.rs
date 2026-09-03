@@ -170,7 +170,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         return;
     };
 
-    // A guard, not a bare path: this test builds 14 DLLs and runs a child host process that
+    // A guard, not a bare path: this test builds 19 DLLs and runs a child host process that
     // loads them, so its tree is the biggest one and the most likely to lose the unlock race
     // (measured — it leaked despite removing at the end). `TempOut` retries.
     let work = common::TempOut::new("gate_d");
@@ -252,6 +252,23 @@ fn a_real_c_host_loads_and_calls_the_module() {
         &work,
     )
     .expect("emit receipt");
+
+    // N1 (`STATUS.md` section 9): four examples sat outside this gate, so their generated
+    // headers had never been read by a C compiler. `shapes` was the sharpest of them — it
+    // exists to collect the export shapes where a mis-written C ABI adapter would compile
+    // and return a plausible wrong value, and its header was the one nobody compiled.
+    //
+    // Emitted for the HEADER: `host.c` includes all four and `cl /W4 /WX` has to accept
+    // them. Behaviour stays where it already is, with the Rust oracle. `doc_claims.rs`
+    // fails if a future example is added without landing here.
+    for (src, name) in [
+        (include_str!("../../../examples/add.mls"), "add"),
+        (include_str!("../../../examples/discount2.mls"), "discount2"),
+        (include_str!("../../../examples/discount3.mls"), "discount3"),
+        (include_str!("../../../examples/shapes.mls"), "shapes"),
+    ] {
+        emit_artifacts(src, name, &work).unwrap_or_else(|e| panic!("emit {name}: {e}"));
+    }
 
     // A drifted `pack`: the two parameters of `boxes` are swapped and nothing else changes.
     // Both versions are `int32_t mlx_boxes(int32_t, int32_t)` in C, so this is the drift the

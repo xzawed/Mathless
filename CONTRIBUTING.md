@@ -32,6 +32,12 @@
    merge. (A cross-platform SO/ELF **target** is still deferred with D22 — the Linux job is
    not it.)
 
+   **Run those commands the way CI runs them, and judge them by the exit code.** Do not wrap
+   one in a pipeline to shorten its output. `cargo fmt --all --check | tail -1 && echo clean`
+   reports the exit status of `tail`, which is always `0`, so it prints `clean` on a tree that
+   fails formatting — that exact wrapper put a badly formatted commit past a local check and
+   into CI (`docs/STATUS.md` §7-1). A guard that cannot fail proves nothing.
+
 ## Methodology: SDD + WBS + TDD (mandatory from Phase 1)
 
 1. **SDD (spec-first):** write the spec before code — `docs/slices/SPEC-<name>.md` with inputs, outputs,
@@ -78,6 +84,12 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
    한때 "88개 실행 / 19개 제외"라고 적어 뒀다가 그대로 낡았다(그 합 107은 오늘 수치가 아니다).
    테스트 수의 정본은 `docs/STATUS.md` §1이다. 머지 전 둘 다 green 유지.
    (`.so`/ELF **타깃**은 여전히 D22와 함께 이연 — Linux 잡은 D22가 아니다.)
+
+   **이 명령들은 CI가 부르는 방식 그대로 부르고, 종료 코드로 판단한다.** 출력을 줄이려고
+   파이프로 감싸지 않는다. `cargo fmt --all --check | tail -1 && echo clean`은 **파이프라인의**
+   종료 코드(= 항상 0인 `tail`의 것)를 보므로, 포맷이 깨진 트리에서도 `clean`을 찍는다 —
+   바로 그 래퍼가 잘못 포맷된 커밋을 로컬 검사에서 통과시켜 CI가 잡았다(`docs/STATUS.md` §7-1).
+   **실패할 수 없는 가드는 아무것도 증명하지 않는다.**
 
 ## 라이선스와 기여
 

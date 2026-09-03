@@ -292,6 +292,42 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         .join("host.c");
     assert!(host_c.exists(), "missing {}", host_c.display());
 
+    // `runtime/ml_abi.h` is the hand-written half of the ABI, and nothing includes it — so
+    // until now nothing compiled it either, and a text-only guard cannot know its text is
+    // valid C (section 7-1, cause 4: match the assertion to the risk). It is compiled here
+    // standalone, under the same flags as the host, and included TWICE to exercise the
+    // include guard.
+    //
+    // This does not couple a host to it. The file stays uncoupled, which is the property
+    // three other files cite it for; what is checked is only that it would compile if
+    // someone did include it.
+    let runtime_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("runtime");
+    let abi_probe = work.join("ml_abi_probe.c");
+    std::fs::write(
+        &abi_probe,
+        "#include \"ml_abi.h\"\n#include \"ml_abi.h\"\n\
+         int ml_abi_probe(void) { return ML_ST_OK + ML_ST_INSUFFICIENT_BUFFER; }\n",
+    )
+    .expect("write ml_abi probe");
+    let abi_compile = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /W4 /WX /std:c11 /c /I\"{}\" \"{}\" /Fo:ml_abi_probe.obj",
+            runtime_dir.display(),
+            abi_probe.display()
+        ),
+    );
+    assert!(
+        abi_compile.status.success(),
+        "runtime/ml_abi.h does not compile as C11 under /W4 /WX:\n{}\n{}",
+        String::from_utf8_lossy(&abi_compile.stdout),
+        String::from_utf8_lossy(&abi_compile.stderr)
+    );
+
     // Compile the C host against the GENERATED headers (`/I` the artifact dir).
     let compile = run_in_msvc_env(
         &vcvars,

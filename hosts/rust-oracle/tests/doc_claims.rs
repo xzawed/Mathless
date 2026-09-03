@@ -166,12 +166,6 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
     }
 }
 
-/// `host.c` is compiled by MSVC with `/W4 /WX`, and a non-ASCII byte in it is warning
-/// C4819 ("cannot be represented in the current code page") which `/WX` turns into an
-/// error. That gate is real but it costs a full acceptance-D build and only runs where
-/// MSVC exists; this costs nothing and runs on the ubuntu job too.
-///
-/// Written after exactly that: an em dash in a comment failed the C build.
 /// Thousands separators the way the documents write them: `9728` -> `"9,728"`.
 fn with_commas(n: u64) -> String {
     let digits = n.to_string();
@@ -183,6 +177,82 @@ fn with_commas(n: u64) -> String {
         out.push(c);
     }
     out
+}
+
+/// `runtime/ml_abi.h` declares the reserved half of the ABI by hand, and nothing compiles
+/// it, so nothing noticed when it fell behind: every module has exported `ml_iface_hash`
+/// since #105 and the header that exists to list the reserved symbols did not mention it.
+///
+/// This derives the list from the emitter instead of trusting the file. Any reserved `ml_*`
+/// declaration `header.rs` writes into a generated header must also be here — with or
+/// without parameters — and the truncation status must carry the same value in both places.
+///
+/// It also forbids a module-specific `mlx_*` declaration. The file used to declare
+/// `mlx_discount` from one example — the kind of detail that goes stale in a file nobody
+/// compiles, and the reason D4 was open at all.
+#[test]
+fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits() {
+    let header_rs = read("compiler/src/header.rs");
+    let abi_h = read("runtime/ml_abi.h");
+
+    // Declarations the emitter writes, recovered from its string literals. Every literal on
+    // a line is a candidate; one that names an `ml_` symbol and ends a declaration is a
+    // reserved export. Deliberately not limited to `(void);` — a reserved export that takes
+    // an argument would otherwise slip past exactly the way `ml_iface_hash` did (Grok raised
+    // this while verifying the narrower first version).
+    let mut reserved: Vec<&str> = Vec::new();
+    for line in header_rs.lines() {
+        for (i, part) in line.split('"').enumerate() {
+            if i % 2 == 1 && part.contains(" ml_") && part.ends_with(");") && !part.contains('\\') {
+                reserved.push(part);
+            }
+        }
+    }
+    reserved.sort_unstable();
+    reserved.dedup();
+    assert!(
+        reserved.len() >= 2,
+        "expected header.rs to emit at least the two reserved symbols, recovered {reserved:?} \
+         — has the emitter's shape changed?"
+    );
+
+    for decl in &reserved {
+        assert!(
+            abi_h.contains(decl),
+            "compiler/src/header.rs emits '{decl}' into every generated header, but \
+             runtime/ml_abi.h does not declare it. That file is the hand-written list of \
+             reserved symbols; nothing compiles it, so only this test can notice"
+        );
+    }
+
+    for line in abi_h.lines() {
+        assert!(
+            !(line.contains("mlx_") && line.trim_end().ends_with(");")),
+            "runtime/ml_abi.h declares a module function ('{}'). Module exports belong in \
+             the module's generated header — a specific mlx_ name here goes stale unnoticed",
+            line.trim()
+        );
+    }
+
+    // The one negative status that exists is defined in both places, and the values must
+    // agree: a translation unit can see both, and the `#ifndef` guard means a mismatch is
+    // NOT a redefinition error — it silently resolves to whichever was seen first.
+    //
+    // Asserted as two positives, not as `assert_eq!` of two `contains` flags. That earlier
+    // shape passed when the definition was missing from BOTH files, which is a vacuous
+    // success of exactly the kind section 7-1 warns about (Grok caught it in review).
+    let define = "#define ML_ST_INSUFFICIENT_BUFFER (-1)";
+    assert!(
+        header_rs.contains(define),
+        "compiler/src/header.rs no longer emits '{define}' — if the truncation status \
+         changed value, runtime/ml_abi.h has to change with it"
+    );
+    assert!(
+        abi_h.contains(define),
+        "runtime/ml_abi.h no longer declares '{define}' while header.rs still emits it. \
+         Both are `#ifndef`-guarded, so a divergence is silent: the translation unit keeps \
+         whichever definition it saw first"
+    );
 }
 
 /// A `const NAME: u64 = 1_234;` literal, read out of Rust source text.
@@ -288,9 +358,16 @@ fn every_example_header_is_compiled_by_the_c_host() {
     );
 }
 
+/// `host.c` is compiled by MSVC with `/W4 /WX`, and a non-ASCII byte in it is warning
+/// C4819 ("cannot be represented in the current code page") which `/WX` turns into an
+/// error. That gate is real but it costs a full acceptance-D build and only runs where
+/// MSVC exists; this costs nothing and runs on the ubuntu job too.
+///
+/// Written after exactly that: an em dash in a comment failed the C build.
 #[test]
 fn the_c_sources_are_ascii_only() {
     // One call per C source compiled under /WX. A second one is a second line.
+    // `runtime/ml_abi.h` is compiled by acceptance D now, so it is covered there.
     assert_ascii("hosts/c-host/host.c");
 }
 

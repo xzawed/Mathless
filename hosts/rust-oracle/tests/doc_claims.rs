@@ -172,6 +172,75 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
 /// MSVC exists; this costs nothing and runs on the ubuntu job too.
 ///
 /// Written after exactly that: an em dash in a comment failed the C build.
+/// Thousands separators the way the documents write them: `9728` -> `"9,728"`.
+fn with_commas(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A `const NAME: u64 = 1_234;` literal, read out of Rust source text.
+fn u64_const(src: &str, name: &str) -> u64 {
+    let marker = format!("const {name}: u64 = ");
+    let i = src
+        .find(&marker)
+        .unwrap_or_else(|| panic!("protection.rs no longer defines {name} — this test reads it"));
+    let literal: String = src[i + marker.len()..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '_')
+        .collect();
+    literal
+        .replace('_', "")
+        .parse()
+        .unwrap_or_else(|_| panic!("{name} is not a decimal literal"))
+}
+
+/// The artifact-size proxy, checked in the direction nothing checked before: the documents
+/// must carry what was actually measured.
+///
+/// D3 was decided as "assert the exact value" and CI disproved the premise in one run — the
+/// same commit and the same pinned rustc produced 9,728 B here and 9,216 B on
+/// `windows-latest`, one `FileAlignment` block apart, because the pin covers rustc and not
+/// MSVC `link.exe`. The number ten documents publish as a project fact is a *this-machine*
+/// number.
+///
+/// So the guard is not "the docs match one constant" but "the docs carry BOTH observations".
+/// A document that quietly goes back to a single exact byte count fails here.
+///
+/// Only PRESENT-TENSE statements are checked. Every `docs/slices/SPEC-*.md` also carries the
+/// old number, but `slices/README.md` says plainly that each SPEC is the design record of
+/// its own moment — rewriting those would be rewriting history, not fixing a claim.
+#[test]
+fn the_published_module_size_carries_both_measurements() {
+    let protection = read("hosts/rust-oracle/tests/protection.rs");
+    let observed = [
+        u64_const(&protection, "DISCOUNT_DLL_MEASURED_DEV"),
+        u64_const(&protection, "DISCOUNT_DLL_MEASURED_CI"),
+    ];
+
+    for doc in ["docs/SECURITY.md", "docs/STATUS.md"] {
+        let text = read(doc);
+        for n in observed {
+            let stated = with_commas(n);
+            assert!(
+                text.contains(&stated),
+                "{doc} does not state '{stated} B'. The stripped module measures \
+                 {} B on the development machine and {} B on GitHub's windows-latest \
+                 runner; a document that publishes only one of them presents a \
+                 machine-specific number as a project fact",
+                observed[0],
+                observed[1]
+            );
+        }
+    }
+}
+
 /// Acceptance D is the only thing in this repository that compiles a generated `.h` as C.
 /// An example whose header is not included there has a surface no C compiler has ever
 /// read: the Rust oracle checks the module's behaviour, not whether the header it ships

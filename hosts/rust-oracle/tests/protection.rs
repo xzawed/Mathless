@@ -6,6 +6,26 @@
 use ml_oracle::pe;
 use mlc::{codegen::build_cdylib, compile_to_rust};
 
+/// Measured sizes of the stripped `no_std` `discount` module, in bytes.
+///
+/// **This number is machine-dependent, and that was measured, not assumed.** D3 was decided
+/// as "assert the exact value", on the reasoning that `rust-toolchain.toml` pins the
+/// toolchain. CI disproved it in one run: the same commit and the same pinned rustc 1.97.1
+/// produced 9,728 B on the development machine and 9,216 B on GitHub's `windows-latest`.
+/// The pin covers rustc; it does not cover MSVC `link.exe` or the Windows SDK, and the
+/// difference is exactly one 512-byte `FileAlignment` block.
+///
+/// So ten documents were publishing a *this-machine* number as a project fact. The bound
+/// below is what can honestly be asserted anywhere, and it is still tight enough to catch
+/// the failure that mattered: under the old `size < 60_000` the module could sextuple in
+/// silence. `doc_claims.rs` reads these constants out of this file and requires the
+/// documents to carry BOTH observations, so the prose cannot go back to implying one exact
+/// byte count is universal.
+const DISCOUNT_DLL_MEASURED_DEV: u64 = 9_728;
+const DISCOUNT_DLL_MEASURED_CI: u64 = 9_216;
+const DISCOUNT_DLL_MIN: u64 = 8_192;
+const DISCOUNT_DLL_MAX: u64 = 12_288;
+
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     needle.len() <= haystack.len() && haystack.windows(needle.len()).any(|w| w == needle)
 }
@@ -50,6 +70,22 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     assert!(
         size < 60_000,
         "expected a small stripped no_std dll, got {size} bytes"
+    );
+    // ...and "far under" was the whole guard: at `< 60_000` the module could sextuple in
+    // silence while ten documents kept publishing an exact byte count (`STATUS.md` D3).
+    //
+    // The bound is a range because the exact value is not portable — see the constants
+    // above, where CI measured 9,216 B against this machine's 9,728 B on the same pinned
+    // toolchain. The width is four `FileAlignment` blocks either side of what has actually
+    // been observed, which still fails long before a module doubles.
+    let size = size as u64;
+    assert!(
+        (DISCOUNT_DLL_MIN..=DISCOUNT_DLL_MAX).contains(&size),
+        "the stripped module is {size} B, outside the asserted \
+         {DISCOUNT_DLL_MIN}..={DISCOUNT_DLL_MAX} B. Observed values are \
+         {DISCOUNT_DLL_MEASURED_DEV} B (dev machine) and {DISCOUNT_DLL_MEASURED_CI} B \
+         (GitHub windows-latest). If this is a deliberate toolchain change, re-measure and \
+         update these constants AND the documents doc_claims.rs checks"
     );
 
     println!("W6 measured: size={size} bytes, exports={exports:?}");

@@ -49,7 +49,10 @@ fn numbers_between(hay: &str, prefix: &str, suffix: &str) -> Vec<usize> {
 /// string-concat slice (#108) added `receipt.dll` and the documents stayed at 13.
 #[test]
 fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
-    let host_c = read("hosts/c-host/host.c");
+    // Comments stripped first: a `load(dir, "…")` written inside a comment would inflate the
+    // count and make the documents "agree" with a number nothing loads. There is no such
+    // comment today (measured, 0 hits) — this keeps it that way for free.
+    let host_c = strip_c_comments(&read("hosts/c-host/host.c"));
     let gated = host_c.matches("load(dir, \"").count();
     assert!(
         gated >= 10,
@@ -79,25 +82,25 @@ fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
 /// for two slices while the code block right below it listed all three.
 #[test]
 fn the_readmes_do_not_understate_the_export_set() {
-    // The names are not invented here: this is the set `protection.rs` pins with an
-    // assert_eq! against the real PE export table.
-    let pinned = ["ml_iface_hash", "ml_module_abi_version", "mlx_discount"];
-
+    // DERIVED, not written here. The earlier version listed the three names in this file and
+    // only checked that protection.rs also contained them — which its own comment described
+    // as "not invented here" while inventing them. A fourth export would have slipped past
+    // this guard entirely (protection.rs would still have caught it, but the READMEs would
+    // have gone stale silently, which is the exact failure this file exists to stop).
     let protection = read("hosts/rust-oracle/tests/protection.rs");
-    for name in pinned {
-        assert!(
-            protection.contains(name),
-            "protection.rs no longer pins '{name}' — this test's idea of the export set is \
-             stale, not the README's"
-        );
-    }
+    let pinned = string_literals_in_vec_after(&protection, "        exports,");
+    assert!(
+        pinned.len() >= 3,
+        "recovered {pinned:?} from protection.rs's export assertion — has its shape changed?"
+    );
 
     for doc in ["README.md", "README.ko.md"] {
         let text = read(doc);
-        for name in pinned {
+        for name in &pinned {
             assert!(
                 text.contains(name),
-                "{doc} does not mention '{name}', which every module exports"
+                "{doc} does not mention '{name}', which every module exports. \
+                 protection.rs pins the set as {pinned:?}"
             );
         }
         // Negative pins: the exact sentences that were left behind by #105.
@@ -110,6 +113,37 @@ fn the_readmes_do_not_understate_the_export_set() {
             );
         }
     }
+}
+
+/// The `"..."` literals of the first `vec![ … ]` that follows `anchor`, in source order.
+///
+/// Used to read an expected set out of the test that owns it, so a second test cannot hold a
+/// stale copy of the same list.
+fn string_literals_in_vec_after(src: &str, anchor: &str) -> Vec<String> {
+    let Some(a) = src.find(anchor) else {
+        panic!("anchor {anchor:?} not found — the test it reads from has changed shape");
+    };
+    let rest = &src[a..];
+    let Some(open) = rest.find("vec![") else {
+        panic!("no vec![ after {anchor:?}");
+    };
+    let body = &rest[open + "vec![".len()..];
+    let end = body.find(']').unwrap_or(body.len());
+    let body = &body[..end];
+
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(q) = rest.find('"') {
+        let after = &rest[q + 1..];
+        match after.find('"') {
+            Some(close) => {
+                out.push(after[..close].to_string());
+                rest = &after[close + 1..];
+            }
+            None => break,
+        }
+    }
+    out
 }
 
 /// D18 puts the version check on the host. For a year that was true of this repository
@@ -369,7 +403,10 @@ fn the_published_module_size_carries_both_measurements() {
 /// would compile and return a plausible wrong value" (`STATUS.md` N1).
 #[test]
 fn every_example_header_is_compiled_by_the_c_host() {
-    let host_c = read("hosts/c-host/host.c");
+    // Comments stripped: a commented-out `#include "shapes.h"` would satisfy the check below
+    // while the C compiler never sees that header — the coverage hole this test exists to
+    // close, reopened in a way that reads as closed. None exists today (measured).
+    let host_c = strip_c_comments(&read("hosts/c-host/host.c"));
     let dir = repo_root().join("examples");
 
     let mut examples: Vec<String> = std::fs::read_dir(&dir)
@@ -414,10 +451,38 @@ fn every_example_header_is_compiled_by_the_c_host() {
 /// Written after exactly that: an em dash in a comment failed the C build.
 #[test]
 fn the_c_sources_are_ascii_only() {
-    // One call per C source compiled under /WX. A second one is a second line.
-    // `runtime/ml_abi.h` is compiled by acceptance D now, so it is covered there.
-    assert_ascii("hosts/c-host/host.c");
-    assert_ascii("hosts/c-host-link/host.c");
+    // DISCOVERED, not listed. The earlier version named the two hosts by hand, so a third C
+    // host would have been added outside the check — and this is a rule about the language
+    // the compiler reads, which applies to every C source, not to two chosen ones.
+    // `runtime/ml_abi.h` is compiled by acceptance D, so it is covered there.
+    let hosts = repo_root().join("hosts");
+    let mut sources: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&hosts).expect("hosts/") {
+        let dir = entry.expect("dir entry").path();
+        if !dir.is_dir() {
+            continue;
+        }
+        for f in std::fs::read_dir(&dir).expect("host dir") {
+            let p = f.expect("dir entry").path();
+            if p.extension().and_then(|e| e.to_str()) == Some("c") {
+                sources.push(p);
+            }
+        }
+    }
+    sources.sort();
+    assert!(
+        sources.len() >= 2,
+        "expected at least the two C hosts under hosts/, found {sources:?}"
+    );
+
+    for src in &sources {
+        let rel = src
+            .strip_prefix(repo_root())
+            .expect("under the repo root")
+            .to_string_lossy()
+            .replace('\\', "/");
+        assert_ascii(&rel);
+    }
 }
 
 /// The link host's whole claim is that it never looks a symbol up by name.

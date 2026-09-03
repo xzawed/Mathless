@@ -84,8 +84,9 @@ through `LoadLibrary` and `GetProcAddress`.
 
 Acceptance A, B, C and D all pass. It compiles, the oracle calls it, the export and size proxies
 hold, and a real C host loads the same module. The stripped `no_std` build is about 9.7 KB and
-exports exactly the two symbols it should. We cross-check that count against `dumpbin /exports`,
-so it does not rest on our own PE reader alone.
+exports exactly the three symbols it should — `mlx_discount` plus the reserved
+`ml_module_abi_version` and `ml_iface_hash`. We cross-check that count against
+`dumpbin /exports`, so it does not rest on our own PE reader alone.
 
 **Delphi is not verified.** Acceptance D covers the C arm only. There is no `dcc64` on the build
 machine, so nothing has ever compiled the generated `.pas`, and it still carries a DRAFT note.

@@ -25,8 +25,11 @@ against the **generated** headers, runs the resulting executable, and asserts on
 - **Anything about Delphi.** There is no `dcc64` here; the generated `.pas` has never been
   compiled and keeps its DRAFT note. D14's official pair is Delphi + C, and only C is proven.
 - Any C compiler other than MSVC, and any target other than Windows x64 (D22).
-- That a host *rejects* an ABI major-version mismatch. That is still a contract on hosts
-  (`HOST_ABI.md` §버전) and is implemented nowhere in this repo.
+- That a *third-party* host rejects an ABI major-version mismatch. This host does reject —
+  `gate()` refuses on a version or fingerprint mismatch before the first call, on every
+  module it loads — but that is one host obeying the contract, not the contract being
+  enforced. Nothing in the emitted module can make an inattentive host check
+  (`HOST_ABI.md` §버전, `SPEC-iface-hash.md` §5.1).
 
 ## Running it
 

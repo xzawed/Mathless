@@ -80,9 +80,9 @@ C 호스트도 마찬가지입니다. 이 호스트는 생성된 헤더를 컴�
 export를 찾습니다.
 
 수용 A, B, C, D가 모두 통과합니다. 컴파일되고, 오라클이 호출하고, export·크기 프록시가 유지되며,
-실제 C 호스트가 같은 모듈을 로드합니다. strip된 `no_std` 빌드는 약 9.7 KB이고 의도한 심볼 두 개만
-export합니다. 이 개수는 `dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지
-않습니다.
+실제 C 호스트가 같은 모듈을 로드합니다. strip된 `no_std` 빌드는 약 9.7 KB이고 의도한 심볼 세 개
+(`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash`)만 export합니다. 이 개수는
+`dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지 않습니다.
 
 **Delphi는 검증되지 않았습니다.** 수용 D는 C 쪽만 닫았습니다. 빌드 머신에 `dcc64`가 없어서 생성된
 `.pas`는 아직 아무도 컴파일한 적이 없고, DRAFT 표기를 그대로 두었습니다. D14가 Delphi를 플래그십

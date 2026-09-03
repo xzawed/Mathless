@@ -19,8 +19,10 @@ extern "C" {
 /* Reserved runtime/version symbol (ml_* namespace). Contract for hosts: resolve
  * this via GetProcAddress (Windows today; there is no .so target yet, so the
  * dlsym path is unexercised) and refuse the module on a major-version
- * mismatch. NOTE: that refusal is a requirement on the host, not yet implemented
- * anywhere in this repo — the Rust oracle only asserts the value matches. */
+ * mismatch. The reference C host does exactly that since 2026-09-02 — it refuses
+ * before the first call on every module it loads (`hosts/c-host/host.c`, gate()).
+ * For a third-party host it stays a CONTRACT: nothing in the module enforces it,
+ * and the Rust oracle only asserts the value matches. */
 uint32_t ml_module_abi_version(void);
 
 /* User module exports use the mlx_ prefix (distinct from the runtime ml_*).

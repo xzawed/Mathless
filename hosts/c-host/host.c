@@ -200,9 +200,12 @@ static int gate(HMODULE m, const char *name, unsigned long expected_abi, uint64_
     return 1;
 }
 
-/* Every module this host loads passes the gate before a single call is made. Before this
- * slice only discount.dll and safe_div.dll compared even the version; the other eleven
- * compared nothing. */
+/* Every module this host loads passes the gate before a single call is made. Before the
+ * fingerprint slice (#105) only discount.dll and safe_div.dll compared even the version;
+ * the other eleven of the thirteen then in the corpus compared nothing. The corpus has
+ * grown since (receipt.dll arrived with #108) and the invariant is the sentence above,
+ * not the count: no module is called until gate() has passed. doc_claims.rs ties the
+ * count stated in SECURITY.md and HOST_ABI.md to the load() calls below. */
 static HMODULE load(const char *dir, const char *name, unsigned long expected_abi,
                     uint64_t pinned) {
     HMODULE m = load_raw(dir, name);

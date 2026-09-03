@@ -495,3 +495,125 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         assert!(!ours.is_empty(), "an empty import set would be suspicious");
     }
 }
+
+/// `SPEC-linkable-bindings` §3-B and §3-D — the OTHER way to consume a module.
+///
+/// Acceptance D proves the dynamic path: `LoadLibrary`, `GetProcAddress`, a function pointer
+/// per export. That was the only consumption path this repository had ever proved, and a C
+/// programmer handed a `.h` and a `.dll` usually does the other thing — include the header,
+/// link the import library, call the function. Until the `.lib` shipped, that did not work.
+///
+/// So this builds `hosts/c-host-link/host.c`, which contains no `LoadLibrary` and no
+/// `GetProcAddress` at all, against the packaged import library, and runs it twice:
+///
+///   1. beside the module it was built for  -> the gate passes and the values are right;
+///   2. beside a DRIFTED module             -> the gate refuses, with a distinct exit code.
+///
+/// The second run is the one that matters. A linked host resolves its symbols either way —
+/// the drifted module exports the same names with the same C types — so nothing but the
+/// fingerprint comparison stands between it and a plausible wrong answer. That is the point
+/// `SPEC-iface-hash` §5.1 makes about hosts that skip the check, and a linked host is more
+/// exposed to it, not less.
+#[test]
+fn a_c_host_that_links_against_the_import_library() {
+    let Some(vcvars) = vcvars64() else {
+        if std::env::var("MATHLESS_GATE_D").as_deref() == Ok("require") {
+            panic!(
+                "MATHLESS_GATE_D=require but MSVC was not found — the link-binding gate \
+                 cannot be verified. Install the VS Build Tools with the C++ workload."
+            );
+        }
+        println!(
+            "GATE_LINK_SKIPPED: no MSVC toolchain found. Link-time binding is NOT verified \
+             by this run."
+        );
+        return;
+    };
+
+    let work = common::TempOut::new("gate_link");
+    let arts = emit_artifacts(
+        include_str!("../../../examples/discount.mls"),
+        "discount",
+        &work,
+    )
+    .expect("emit discount");
+
+    let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("c-host-link")
+        .join("host.c");
+    assert!(host_c.exists(), "missing {}", host_c.display());
+
+    // The whole point: the import library is on the link line, and the header supplies the
+    // declarations. No adapter, no cast, no function-pointer typedef to get wrong.
+    let compile = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /W4 /WX /std:c11 /I\"{}\" \"{}\" /Fe:host_link.exe /Fo:host_link.obj \
+             /link \"{}\"",
+            work.display(),
+            host_c.display(),
+            arts.import_lib.display()
+        ),
+    );
+    assert!(
+        compile.status.success(),
+        "cl could not build a host that links against the import library:\n{}\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let exe = work.join("host_link.exe");
+    let abi = mlc::ML_MODULE_ABI_VERSION;
+
+    // 1. Beside the module it was built for.
+    let ok = run_in_msvc_env(&vcvars, &work, &format!("\"{}\" {abi}", exe.display()));
+    let ok_out = String::from_utf8_lossy(&ok.stdout);
+    assert!(
+        ok.status.success() && ok_out.contains("LINK_GATE_OK"),
+        "the linked host did not run clean: status={:?}\n{ok_out}",
+        ok.status.code()
+    );
+    println!("{}", ok_out.trim_end());
+
+    // 2. Beside a drifted module. Same export names and the same C signature — only a
+    //    parameter NAME and the rate change — so every symbol still resolves and a host that
+    //    skipped the gate would quietly return 50.0 where it expects 90.0. DP-H1 puts
+    //    parameter names in the fingerprint precisely for this.
+    let drift_src = work.join("driftsrc");
+    let drifted = emit_artifacts(
+        "export fn discount(price: f64, member: bool) -> f64 {\n\
+         \x20 if member { return price * 0.5 }\n\
+         \x20 return price\n\
+         }\n",
+        "discount",
+        &drift_src,
+    )
+    .expect("emit drifted discount");
+
+    let drift_run = work.join("driftrun");
+    std::fs::create_dir_all(&drift_run).expect("create drift run dir");
+    std::fs::copy(&exe, drift_run.join("host_link.exe")).expect("copy exe");
+    std::fs::copy(&drifted.dll, drift_run.join("discount.dll")).expect("copy drifted dll");
+
+    let refused = run_in_msvc_env(
+        &vcvars,
+        &drift_run,
+        &format!("\"{}\" {abi}", drift_run.join("host_link.exe").display()),
+    );
+    let refused_out = String::from_utf8_lossy(&refused.stdout);
+    assert_eq!(
+        refused.status.code(),
+        Some(3),
+        "the linked host must refuse a drifted module with the fingerprint exit code, \
+         got {:?}\n{refused_out}",
+        refused.status.code()
+    );
+    assert!(
+        refused_out.contains("refuse: interface"),
+        "the refusal must say which check failed:\n{refused_out}"
+    );
+    println!("{}", refused_out.trim_end());
+    println!("GATE_LINK_OK: link-time binding verified, and a drifted module refused.");
+}

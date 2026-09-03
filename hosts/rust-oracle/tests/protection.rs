@@ -37,7 +37,9 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     // Isolate the build tree per test process (build_cdylib expects a unique workdir).
     let workdir = std::env::temp_dir().join(format!("mlc_w6_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&workdir);
-    let dll = build_cdylib(&rust, "discount_w6", &workdir).expect("build");
+    let dll = build_cdylib(&rust, "discount_w6", &workdir)
+        .expect("build")
+        .dll;
 
     // Export table = exactly the two reserved symbols + the mlx_ function (D18).
     // `ml_iface_hash` joined `ml_module_abi_version` with the interface-fingerprint slice;

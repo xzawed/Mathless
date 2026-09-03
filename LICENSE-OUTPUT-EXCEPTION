@@ -18,6 +18,7 @@ Version 1.0, 2026-09-02
      - the native module (`.dll`),
      - the generated C header (`.h`),
      - the generated Delphi import unit (`.pas`),
+     - the generated MSVC import library (`.lib`),
      - the intermediate Rust source `mlc` emits on the way to the module,
 
    together with any future generated artifact of the same kind.

@@ -86,7 +86,10 @@ fn a_successful_build_still_produces_a_dll() {
         &d,
     )
     .expect("a valid crate still builds");
-    assert!(dll.exists(), "{}", dll.display());
+    assert!(dll.dll.exists(), "{}", dll.dll.display());
+    // The import library is the linker's second output for the same invocation, and
+    // `build_cdylib` fails if it is missing — so a valid crate produces both.
+    assert!(dll.import_lib.exists(), "{}", dll.import_lib.display());
 
     let _ = std::fs::remove_dir_all(&d);
 }

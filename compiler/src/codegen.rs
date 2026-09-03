@@ -935,11 +935,24 @@ fn op_str(op: IrBinOp) -> &'static str {
 /// This is a caller-supplied-dir primitive: the caller must pass a **unique** `workdir` per
 /// concurrent invocation (`emit_artifacts` uses a private temp tree; the oracle tests
 /// namespace theirs per process). Two calls sharing a `workdir` would race.
+/// What one cdylib build leaves behind, inside the private build tree.
+///
+/// Both are the linker's output for the same invocation, so they are returned together
+/// rather than one being reconstructed from the other's path by the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CdylibArtifacts {
+    /// The module itself, `<workdir>/<crate>/target/release/<crate>.dll`.
+    pub dll: PathBuf,
+    /// The MSVC import library, `…/<crate>.dll.lib`. Lets a host bind at LINK time from the
+    /// generated header, instead of resolving every symbol through `GetProcAddress`.
+    pub import_lib: PathBuf,
+}
+
 pub fn build_cdylib(
     rust_src: &str,
     crate_name: &str,
     workdir: &Path,
-) -> Result<PathBuf, CodegenError> {
+) -> Result<CdylibArtifacts, CodegenError> {
     let crate_dir = workdir.join(crate_name);
     std::fs::create_dir_all(crate_dir.join("src"))
         .map_err(|e| CodegenError::new(format!("create crate dir: {e}")))?;
@@ -977,17 +990,34 @@ pub fn build_cdylib(
         )));
     }
 
-    let dll = crate_dir
-        .join("target")
-        .join("release")
-        .join(format!("{crate_name}.dll"));
+    let release = crate_dir.join("target").join("release");
+    let dll = release.join(format!("{crate_name}.dll"));
     if !dll.exists() {
         return Err(CodegenError::new(format!(
             "expected dll not found: {}",
             dll.display()
         )));
     }
-    Ok(dll)
+
+    // The import library the linker produced alongside the DLL. Named from `crate_name`
+    // rather than derived from `dll` — `Path::with_extension("dll.lib")` happens to work
+    // only because it re-embeds the `dll.`, and that is a reconstruction, not a contract
+    // (Grok raised this while planning the slice).
+    //
+    // rustc passes `/IMPLIB:<crate>.dll.lib` for a cdylib on this target, which is why the
+    // name carries both extensions: it keeps the import library from colliding with the
+    // `<crate>.lib` a staticlib would produce. The published artifact drops back to
+    // `<module>.lib` in `emit` — cargo's name is a build detail, not a deliverable.
+    let import_lib = release.join(format!("{crate_name}.dll.lib"));
+    if !import_lib.exists() {
+        return Err(CodegenError::new(format!(
+            "the cdylib built but its import library is missing: {}. Without it a host can \
+             only bind through GetProcAddress/dlsym, never by linking the generated header",
+            import_lib.display()
+        )));
+    }
+
+    Ok(CdylibArtifacts { dll, import_lib })
 }
 
 #[cfg(test)]

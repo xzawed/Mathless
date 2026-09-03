@@ -72,8 +72,9 @@ out-param으로 내려가며, 값을 여러 개 돌려주려면 `out` 파라미�
 `fn`끼리 서로 호출할 수 있지만, 재귀는 컴파일 타임에 거부합니다. 정본 목록은
 [docs/LANGUAGE.md](docs/LANGUAGE.md)에 있습니다.
 
-**CLI.** `mlc build <file.mls> -o <dir>`가 세 파일을 나란히 만듭니다. `.dll` 모듈, `.h` C 헤더,
-그리고 `.pas` Delphi import unit입니다.
+**CLI.** `mlc build <file.mls> -o <dir>`가 네 파일을 나란히 만듭니다. `.dll` 모듈, `.h` C 헤더,
+`.pas` Delphi import unit, 그리고 `.lib` 임포트 라이브러리입니다 — 헤더를 include하고 링크하면
+실행 시점에 심볼을 하나씩 찾지 않아도 됩니다.
 
 **측정된 호스트 경로 두 개.** Rust `kernel32` 오라클이 모듈을 로드해 호출합니다. MSVC로 빌드한 실제
 C 호스트도 마찬가지입니다. 이 호스트는 생성된 헤더를 컴파일하고 `LoadLibrary`와 `GetProcAddress`로
@@ -105,6 +106,7 @@ mlc build discount.mls -o out/
 #  out/discount.dll   네이티브 모듈 — export: mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C 헤더
 #  out/discount.pas   Delphi import unit
+#  out/discount.lib   MSVC 임포트 라이브러리 (링크 타임 바인딩)
 ```
 
 C 호스트가 `discount.dll`을 로드해 `mlx_discount(100.0, true)`를 호출하면 `90.0`을 받습니다.

@@ -1,6 +1,7 @@
-//! STEP 1 (Gate-D prep): package a `.mls` module into the three consumable artifacts on
+//! STEP 1 (Gate-D prep): package a `.mls` module into the four consumable artifacts on
 //! disk — `<name>.dll` (native module), `<name>.h` (C header), `<name>.pas` (Delphi import
-//! unit). This is the library entrypoint behind the `mlc build` CLI (`src/main.rs`).
+//! unit), `<name>.lib` (MSVC import library). This is the library entrypoint behind the
+//! `mlc build` CLI (`src/main.rs`).
 //!
 //! Honesty split: producing the `.dll` and loading it via the Rust oracle is E2 (see
 //! `hosts/rust-oracle/tests/emit_artifacts.rs`). The **`.h` is now E2 as well** — a real C
@@ -13,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{codegen, compile_to_ir, header, CompileError};
 
-/// The three files [`emit_artifacts`] writes, by `out_dir`-joined path.
+/// The four files [`emit_artifacts`] writes, by `out_dir`-joined path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Artifacts {
     /// The native module, `<out_dir>/<module>.dll`.
@@ -22,6 +23,13 @@ pub struct Artifacts {
     pub header: PathBuf,
     /// The Delphi import unit, `<out_dir>/<module>.pas`.
     pub delphi_unit: PathBuf,
+    /// The MSVC import library, `<out_dir>/<module>.lib`.
+    ///
+    /// The fourth artifact, added by `SPEC-linkable-bindings`. With it a C host can
+    /// `#include` the generated header and LINK, instead of resolving every symbol through
+    /// `GetProcAddress`. Published as `<module>.lib`; cargo's own `<crate>.dll.lib` is a
+    /// build detail that does not leave the build tree.
+    pub import_lib: PathBuf,
 }
 
 /// Why packaging failed: the source did not compile, or an I/O step (build, copy, write)
@@ -146,7 +154,7 @@ fn check_module_name(name: &str) -> Result<(), EmitError> {
     {
         return Err(EmitError::InvalidModuleName(format!(
             "invalid module name '{name}' — a reserved Windows device name; it becomes the file \
-             names '{name}.dll' / '.h' / '.pas', which the OS resolves to the device"
+             names '{name}.dll' / '.h' / '.pas' / '.lib', which the OS resolves to the device"
         )));
     }
     Ok(())
@@ -163,7 +171,7 @@ static WINDOWS_DEVICE_NAMES: &[&str] = &[
 ///
 /// Each destination that already exists is moved aside into `stage` first, so a later
 /// failure can put it back. This is the "all-or-nothing" part: by the time it runs, all
-/// three files exist complete in `stage`, so the only remaining failure window is the moves
+/// four files exist complete in `stage`, so the only remaining failure window is the moves
 /// themselves — and those are undone.
 ///
 /// If a restore *itself* fails, the displaced file is still sitting in `stage`, and silently
@@ -288,6 +296,7 @@ pub fn emit_artifacts(
         format!("{module_name}.dll"),
         format!("{module_name}.h"),
         format!("{module_name}.pas"),
+        format!("{module_name}.lib"),
     ];
 
     let staged = || -> Result<(), EmitError> {
@@ -301,9 +310,18 @@ pub fn emit_artifacts(
                 .map_err(|e| EmitError::Compile(CompileError::Codegen(e)))?;
             let dest = stage.join(&names[0]);
             io(
-                std::fs::copy(&built, &dest),
+                std::fs::copy(&built.dll, &dest),
                 "copying the module into",
                 &dest,
+            )?;
+            // The import library comes out of the same build tree, and that tree is deleted
+            // as soon as this closure returns — so it is copied here, beside the DLL, not
+            // later from the caller.
+            let lib_dest = stage.join(&names[3]);
+            io(
+                std::fs::copy(&built.import_lib, &lib_dest),
+                "copying the import library into",
+                &lib_dest,
             )?;
             Ok(())
         };
@@ -344,6 +362,7 @@ pub fn emit_artifacts(
         dll: out_dir.join(&names[0]),
         header: out_dir.join(&names[1]),
         delphi_unit: out_dir.join(&names[2]),
+        import_lib: out_dir.join(&names[3]),
     })
 }
 

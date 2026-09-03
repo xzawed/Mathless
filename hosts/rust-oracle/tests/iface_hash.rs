@@ -39,7 +39,9 @@ fn build(src: &str, tag: &str) -> Built {
     let rust = mlc::codegen::emit(&ir).expect("codegen");
     let dir = std::env::temp_dir().join(format!("mlc_iface_{}_{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let dll = build_cdylib(&rust, &format!("iface_{tag}"), &dir).expect("build cdylib");
+    let dll = build_cdylib(&rust, &format!("iface_{tag}"), &dir)
+        .expect("build cdylib")
+        .dll;
     Built { dir, dll, expected }
 }
 

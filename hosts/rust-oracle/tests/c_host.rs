@@ -328,6 +328,38 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         String::from_utf8_lossy(&abi_compile.stderr)
     );
 
+    // `SPEC-linkable-bindings` §3-A: the import library is real, checked with the linker's
+    // own tool rather than by trusting that a non-empty file is an archive. This is the same
+    // discipline as the export set — measured with `dumpbin`, not only with our PE reader.
+    //
+    // `/exports` and not `/linkermember`, and that is measured rather than assumed: on
+    // `discount.lib` from a real `mlc build`, `dumpbin /nologo /exports` exits 0 and prints
+    // exactly `ml_iface_hash`, `ml_module_abi_version`, `mlx_discount`. (`/linkermember:1`
+    // also works, listing `mlx_discount` and `__imp_mlx_discount`, but it reports archive
+    // members rather than the export set this asserts.) Grok flagged the mode as a risk
+    // during review; the run above is what settled it.
+    let implib_dump = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "dumpbin /nologo /exports \"{}\"",
+            discount.import_lib.display()
+        ),
+    );
+    assert!(
+        implib_dump.status.success(),
+        "dumpbin could not read the packaged import library: {}",
+        String::from_utf8_lossy(&implib_dump.stderr)
+    );
+    let implib_text = String::from_utf8_lossy(&implib_dump.stdout);
+    for symbol in ["mlx_discount", "ml_module_abi_version", "ml_iface_hash"] {
+        assert!(
+            implib_text.contains(symbol),
+            "the import library does not offer '{symbol}' to the linker, so a host that \
+             includes the header and links would fail to resolve it:\n{implib_text}"
+        );
+    }
+
     // Compile the C host against the GENERATED headers (`/I` the artifact dir).
     let compile = run_in_msvc_env(
         &vcvars,

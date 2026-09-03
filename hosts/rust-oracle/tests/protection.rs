@@ -78,8 +78,10 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     //
     // The bound is a range because the exact value is not portable — see the constants
     // above, where CI measured 9,216 B against this machine's 9,728 B on the same pinned
-    // toolchain. The width is four `FileAlignment` blocks either side of what has actually
-    // been observed, which still fails long before a module doubles.
+    // toolchain. The width is two `FileAlignment` blocks below the smaller observation and
+    // five above the larger — not symmetric, and the earlier comment here said "four either
+    // side", which was simply wrong arithmetic (an audit caught it). What the bound is for
+    // is unchanged: it still fails long before a module doubles.
     let size = size as u64;
     assert!(
         (DISCOUNT_DLL_MIN..=DISCOUNT_DLL_MAX).contains(&size),

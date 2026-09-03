@@ -39,7 +39,8 @@ MATHLESS_GATE_D=require cargo test -p ml_oracle --test c_host -- --nocapture
 ```
 
 The harness lives beside acceptance D in `hosts/rust-oracle/tests/c_host.rs`
-(`a_c_host_that_links_against_the_import_library`) so both hosts share one MSVC session.
+(`a_c_host_that_links_against_the_import_library`). It is a SEPARATE `#[test]` with its own
+temp tree, so the two hosts do not share a working directory — they run concurrently.
 A run that prints `GATE_LINK_OK` closed the gate; `GATE_LINK_SKIPPED` did not.
 
 ## Exit codes

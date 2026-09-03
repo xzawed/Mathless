@@ -79,12 +79,16 @@ other, but recursion is rejected at compile time.
 a `.h` C header, a `.pas` Delphi import unit, and a `.lib` import library so a C host can
 link against the header instead of resolving every symbol at run time.
 
-**Two host paths, both measured.** A Rust `kernel32` oracle loads the module and calls it. So
+**Three host paths, all measured.** A Rust `kernel32` oracle loads the module and calls it. So
 does a real C host built with MSVC, which compiles the generated header and resolves the exports
-through `LoadLibrary` and `GetProcAddress`.
+through `LoadLibrary` and `GetProcAddress`. And a second C host does it the ordinary way —
+`#include` the header, link the packaged `.lib`, call the function, with no run-time lookup at
+all. Both C hosts check the module's interface fingerprint first and refuse one that drifted.
 
 Acceptance A, B, C and D all pass. It compiles, the oracle calls it, the export and size proxies
-hold, and a real C host loads the same module. The stripped `no_std` build is about 9.7 KB and
+hold, and a real C host loads the same module. The stripped `no_std` build is about 9.0-9.5 KB —
+the exact byte count is machine-dependent (measured: 9,728 B here, 9,216 B on GitHub's
+`windows-latest`, same pinned rustc; the pin covers rustc, not the MSVC linker) — and it
 exports exactly the three symbols it should — `mlx_discount` plus the reserved
 `ml_module_abi_version` and `ml_iface_hash`. We cross-check that count against
 `dumpbin /exports`, so it does not rest on our own PE reader alone.
@@ -139,7 +143,7 @@ itself is never rebuilt.
 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | The C ABI, host integration, and the liveness contract |
 | [docs/SECURITY.md](docs/SECURITY.md) | Protection goals, stages, and the measured proxies |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions (D01–D22) and rejected alternatives |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions (D01–D23) and rejected alternatives |
 | [docs/slices/](docs/slices/README.md) | Per-feature SPECs — the unit of work — and their status |
 
 ## Contributing

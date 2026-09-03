@@ -200,6 +200,38 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
     }
 }
 
+/// The one piece of prose that travels WITH the artifact.
+///
+/// Every generated header carries a note saying what has and has not been verified. For a
+/// whole slice after link-time binding was verified with a measured run, that note still
+/// told each user "Not verified: … link-time binding via an import library". A stale
+/// document is bad; a stale sentence compiled into the product's own output is worse,
+/// because it reaches people who never open this repository.
+///
+/// Conditional on the evidence existing, the same shape as the ABI-refusal guard: if the
+/// link host is deleted, this stops demanding the claim.
+#[test]
+fn the_generated_header_does_not_deny_a_verification_that_exists() {
+    let link_host = repo_root().join("hosts").join("c-host-link").join("host.c");
+    if !link_host.exists() {
+        return;
+    }
+    let header_rs = read("compiler/src/header.rs");
+
+    assert!(
+        !header_rs.contains("link-time binding via an"),
+        "compiler/src/header.rs still emits 'Not verified: … link-time binding via an import \
+         library' into every generated header, but hosts/c-host-link/host.c links against \
+         the packaged .lib and acceptance D runs it"
+    );
+    assert!(
+        header_rs.contains("hosts/c-host-link"),
+        "the generated header's verification note does not mention the link host. Dropping \
+         the denial is not enough — the note is what a user reads to know which consumption \
+         paths were actually proved"
+    );
+}
+
 /// Thousands separators the way the documents write them: `9728` -> `"9,728"`.
 fn with_commas(n: u64) -> String {
     let digits = n.to_string();
@@ -376,7 +408,16 @@ fn the_published_module_size_carries_both_measurements() {
         u64_const(&protection, "DISCOUNT_DLL_MEASURED_CI"),
     ];
 
-    for doc in ["docs/SECURITY.md", "docs/STATUS.md"] {
+    // The READMEs were NOT in this list when the size guard was written, and both kept
+    // publishing "about 9.7 KB" — the dev machine's value alone — for a slice after the
+    // measurement that disproved it. They are the outermost documents in a public
+    // repository, so leaving them out was the wrong half to leave out.
+    for doc in [
+        "docs/SECURITY.md",
+        "docs/STATUS.md",
+        "README.md",
+        "README.ko.md",
+    ] {
         let text = read(doc);
         for n in observed {
             let stated = with_commas(n);

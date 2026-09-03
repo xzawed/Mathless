@@ -417,6 +417,72 @@ fn the_c_sources_are_ascii_only() {
     // One call per C source compiled under /WX. A second one is a second line.
     // `runtime/ml_abi.h` is compiled by acceptance D now, so it is covered there.
     assert_ascii("hosts/c-host/host.c");
+    assert_ascii("hosts/c-host-link/host.c");
+}
+
+/// The link host's whole claim is that it never looks a symbol up by name.
+///
+/// `SPEC-linkable-bindings` §3-B says the host binds through the import library "without
+/// ever calling GetProcAddress". A test that only checks the program's OUTPUT cannot tell
+/// the difference — a host that quietly fell back to dynamic loading would print the same
+/// `LINK_GATE_OK`. So the claim is pinned where it can be checked: in the source.
+#[test]
+fn the_link_host_never_resolves_a_symbol_by_name() {
+    // CODE, not prose. The first version of this test failed on the file's own comment
+    // saying "there is deliberately no GetProcAddress here" — a guard that forbids naming
+    // the thing you are not doing punishes the explanation, so the comments come out first.
+    let host = strip_c_comments(&read("hosts/c-host-link/host.c"));
+    for dynamic in ["GetProcAddress", "LoadLibrary", "FreeLibrary", "HMODULE"] {
+        assert!(
+            !host.contains(dynamic),
+            "hosts/c-host-link/host.c mentions '{dynamic}'. That host exists to prove \
+             LINK-time binding; if it resolves anything dynamically it is proving the thing \
+             hosts/c-host already proves"
+        );
+    }
+    // And it really does call the module and the gate, rather than being an empty shell
+    // that trivially satisfies the check above.
+    for expected in [
+        "mlx_discount(",
+        "ml_iface_hash()",
+        "ml_module_abi_version()",
+    ] {
+        assert!(
+            host.contains(expected),
+            "hosts/c-host-link/host.c does not call '{expected}' — it would pass the \
+             no-dynamic-loading check by doing nothing"
+        );
+    }
+}
+
+/// C source with `/* … */` and `// …` removed, so a check can look at what the code does
+/// rather than at what its comments talk about.
+///
+/// Deliberately naive: it does not understand string literals, which is fine for the one
+/// file it is used on (no `//` or `/*` inside any string there) and would be over-building
+/// for anything this test needs.
+fn strip_c_comments(src: &str) -> String {
+    let bytes = src.as_bytes();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"/*") {
+            match src[i + 2..].find("*/") {
+                Some(end) => i += 2 + end + 2,
+                None => break,
+            }
+        } else if bytes[i..].starts_with(b"//") {
+            match src[i..].find('\n') {
+                Some(end) => i += end,
+                None => break,
+            }
+        } else {
+            let ch = src[i..].chars().next().expect("char boundary");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
 }
 
 fn assert_ascii(rel: &str) {

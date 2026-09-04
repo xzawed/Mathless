@@ -109,7 +109,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 mlc build discount.mls -o out/
 #  out/discount.dll   네이티브 모듈 — export: mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C 헤더
-#  out/discount.pas   Delphi import unit
+#  out/discount.pas   Delphi import unit (DRAFT: Delphi host-load not verified — D14 gate BLOCKED)
 #  out/discount.lib   MSVC 임포트 라이브러리 (링크 타임 바인딩)
 ```
 

@@ -521,7 +521,18 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
         "recovered only {exts:?} from emit.rs — has the array's shape changed?"
     );
 
-    for doc in ["README.md", "README.ko.md", "docs/HOST_ABI.md"] {
+    // Three documents was the set when this was written, and three of the files that describe
+    // the same artifacts sat outside it (STATUS §9-A A2). `LICENSE-OUTPUT-EXCEPTION` is the
+    // sharpest of them: it ENUMERATES the artifacts and grants rights over them, so an
+    // artifact missing from that list is a legal sentence that does not cover what `mlc`
+    // hands the user. `docs/STATUS.md` §1 states the set as current fact.
+    for doc in [
+        "README.md",
+        "README.ko.md",
+        "docs/HOST_ABI.md",
+        "LICENSE-OUTPUT-EXCEPTION",
+        "docs/STATUS.md",
+    ] {
         let text = read(doc);
         for ext in &exts {
             assert!(
@@ -530,6 +541,74 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
                  emit.rs packages. The artifact set is {exts:?}"
             );
         }
+    }
+
+    // And the CLI itself, which is the one place a user is TOLD what was written. It cannot be
+    // checked the same way — the paths come from `arts.<field>.display()`, not from a literal
+    // extension — so the check is that it prints one line per artifact.
+    let main_rs = read("compiler/src/main.rs");
+    let reported = [
+        "arts.dll",
+        "arts.header",
+        "arts.delphi_unit",
+        "arts.import_lib",
+    ]
+    .iter()
+    .filter(|f| main_rs.contains(&format!("{f}.display()")))
+    .count();
+    assert_eq!(
+        reported,
+        exts.len(),
+        "`mlc build` writes {} artifacts {exts:?} but its success output names {reported}. \
+         A file written and not reported is one the user does not know they have",
+        exts.len()
+    );
+}
+
+/// The README's `mlc build` transcript, against what the CLI actually prints.
+///
+/// The block is an illustration, not a capture, and the filenames matched — but the note on
+/// the `.pas` line did not travel with it, and that note is the one that says the Delphi
+/// binding is unverified. A README that lists the unit with no qualifier reads as "this
+/// works"; `mlc` itself is careful to say otherwise on that exact line (STATUS §9-A A11).
+///
+/// Pinned to the `.pas` LINE, not the block: appended to any other line the note would still
+/// be "in" the block while saying nothing about the unit.
+#[test]
+fn the_readme_transcripts_carry_the_draft_note_the_cli_prints() {
+    // Read out of the `println!` that prints the DELPHI UNIT, not out of the file at large.
+    // A bare search would keep passing on a literal left behind after the print was deleted —
+    // the same "matched the emitter's source, not what it emits" hole #130 fixed for the
+    // generated header (Grok raised it here). If that println! goes, this test stops finding
+    // its anchor and fails, which is the intended behaviour: the note is a claim about output.
+    let main_rs = read("compiler/src/main.rs");
+    let at = main_rs
+        .find("arts.delphi_unit.display()")
+        .expect("compiler/src/main.rs no longer prints the Delphi unit's path");
+    let from = main_rs[..at]
+        .rfind("println!(")
+        .expect("the Delphi unit's path is no longer printed by a println!");
+    let block = &main_rs[from..at];
+    let i = block
+        .find("(DRAFT: ")
+        .expect("the line `mlc` prints for the .pas no longer carries a (DRAFT: …) note");
+    let note: String = block[i..]
+        .chars()
+        .take_while(|c| *c != ')' && *c != '\n')
+        .collect();
+    let note = format!("{note})");
+
+    for doc in ["README.md", "README.ko.md"] {
+        let text = read(doc);
+        let line = text
+            .lines()
+            .find(|l| l.contains("discount.pas"))
+            .unwrap_or_else(|| panic!("{doc} no longer shows a `mlc build` transcript"));
+        assert!(
+            line.contains(&note),
+            "{doc}'s transcript line for the Delphi unit is\n  {line}\nbut `mlc` prints\n  \
+             {note}\nThe note is what tells a reader the Delphi binding is unverified"
+        );
     }
 }
 

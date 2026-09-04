@@ -845,3 +845,44 @@ fn assert_ascii(rel: &str) {
         );
     }
 }
+
+/// The one directory `mlc` can leave behind, and whether the READMEs admit it.
+///
+/// `emit_artifacts` stages its four files inside `out_dir` so the set lands all-or-nothing,
+/// and removes the stage on success and on failure. A process that is KILLED never gets to,
+/// and STATUS §5-5.9 recorded that "nowhere says so" — recorded, but not measured, for four
+/// sessions.
+///
+/// It is measured now: killing `mlc build` as soon as the stage appears leaves
+/// `.mlc-stage-<pid>-<n>` in the output directory, and a later build into the same directory
+/// still succeeds and writes all four artifacts. So it is litter, not a broken state — which
+/// is worth saying out loud, because a user who finds it cannot tell those apart.
+///
+/// The prefix is read out of the emitter rather than typed here, so renaming the directory
+/// makes this fail instead of quietly leaving both READMEs describing a name nothing creates.
+#[test]
+fn the_readmes_admit_the_staging_directory_a_killed_build_leaves() {
+    let emit_rs = read("compiler/src/emit.rs");
+    let marker = "\".mlc-stage-";
+    let i = emit_rs
+        .find(marker)
+        .expect("emit.rs no longer builds a `.mlc-stage-` name — this test reads the prefix");
+    let prefix: String = emit_rs[i + 1..]
+        .chars()
+        .take_while(|c| *c != '{' && *c != '"')
+        .collect();
+    assert!(
+        prefix.starts_with(".mlc-stage-"),
+        "recovered {prefix:?} from emit.rs, which is not the staging prefix"
+    );
+
+    for doc in ["README.md", "README.ko.md"] {
+        let text = read(doc);
+        assert!(
+            text.contains(&prefix),
+            "{doc} never mentions `{prefix}`, the directory `mlc build` leaves in the user's \
+             output directory when it is killed. A user who finds it cannot tell litter from \
+             a broken build unless a document says which it is"
+        );
+    }
+}

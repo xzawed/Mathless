@@ -132,6 +132,16 @@ itself is never rebuilt.
   thread if your host has to stay responsive.
 - **Names are provisional.** The `.mls` and `.mll` extensions, and the C API names, may still
   change.
+- **A killed build leaves a staging directory behind.** `mlc build` stages its four files in a
+  `.mlc-stage-<pid>-<n>` directory inside the output directory, so that either all four land or
+  none do. It removes that directory on success *and* on failure — but a process that is killed
+  outright never gets to. Measured: that leftover is inert, and the next build into the same
+  directory succeeds normally, so it is litter you can delete.
+  **One exception, and `mlc` says so when it happens:** if a failed build could not put your
+  previous artifacts back, it *keeps* the staging directory on purpose and prints
+  `… could NOT be put back — N file(s) are left in <dir> and must be moved back by hand`.
+  That directory holds the only copy of those files. Delete a `.mlc-stage-*` only when no such
+  message was printed.
 
 ## Documentation
 

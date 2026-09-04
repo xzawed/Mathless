@@ -34,6 +34,18 @@ fn entries(dir: &Path) -> Vec<String> {
     v
 }
 
+/// `emit_artifacts` keeps its staging directory in exactly one case — a rollback it could not
+/// complete, where the stage holds the only copy of a displaced file. Every other path, error
+/// paths included, must remove it. That invariant had no test on the error side (STATUS
+/// §9-A A7), and a stage left behind in `out_dir` is litter the user has to recognise as ours.
+///
+/// `#[cfg(windows)]` because only the Windows tests reach a failure that stages anything;
+/// without it the ubuntu job fails on `dead_code` under `clippy -D warnings`.
+#[cfg(windows)]
+fn no_stage_left(dir: &Path) -> bool {
+    entries(dir).iter().all(|e| !e.starts_with(".mlc-stage-"))
+}
+
 #[test]
 fn rejects_a_module_name_that_is_a_target_reserved_word() {
     // `if.mls` -> crate named `if` -> cargo rejects it as a Rust keyword, far from the cause.
@@ -106,6 +118,11 @@ fn a_failure_moving_the_bindings_leaves_no_partial_output() {
         "nor a lone .pas: {:?}",
         entries(&out)
     );
+    assert!(
+        no_stage_left(&out),
+        "the staging directory must be removed on the error path too: {:?}",
+        entries(&out)
+    );
 }
 
 #[cfg(windows)]
@@ -166,6 +183,93 @@ fn a_failed_rebuild_does_not_destroy_the_previous_good_artifacts() {
     assert_eq!(
         header_now, old_header,
         "the failed rebuild must not leave its own half-written .h behind"
+    );
+    assert!(
+        no_stage_left(&out),
+        "the staging directory must be removed after a completed rollback: {:?}",
+        entries(&out)
+    );
+}
+
+/// The deepest rollback there is: the LAST artifact fails to move.
+///
+/// `.lib` is `names[3]` in `emit_artifacts`, so a failure there has three completed moves to
+/// undo, each with a displaced predecessor to put back. Every other error-path test in this
+/// file breaks `.h` (index 1) or `.pas` (index 2) — measured, and it is the whole of
+/// STATUS §9-A A7: the branch that unwinds a full set had never run.
+///
+/// The `.lib` also arrived last, in the linkable-bindings slice, which is exactly the kind of
+/// addition that extends a loop without extending the test that covers it.
+#[cfg(windows)]
+#[test]
+fn a_failure_moving_the_import_library_unwinds_all_three_earlier_moves() {
+    // The name of this test claims `.lib` is the LAST move, and that is only true while it is
+    // last in `emit_artifacts`' `names`. Append a fifth artifact after it and this test stays
+    // green while quietly ceasing to cover the deepest unwind — the same shape as the guards
+    // §9-A is about (Grok raised it verifying this change), so the order is read, not assumed.
+    let emit_rs = include_str!("../src/emit.rs");
+    let from = emit_rs
+        .find("let names = [")
+        .expect("emit.rs no longer has the `names` array this test reads the order from");
+    let block = &emit_rs[from..from + emit_rs[from..].find("];").expect("unterminated")];
+    let marker = "format!(\"{module_name}";
+    let exts: Vec<&str> = block
+        .match_indices(marker)
+        .filter_map(|(i, _)| {
+            let rest = &block[i + marker.len()..];
+            rest.find('"').map(|c| &rest[..c])
+        })
+        .collect();
+    assert_eq!(
+        exts.last().copied(),
+        Some(".lib"),
+        "the artifact published LAST is no longer `.lib` but {:?}; this test breaks the last \
+         destination on purpose, so point it at the new one",
+        exts.last()
+    );
+
+    let out = fresh_out("lastmove");
+    emit_artifacts(SRC, "lmod", &out).expect("first emit");
+    let old_dll = std::fs::read(out.join("lmod.dll")).unwrap();
+    let old_header = std::fs::read_to_string(out.join("lmod.h")).unwrap();
+    let old_unit = std::fs::read_to_string(out.join("lmod.pas")).unwrap();
+    assert!(old_header.contains("mlx_f"), "{old_header}");
+
+    // Break only the LAST destination: a directory cannot be renamed over.
+    std::fs::remove_file(out.join("lmod.lib")).unwrap();
+    std::fs::create_dir(out.join("lmod.lib")).unwrap();
+
+    // DIFFERENT source, so a missing rollback is visible in the CONTENTS. With identical
+    // output the assertions below would pass with no rollback at all — the trap the `.pas`
+    // test next door documents.
+    let err = emit_artifacts("export fn g(a: f64) -> f64 { return a }", "lmod", &out).unwrap_err();
+    assert!(matches!(err, mlc::emit::EmitError::Io { .. }), "{err:?}");
+    assert!(
+        err.to_string().contains("lmod.lib"),
+        "the message must name the artifact that failed: {err}"
+    );
+
+    // Compared as a boolean, not with assert_eq!: the DLL is ~9 KB and a failing assert_eq!
+    // prints both vectors as decimal bytes, which buries the sentence that says what broke.
+    assert!(
+        std::fs::read(out.join("lmod.dll")).expect("the previous .dll") == old_dll,
+        "move 1 of 3 (.dll) must be undone — the .dll in place is not the one that was there \
+         before the failed rebuild"
+    );
+    assert_eq!(
+        std::fs::read_to_string(out.join("lmod.h")).expect("the previous .h"),
+        old_header,
+        "move 2 of 3 (.h) must be undone"
+    );
+    assert_eq!(
+        std::fs::read_to_string(out.join("lmod.pas")).expect("the previous .pas"),
+        old_unit,
+        "move 3 of 3 (.pas) must be undone"
+    );
+    assert!(
+        no_stage_left(&out),
+        "a completed rollback must take its staging directory with it: {:?}",
+        entries(&out)
     );
 }
 

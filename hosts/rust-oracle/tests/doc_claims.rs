@@ -232,6 +232,45 @@ fn the_generated_header_does_not_deny_a_verification_that_exists() {
     );
 }
 
+/// The error constant carries its module, and the emitter cannot quietly drop it again.
+///
+/// `SPEC-error-prefix` §3-F. The unprefixed `ML_ERR_<NAME>` survived four slices while the
+/// fingerprint constant beside it was given a prefix *because this debt was recorded* — the
+/// rule was decided and simply not applied here. This is the assertion that keeps it applied.
+///
+/// It reads the emitter, not the output: a golden can be re-blessed, and a re-bless that
+/// silently accepted a bare `ML_ERR_` is exactly the failure mode this file exists for.
+#[test]
+fn the_emitter_prefixes_error_constants_with_the_module() {
+    let header_rs = read("compiler/src/header.rs");
+
+    // The format strings that build the two bindings' constant lines.
+    for emitted in ["\"#define {} {}\"", "\"  {} = {};\""] {
+        assert!(
+            header_rs.contains(emitted),
+            "compiler/src/header.rs no longer emits {emitted} — if the shape changed, this \
+             test's idea of where the error constant is built is stale"
+        );
+    }
+    assert!(
+        header_rs.contains("fn error_macro(dll_name: &str, error_name: &str)"),
+        "header.rs no longer routes error constants through `error_macro`, which is the one \
+         place the module prefix is applied (DP-Q1)"
+    );
+    assert!(
+        header_rs.contains("format!(\"ML_{}_ERR_{}\", macro_stem(dll_name), error_name)"),
+        "`error_macro` no longer produces ML_<MODULE>_ERR_<NAME>. Two modules that both \
+         declare a common error name would collide again — measured as C4005 under /W4 /WX \
+         before Q14 was closed"
+    );
+    // The guard that must NOT be added (DP-Q3): it would let the first header win and turn
+    // that loud C4005 into a silent wrong meaning.
+    assert!(
+        !header_rs.contains("#ifndef ML_{}_ERR"),
+        "an #ifndef guard around a per-module error constant makes a genuine conflict silent"
+    );
+}
+
 /// Thousands separators the way the documents write them: `9728` -> `"9,728"`.
 fn with_commas(n: u64) -> String {
     let digits = n.to_string();

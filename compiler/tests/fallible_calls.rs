@@ -251,7 +251,7 @@ fn no_existing_example_changes_its_bindings() {
 /// DP-F10: the header must say WHICH codes each export can return.
 ///
 /// `#define`s are module-scoped, so today a host author reading `quote.h` sees
-/// `ML_ERR_E_BAD_QTY` and `ML_ERR_E_DIV0` and has no way to tell that `mlx_line_check` can
+/// `ML_QUOTE_ERR_E_BAD_QTY` and `ML_QUOTE_ERR_E_DIV0` and has no way to tell that `mlx_line_check` can
 /// only ever produce the first. Q13's flat i32 carries no provenance by construction, and
 /// propagation makes the gap wider: a code now arrives from a helper the host never sees.
 ///
@@ -263,11 +263,14 @@ fn the_header_names_the_codes_each_export_can_return() {
 
     // `unit_price` calls both helpers, so both codes can reach the host.
     assert!(
-        h.contains("/* may fail with: ML_ERR_E_BAD_QTY, ML_ERR_E_DIV0 */"),
+        h.contains("/* may fail with: ML_QUOTE_ERR_E_BAD_QTY, ML_QUOTE_ERR_E_DIV0 */"),
         "{h}"
     );
     // `line_check` calls only `check_qty`, so `E_DIV0` is unreachable from it.
-    assert!(h.contains("/* may fail with: ML_ERR_E_BAD_QTY */"), "{h}");
+    assert!(
+        h.contains("/* may fail with: ML_QUOTE_ERR_E_BAD_QTY */"),
+        "{h}"
+    );
 
     // Still comments: not one declaration changes.
     assert!(

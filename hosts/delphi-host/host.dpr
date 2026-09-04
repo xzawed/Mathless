@@ -105,7 +105,7 @@ begin
 
   Untouched := 12345.0;
   Status := mlx_safe_div(1.0, 0.0, Untouched);
-  Check(Status = ML_ERR_DIV_BY_ZERO, 'safe_div(1, 0) status = ML_ERR_DIV_BY_ZERO');
+  Check(Status = ML_SAFE_DIV_ERR_DIV_BY_ZERO, 'safe_div(1, 0) status = ML_SAFE_DIV_ERR_DIV_BY_ZERO');
   Check(Untouched = 12345.0, 'a failed call leaves the out-param untouched');
 
   { Q12: the caller owns the buffer. PAnsiChar, never UnicodeString — passing a

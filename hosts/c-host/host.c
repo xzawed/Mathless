@@ -8,7 +8,7 @@
  *     pointer type below is checked against the header's own declaration with `_Static_assert`
  *     + `_Generic`, so if a generated signature ever changes shape this file stops compiling.
  *     (The check is unevaluated, so it needs no import library.) The error constant comes
- *     from the header too (`ML_ERR_DIV_BY_ZERO`), not from a number retyped here.
+ *     from the header too (`ML_SAFE_DIV_ERR_DIV_BY_ZERO`), not from a number retyped here.
  *   - The module is resolved the way D18 / HOST_ABI describe a host does it: open the file,
  *     look exports up BY NAME, call. No import library, no link-time binding - the host is
  *     never rebuilt when the module is replaced.
@@ -53,6 +53,7 @@
 #include "discount2.h"
 #include "discount3.h"
 #include "shapes.h"
+#include "refund.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);
@@ -281,7 +282,7 @@ int main(int argc, char **argv) {
         /* On failure the module must leave the out-param untouched (D17). */
         double untouched = 12345.0;
         status = safe_div(1.0, 0.0, &untouched);
-        check(status == ML_ERR_DIV_BY_ZERO, "safe_div(1, 0) status == ML_ERR_DIV_BY_ZERO");
+        check(status == ML_SAFE_DIV_ERR_DIV_BY_ZERO, "safe_div(1, 0) status == ML_SAFE_DIV_ERR_DIV_BY_ZERO");
         check(untouched == 12345.0, "safe_div(1, 0) leaves the out-param untouched");
     }
 
@@ -373,7 +374,7 @@ int main(int argc, char **argv) {
 
         int32_t untouched = -999;
         status = boxes_checked(17, 0, &untouched);
-        check(status == ML_ERR_E_EMPTY_BOX, "boxes_checked(17, 0) status == ML_ERR_E_EMPTY_BOX");
+        check(status == ML_PACK_ERR_E_EMPTY_BOX, "boxes_checked(17, 0) status == ML_PACK_ERR_E_EMPTY_BOX");
         check(untouched == -999, "boxes_checked(17, 0) leaves the out-param untouched");
     }
 
@@ -410,7 +411,7 @@ int main(int argc, char **argv) {
         tier = -7;
         fee = -7.0;
         status = commission_checked(-1.0, &tier, &fee);
-        check(status == ML_ERR_E_NEGATIVE, "commission_checked(-1) status == ML_ERR_E_NEGATIVE");
+        check(status == ML_COMMISSION_ERR_E_NEGATIVE, "commission_checked(-1) status == ML_COMMISSION_ERR_E_NEGATIVE");
         check(tier == -7, "a failed call leaves the declared out untouched");
         check(fee == -7.0, "a failed call leaves out_value untouched");
     }
@@ -554,7 +555,7 @@ int main(int argc, char **argv) {
         memset(buf, 0xAA, sizeof buf);
         needed = -7;
         st = carrier_name("ZZ99", buf, (int32_t)sizeof buf, &needed);
-        check(st == ML_ERR_E_UNKNOWN_SCAC, "an unknown code is a positive D17 status");
+        check(st == ML_CARRIER_ERR_E_UNKNOWN_SCAC, "an unknown code is a positive D17 status");
         check((unsigned char)buf[0] == 0xAA, "a failed call writes no bytes");
         check(needed == -7, "and leaves *ml_needed alone");
 
@@ -586,7 +587,7 @@ int main(int argc, char **argv) {
         /* The helper's code, two levels down, arriving unchanged. */
         v = -7.0;
         st = unit_price(100.0, 0, &v);
-        check(st == ML_ERR_E_BAD_QTY, "unit_price(100, 0) propagates ML_ERR_E_BAD_QTY");
+        check(st == ML_QUOTE_ERR_E_BAD_QTY, "unit_price(100, 0) propagates ML_QUOTE_ERR_E_BAD_QTY");
         check(v == -7.0, "a propagated failure leaves out_value untouched");
 
         /* A declared out alongside a propagating call: written on success, and never reached
@@ -599,7 +600,7 @@ int main(int argc, char **argv) {
         tier = -7;
         iv = -7;
         st = line_check(0, &tier, &iv);
-        check(st == ML_ERR_E_BAD_QTY, "line_check(0) propagates the helper's code");
+        check(st == ML_QUOTE_ERR_E_BAD_QTY, "line_check(0) propagates the helper's code");
         check(tier == -7, "the try exited before the out was assigned");
         check(iv == -7, "and out_value is untouched");
     }
@@ -676,7 +677,7 @@ int main(int argc, char **argv) {
 
             /* A domain failure leaves the buffer alone as well (D17). */
             memset(canary, 0xAA, sizeof canary);
-            check(summary(0, (char *)canary, (int32_t)sizeof canary, &need) == ML_ERR_E_NO_ITEMS,
+            check(summary(0, (char *)canary, (int32_t)sizeof canary, &need) == ML_RECEIPT_ERR_E_NO_ITEMS,
                   "summary(0) reports the declared domain code");
             untouched = 1;
             for (size_t i = 0; i < sizeof canary; i++) {

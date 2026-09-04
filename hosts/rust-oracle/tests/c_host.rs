@@ -266,6 +266,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
         (include_str!("../../../examples/discount2.mls"), "discount2"),
         (include_str!("../../../examples/discount3.mls"), "discount3"),
         (include_str!("../../../examples/shapes.mls"), "shapes"),
+        (include_str!("../../../examples/refund.mls"), "refund"),
     ] {
         emit_artifacts(src, name, &work).unwrap_or_else(|e| panic!("emit {name}: {e}"));
     }

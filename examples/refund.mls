@@ -1,0 +1,27 @@
+// The error-name collision, kept as a fixture.
+//
+// This module declares `E_NEG` with a DIFFERENT value from the one `shapes.mls` declares
+// (there it is 1, here it is 3). Both are legitimate: an error name is module-scoped in the
+// surface language, and two authors who never met will both reach for `E_NEG`.
+//
+// Before the module prefix (Q14 / SPEC-error-prefix) both headers emitted a bare
+// `#define ML_ERR_E_NEG`, so a host that included them together failed to build:
+//
+//     shapes.h(37): warning C4005: 'ML_ERR_E_NEG': macro redefinition
+//     -> /W4 /WX -> cl fails
+//
+// That was measured, not imagined. This file exists so the fix cannot silently regress: the
+// C host includes every example's header in one translation unit, so if the prefix ever
+// comes off, acceptance D goes red again.
+//
+// The rule itself is ordinary: a refund is the paid amount minus a restocking fee, and a
+// negative amount is not a refund.
+
+error E_NEG = 3
+error E_TOO_LATE = 4
+
+export fn refund(paid: f64, days_since: i32) -> f64! {
+  if paid < 0.0 { fail E_NEG }
+  if days_since > 30 { fail E_TOO_LATE }
+  return paid * 0.9
+}

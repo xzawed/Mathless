@@ -19,7 +19,7 @@ use mlc::emit::emit_artifacts;
 /// The status the module returns when the buffer cannot hold the result (DP-T6). Mirrors
 /// `ML_ST_INSUFFICIENT_BUFFER` in the generated header.
 const ML_ST_INSUFFICIENT_BUFFER: i32 = -1;
-const ML_ERR_E_UNKNOWN_SCAC: i32 = 1;
+const ML_CARRIER_ERR_E_UNKNOWN_SCAC: i32 = 1;
 
 /// "UPS Ground" is 10 bytes, so 11 with the NUL — and 11 is the unit the ABI speaks (DP-T4).
 const UPS: &[u8] = b"UPS Ground\0";
@@ -210,7 +210,10 @@ fn a_domain_error_touches_neither_the_buffer_nor_needed() {
     let mut buf = Canary::new();
     let mut needed = -7i32;
     let status = f(c"ZZ99".as_ptr(), buf.ptr(), 64, &mut needed);
-    assert_eq!(status, ML_ERR_E_UNKNOWN_SCAC, "a positive D17 domain code");
+    assert_eq!(
+        status, ML_CARRIER_ERR_E_UNKNOWN_SCAC,
+        "a positive D17 domain code"
+    );
     assert!(buf.is_pristine(), "a failed call writes no bytes");
     assert_eq!(needed, -7, "and does not touch *needed either");
 

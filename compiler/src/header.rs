@@ -54,12 +54,30 @@ fn guard_name(dll_name: &str) -> String {
 
 /// Name of the interface-fingerprint constant this header pins.
 ///
-/// **Module-prefixed on purpose (DP-H10).** `ML_ERR_*` is emitted without a prefix, so two
-/// generated headers in one host collide on a shared error name (STATUS §5-5.4, open with
-/// Q14). A fingerprint is per-module by definition, so an unprefixed `ML_IFACE_HASH` would
-/// not merely collide — the second header would silently redefine the first host's guard.
+/// **Module-prefixed (DP-H10).** A fingerprint is per-module by definition, so an unprefixed
+/// `ML_IFACE_HASH` would not merely collide — the second header would silently redefine the
+/// first host's guard.
 fn iface_hash_macro(dll_name: &str) -> String {
     format!("ML_{}_IFACE_HASH", macro_stem(dll_name))
+}
+
+/// Name of a module-defined error constant (Q14, closed 2026-09-03 → DP-Q1).
+///
+/// Same stem as the fingerprint above, so a header carries one naming rule rather than two.
+/// It was two: `ML_ERR_<NAME>` had no prefix while `ML_<MODULE>_IFACE_HASH` had one — and the
+/// fingerprint got its prefix *because* this debt was already written down (STATUS §5-5.4).
+///
+/// The collision it removes was measured, not imagined. `examples/refund.mls` and
+/// `examples/shapes.mls` both declare `E_NEG`, with different values, exactly as two authors
+/// who never met would. Unprefixed, including both headers in one translation unit produced
+/// `C4005: macro redefinition` and `/WX` failed the build — acceptance D goes red without
+/// this function.
+///
+/// No `#ifndef` guard, deliberately (DP-Q3): a guard would let the first header win and turn
+/// the one loud failure into a silent wrong meaning. `ML_ST_*` may be guarded because it is
+/// one agreed reserved code, not a per-module domain name.
+fn error_macro(dll_name: &str, error_name: &str) -> String {
+    format!("ML_{}_ERR_{}", macro_stem(dll_name), error_name)
 }
 
 /// Emit a C header exposing the module's exports. `dll_name` is the module name
@@ -142,11 +160,12 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
         crate::iface::fingerprint(module)
     );
     s.push('\n');
-    // DP-T6: the truncation status lives OUTSIDE the `ML_ERR_` namespace. That namespace is
-    // the module's own (and Q14 already records that it is emitted without a module prefix,
-    // so two modules can collide); this one is a runtime-wide band, identical in every module
-    // by construction, so the `#ifndef` makes two generated headers in one translation unit
-    // benign rather than a redefinition error.
+    // DP-T6: the truncation status lives OUTSIDE the module's error namespace. That namespace
+    // is per-module and now carries the module in its name (DP-Q1), so two modules cannot
+    // collide there at all; this one is a runtime-wide band, identical in every module by
+    // construction, so the `#ifndef` makes two generated headers in one translation unit
+    // benign rather than a redefinition error. The two rules are opposite on purpose — see
+    // `error_macro` for why guarding a per-module name would be a trap.
     if module
         .functions
         .iter()
@@ -173,7 +192,7 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     // D17 error codes (module-defined, positive i32). Constants — not exported symbols.
     if !module.errors.is_empty() {
         for e in &module.errors {
-            let _ = writeln!(s, "#define ML_ERR_{} {}", e.name, e.code);
+            let _ = writeln!(s, "#define {} {}", error_macro(dll_name, &e.name), e.code);
         }
         s.push('\n');
     }
@@ -197,7 +216,7 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
                 } else {
                     codes
                         .iter()
-                        .map(|c| format!("ML_ERR_{c}"))
+                        .map(|c| error_macro(dll_name, c))
                         .collect::<Vec<_>>()
                         .join(", ")
                 };
@@ -224,7 +243,7 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
 /// call graph acyclic, so the walk terminates without a visited-set for cycles — but one is
 /// kept anyway, because this function must not hang if it is ever reached with hand-built IR.
 ///
-/// Names, not numbers: the header prints `ML_ERR_<NAME>`, which is what a host reads.
+/// Names, not numbers: the header prints `ML_<MODULE>_ERR_<NAME>`, which is what a host reads.
 fn error_provenance(module: &IrModule) -> HashMap<&str, Vec<String>> {
     let code_name: HashMap<i32, &str> = module
         .errors
@@ -397,7 +416,7 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     );
     // D17 error codes (module-defined, positive i32).
     for e in &module.errors {
-        let _ = writeln!(s, "  ML_ERR_{} = {};", e.name, e.code);
+        let _ = writeln!(s, "  {} = {};", error_macro(dll_name, &e.name), e.code);
     }
     s.push('\n');
     let _ = writeln!(

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 저장소 성격
 
-- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 크레이트는 아니지만 **`hosts/c-host/`(MSVC로 빌드하는 C11 데모 호스트)** 도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본(`MATHLESS_GATE_D=require`로 수용 D skip 금지), `ubuntu-latest`는 프런트엔드 보험.
+- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 크레이트는 아니지만 **`hosts/c-host/`(동적 결합)** 와 **`hosts/c-host-link/`(링크 결합, 2026-09-03)** 두 C11 데모 호스트도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본(`MATHLESS_GATE_D=require`로 수용 D skip 금지), `ubuntu-latest`는 프런트엔드 보험.
 - 설계 산출물은 여전히 `docs/*.md`와 루트의 `README.md` / `CLAUDE.md`이며, **개념을 깨지 않는 것**이 최우선이다(위 규칙 우선).
 - 작업은 이제 **문서 정합(모순 탐지·열린 질문)** 과 **SDD+WBS+TDD 구현**을 함께 한다. 코드 변경은 실패 테스트 → 구현 → 통과 → Grok 검증 → PR 순서를 따른다(아래 "개발 방법론").
 
@@ -43,7 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 5. 웹 지원, 제네릭, 패키지 매니저, 최고 수준 난독화를 MVP에 넣지 않는다.
 6. "리버싱 불가능"이라고 대외 문구를 쓰지 않는다. 사용 표현은 "분석과 변조 비용을 높인다".
 7. 성능 monologue보다 **컴파일 타임 변환 + 네이티브 출력**을 유지한다.
-8. **`DECISIONS.md`는 사용자 확인 없이 바꾸지 않는다.** `OPEN_QUESTIONS.md`의 Q1~Q5에 결정안을 제안할 때는 장단점 표를 쓰고 문서 수정 전에 확인을 받는다.
+8. **`DECISIONS.md`는 사용자 확인 없이 바꾸지 않는다.** `OPEN_QUESTIONS.md`의 **열린 질문**(2026-09-04 기준 Q6~Q11 — Q1~Q5·Q12~Q15는 닫혔다)에 결정안을 제안할 때는 장단점 표를 쓰고 문서 수정 전에 확인을 받는다.
 
 ## Grok 협업과 실측 기반 원칙 (필수)
 
@@ -106,19 +106,19 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
 
 Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 **A/B/C/D**는 **완료**다 — 단 D는 **C 쪽만**이고 Delphi는 미검증이다(아래 1번).
 
-> **우선순위의 정본은 `docs/STATUS.md` §3이다** — 이 목록은 슬라이스마다 낡는다. 착수 전 그 문서를 먼저 읽는다.
+> **우선순위의 정본은 `docs/STATUS.md` §9다** — 이 목록은 슬라이스마다 낡는다. 착수 전 그 문서를 먼저 읽는다.
 > 완료된 슬라이스 이력은 `docs/slices/README.md` 색인, phase 단위 작업 분해는 `docs/phase1/WBS.md`.
 
 큰 줄기만 적는다:
 
 1. 수용 D — **C 쪽 완료**(MSVC `cl` 호스트, 2026-08-29). 남은 절반은 **Delphi**(`dcc64` 미설치, 실측 확인) — D14의 플래그십이다.
-2. 다음 슬라이스는 `docs/STATUS.md` §3에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — 닫힌 목록의 정본은 `docs/slices/README.md` 색인이다(여기 나열하면 슬라이스마다 낡는다 — 실제로 9개 중 4개만 적혀 있었다). 오늘 기준 9개: D17 에러 경로 · `let` · `i32` · `let mut` · `while` · 단항 · `&&`/`||` · 내부 함수와 호출 · `as`.
-3. 이후 슬라이스 후보: D16(caller-allocates/context handle), 문자열/구조체 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4).
+2. 다음 슬라이스는 `docs/STATUS.md` §9(**▶ 여기서 시작한다** 블록)에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — 닫힌 목록의 정본은 `docs/slices/README.md` 색인이다. **여기에 개수나 이름을 나열하지 않는다**: 그렇게 적어 둔 "오늘 기준 9개"가 실제 20개가 될 때까지 낡아 있었다(2026-09-04 감사). 세려면 `ls docs/slices/SPEC-*.md | wc -l`.
+3. 이후 슬라이스 후보: D16의 나머지(context handle), **구조체·배열** 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4), 그리고 Q14가 닫혀 열린 **DP-H3(b)**(지문을 심볼 이름에 박아 로더가 강제). **문자열 마샬링은 닫혔다**(입력 #89 · 반환 #92 · 연결 #108).
 
 ## 산출물 규칙
 
 - 설계 변경은 해당 `docs/*.md`를 **먼저** 수정한다.
-- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트한다. **`hosts/delphi-host/`도 실재하지만 아직 아무것도 컴파일된 적 없다**(2026-09-02, skip-게이트로 대기 — `dcc64` 부재).
+- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트하며, **`hosts/c-host-link/`가 두 번째 소비 경로(헤더 + `.lib` 링크)를 닫는다**(2026-09-03). **`hosts/delphi-host/`도 실재하지만 아직 아무것도 컴파일된 적 없다**(2026-09-02, skip-게이트로 대기 — `dcc64` 부재).
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.
 

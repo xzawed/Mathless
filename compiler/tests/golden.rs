@@ -178,7 +178,20 @@ fn every_exported_example_function_is_called_by_an_oracle_test() {
             if fname.is_empty() {
                 continue;
             }
-            if !corpus.contains(&format!("mlx_{fname}")) {
+            // The SYMBOL-LOOKUP form, not a bare substring. `corpus.contains("mlx_{fname}")`
+            // was satisfied by two things that are not a call (STATUS §9-A A12):
+            //
+            //   - a mention in a comment — there are ten such lines in the oracle corpus, and
+            //     `int32_t mlx_safe_div(double, double, double*)` written above a test as
+            //     documentation covered `safe_div` whether or not anything called it;
+            //   - a PREFIX collision — `mlx_discount` is a prefix of `mlx_discount4`, so a
+            //     test that only ever loaded `discount4` also "covered" `discount`.
+            //
+            // Every one of the 41 exported example functions is resolved as `b"mlx_<n>\0"`
+            // today (measured), and the trailing NUL closes both holes at once: it cannot
+            // appear in prose, and it cannot be a prefix of another name.
+            let needle = format!("b\"mlx_{fname}\\0\"");
+            if !corpus.contains(&needle) {
                 missing.push(format!("{name}.mls::{fname}"));
             }
         }
@@ -187,7 +200,54 @@ fn every_exported_example_function_is_called_by_an_oracle_test() {
         missing.is_empty(),
         "these exported example functions are never called by an oracle test, so a wrong \
          adapter for their shape would ship silently:\n  {}\n\nAdd a test that loads the \
-         module and calls them, or drop the example.",
+         module and calls them, or drop the example. (Recognised by the symbol lookup \
+         `m.symbol(b\"mlx_<name>\\0\")`. A name composed at run time is deliberately not \
+         recognised: the point is that a named call site exists.)",
         missing.join("\n  ")
     );
+}
+
+#[test]
+fn the_corpus_still_contains_an_error_name_collision() {
+    // `examples/refund.mls` exists to BE a collision: it declares an error name that another
+    // example also declares, with a different value. Acceptance D includes every example's
+    // header in one translation unit, so before the module prefix (Q14) that corpus failed to
+    // build with `C4005: macro redefinition` under `/WX` — measured, 41 s.
+    //
+    // The fixture was added; nothing pinned the property that makes it one (STATUS §9-A A13).
+    // Rename the name in either file and the corpus quietly stops exercising the prefix, while
+    // every test — including acceptance D — stays green, because a corpus with no collision
+    // cannot collide.
+    //
+    // Deliberately NOT hardcoding `E_NEG`, `refund` or `shapes`: what must hold is the
+    // property, so a future rename that keeps a collision is fine and one that removes it is
+    // not.
+    let mut by_name: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for (module, src) in examples() {
+        for line in src.lines() {
+            let Some(rest) = line.trim().strip_prefix("error ") else {
+                continue;
+            };
+            let Some((name, value)) = rest.split_once('=') else {
+                continue;
+            };
+            by_name
+                .entry(name.trim().to_string())
+                .or_default()
+                .push((module.clone(), value.trim().to_string()));
+        }
+    }
+
+    let collisions: Vec<_> = by_name
+        .iter()
+        .filter(|(_, uses)| uses.len() > 1 && uses.iter().any(|(_, v)| *v != uses[0].1))
+        .collect();
+    assert!(
+        !collisions.is_empty(),
+        "no two examples declare the same error name with different values any more, so the \
+         corpus no longer exercises the module prefix that SPEC-error-prefix added — and \
+         acceptance D would stay green with the prefix removed. Declarations found: {by_name:?}"
+    );
+    println!("error-name collisions kept as fixtures: {collisions:?}");
 }

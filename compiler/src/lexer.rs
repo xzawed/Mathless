@@ -351,9 +351,38 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
 
         // `a & b` is the most likely typo now that `&&` exists, and "unexpected character"
         // is a poor answer to it. Mathless has no bitwise operators (SPEC-logical-ops DP-B1).
+        //
+        // The same reasoning covers the LANGUAGE gaps, and they were measured to need it:
+        // writing twelve ordinary business rules in today's surface, all three that failed
+        // failed on a character. `lines: f64[]` said "unexpected character '['" — a user is
+        // told their bracket is wrong when what is missing is arrays. Naming the feature
+        // costs one arm each and turns a puzzle into a known limit.
         let msg = match c {
             '&' => "`&` is not an operator in Mathless — did you mean `&&`?".to_string(),
             '|' => "`|` is not an operator in Mathless — did you mean `||`?".to_string(),
+            '[' | ']' => {
+                "arrays are not in Mathless yet — `[` is not valid in a type or an expression"
+                    .to_string()
+            }
+            // A `.` inside a number is consumed by the literal path above, so one arriving
+            // here is a field access (`c.tier`) or a stray dot — EXCEPT after a range, where
+            // the number path has already eaten the first dot of `0..3` as part of `0.` and
+            // left the second one here. Without this arm `for i in 0..3` was reported as
+            // "field access", which is a confident wrong answer; the whole point of this
+            // change is not to give those.
+            // Either side, because the two spellings arrive differently: in `0..3` the number
+            // path already ate `0.` and leaves a dot whose PREVIOUS char is a dot, while in
+            // `a..b` this is the first dot and its NEXT one is the giveaway (Grok verify).
+            '.' if (i > 0 && chars[i - 1] == '.')
+                || chars.get(i + 1).is_some_and(|n| *n == '.') =>
+            {
+                "ranges are not in Mathless yet — `..` is not part of the language".to_string()
+            }
+            '.' => "field access is not in Mathless yet — `.` is only part of a number literal"
+                .to_string(),
+            '?' => {
+                "`?` is not in Mathless — there is no option or null-safety type yet".to_string()
+            }
             _ => format!("unexpected character '{c}'"),
         };
         return Err(ParseError::new(msg, sl, sc));

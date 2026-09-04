@@ -66,6 +66,26 @@ impl Parser {
             self.pos += 1;
             Ok(())
         } else {
+            // A declaration form the language does not have yet reads as an ordinary
+            // identifier here, so the default message is `expected 'fn', found
+            // Ident("struct")` — a Debug dump that names the token and not the gap. Measured
+            // on `struct P { x: i32 }`; the same applies to `const`, `import` and friends.
+            //
+            // Scoped to the `fn` expectation, which is the top-level item position. `eat` is
+            // shared, so without this an `Ident("struct")` where a `)` was expected would be
+            // told "the top level takes `export fn`…" — a confident wrong answer, and this
+            // change exists to stop giving those (Grok verify).
+            if want == &Token::Fn {
+                if let Token::Ident(name) = self.peek() {
+                    if let Some(gap) = Self::unsupported_declaration(name) {
+                        let msg = format!(
+                            "{gap} are not in Mathless yet — the top level takes `export fn`, \
+                             `fn` or `error`"
+                        );
+                        return self.err(msg);
+                    }
+                }
+            }
             self.err(format!("expected {what}, found {:?}", self.peek()))
         }
     }
@@ -99,6 +119,24 @@ impl Parser {
             }
         }
         Ok(Module { functions, errors })
+    }
+
+    /// The plural noun for a declaration keyword the language does not have, or `None`.
+    ///
+    /// Deliberately a short list of forms a user coming from C#, Pascal or Rust would
+    /// actually type. It is not a reserved-word list — these stay legal as ordinary names
+    /// (`fn struct(...)` is fine since #101); this only improves the message when one of them
+    /// appears where a top-level item was expected.
+    fn unsupported_declaration(name: &str) -> Option<&'static str> {
+        match name {
+            "struct" | "record" => Some("struct declarations"),
+            "class" | "interface" => Some("classes"),
+            "enum" => Some("enums"),
+            "const" => Some("constant declarations"),
+            "import" | "uses" => Some("imports"),
+            "type" => Some("type aliases"),
+            _ => None,
+        }
     }
 
     /// `error NAME = N` — N must be a positive integer (Q13: 0 is OK, negatives reserved).

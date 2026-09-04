@@ -26,8 +26,13 @@
  * The space is flat (Q13, closed 2026-08-28):
  *
  *     0        success
- *     > 0      module-defined domain error, emitted as ML_ERR_<NAME> in the module's
- *              generated header
+ *     > 0      module-defined domain error, emitted as ML_<MODULE>_ERR_<NAME> in the
+ *              module's generated header (Q14, closed 2026-09-03). The module is in the
+ *              name because an error name is module-scoped in the surface language: two
+ *              modules that both declare E_NEG with different values would otherwise
+ *              define the same macro twice, and a host including both headers failed to
+ *              build - measured, C4005 under /W4 /WX. Same stem as ML_<MODULE>_IFACE_HASH
+ *              below, so this file teaches one naming rule rather than two.
  *     < 0      RESERVED for the runtime and the ABI. A module never invents one.
  *
  * DP-E2 said the reserved negative range would be standardised here. This is that: the

@@ -365,6 +365,40 @@ fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits
         );
     }
 
+    // It also TEACHES a naming rule, and that rule has to be the one the emitter follows.
+    // It did not: after Q14 renamed error constants, this file still told a third-party host
+    // author they would find `ML_ERR_<NAME>` in a generated header — while, four dozen lines
+    // lower, correctly describing `ML_<MODULE>_IFACE_HASH`. One hand-written contract
+    // teaching two naming rules is the exact state Q14 existed to remove.
+    //
+    // Derived from the emitter, not asserted as a literal: build a header and read the shape
+    // back out of it.
+    let ir = mlc::compile_to_ir(
+        "error E_NEG = 3\nexport fn take(x: f64) -> f64! { if x < 0.0 { fail E_NEG } return x }\n",
+    )
+    .expect("the probe module must compile");
+    let probe = mlc::header::emit_c_header(&ir, "widget");
+    // Asserted, NOT used as an `if` gate. Behind a gate, a change to the emitted shape would
+    // skip the two checks below instead of failing them — the same silent-skip pattern this
+    // file keeps finding elsewhere. Grok pointed it out one review after the gate was
+    // written; if the shape moves, this line is where it stops.
+    assert!(
+        probe.contains("ML_WIDGET_ERR_E_NEG"),
+        "the emitter no longer produces ML_<MODULE>_ERR_<NAME>; the contract this test holds \
+         ml_abi.h to is derived from that shape:\n{probe}"
+    );
+    assert!(
+        abi_h.contains("ML_<MODULE>_ERR_<NAME>"),
+        "runtime/ml_abi.h does not describe the error-constant shape the emitter produces. A \
+         generated header defines ML_<MODULE>_ERR_<NAME>; this file is what a third-party \
+         host author reads to learn that"
+    );
+    assert!(
+        !abi_h.contains("ML_ERR_<NAME>"),
+        "runtime/ml_abi.h still teaches the pre-Q14 shape ML_ERR_<NAME>, which no generated \
+         header has used since 2026-09-03"
+    );
+
     // The one negative status that exists is defined in both places, and the values must
     // agree: a translation unit can see both, and the `#ifndef` guard means a mismatch is
     // NOT a redefinition error — it silently resolves to whichever was seen first.

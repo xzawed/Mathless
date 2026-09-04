@@ -135,9 +135,10 @@ fn the_synthesized_names_cannot_be_shadowed() {
 
 #[test]
 fn the_c_header_declares_the_triple_and_the_truncation_constant() {
-    // Section 3-F. DP-T6: the constant sits OUTSIDE the `ML_ERR_` namespace, so it does not
-    // deepen Q14's cross-module collision, and it is `#ifndef`-guarded so two generated
-    // headers can be included in one translation unit.
+    // Section 3-F. DP-T6: the truncation status sits OUTSIDE the module's error namespace —
+    // it is a runtime-wide band with the same value everywhere — and is `#ifndef`-guarded so
+    // two generated headers can be included in one translation unit. The error namespace
+    // takes the opposite rule and is deliberately NOT guarded (Q14 / DP-Q3).
     let ir = compile_to_ir(CARRIER).expect("compile");
     let h = mlc::header::emit_c_header(&ir, "carrier");
     assert!(
@@ -146,9 +147,13 @@ fn the_c_header_declares_the_triple_and_the_truncation_constant() {
     );
     assert!(h.contains("#ifndef ML_ST_INSUFFICIENT_BUFFER"), "{h}");
     assert!(h.contains("#define ML_ST_INSUFFICIENT_BUFFER (-1)"), "{h}");
+    // Q14 renamed error constants to ML_<MODULE>_ERR_<NAME>, which quietly neutered this
+    // assertion: a bare `ML_ERR_TRUNCATED` can no longer be emitted by any path, so the
+    // check could never fail again. Written against the shape the emitter actually uses, it
+    // has teeth once more — `carrier` is the module here.
     assert!(
-        !h.contains("ML_ERR_TRUNCATED"),
-        "the truncation status must not live in the user error namespace:\n{h}"
+        !h.contains("ML_CARRIER_ERR_TRUNCATED") && !h.contains("ML_ERR_TRUNCATED"),
+        "the truncation status must not live in the module's error namespace:\n{h}"
     );
 }
 

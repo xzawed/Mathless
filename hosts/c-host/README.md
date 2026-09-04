@@ -15,10 +15,12 @@ against the **generated** headers, runs the resulting executable, and asserts on
   against the header's own declaration with `_Static_assert` + `_Generic`, so a changed
   signature breaks the build instead of silently mismatching at runtime.
 - The module resolves and runs the way D18 / `HOST_ABI.md` describe a host works: open the
-  file, look exports up **by name**, call. No import library, no link-time binding — the host
-  is never rebuilt when the module is replaced.
+  file, look exports up **by name**, call. This host uses no import library and no link-time
+  binding — the host is never rebuilt when the module is replaced. (That is *this* host's
+  property, not a limit of the toolchain: since `SPEC-linkable-bindings`, `mlc build` also
+  ships a `.lib` and [`hosts/c-host-link`](../c-host-link) proves the other path.)
 - Both the scalar path (`mlx_discount`) and the D17 error path (`mlx_safe_div`: status +
-  out-param, out untouched on failure, `ML_ERR_DIV_BY_ZERO` taken from the header).
+  out-param, out untouched on failure, `ML_SAFE_DIV_ERR_DIV_BY_ZERO` taken from the header).
 
 ## What it does NOT prove
 

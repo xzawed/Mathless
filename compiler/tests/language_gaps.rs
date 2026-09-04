@@ -124,6 +124,31 @@ fn string_operations_that_do_not_exist_yet() {
         "string as i32",
         "export fn f(s: string) -> i32 { return s as i32 }",
     );
+    // The gap block lists 부분문자열 beside 길이 and 순서 비교; only the other two were pinned
+    // (found by re-reading the block against this file — STATUS §9-A A1).
+    rejected(
+        "substring",
+        "export fn f(s: string) -> string! { return s[0..2] }",
+    );
+}
+
+// ------------------------------------------------------------------ conversions
+
+#[test]
+fn conversions_that_do_not_exist_yet() {
+    // `bool 변환` is the last item of the gap block's final bullet, and nothing pinned it:
+    // `as` accepts f64 and i32 only, in both directions.
+    rejected(
+        "bool as i32",
+        "export fn f(b: bool) -> i32 { return b as i32 }",
+    );
+    rejected(
+        "i32 as bool",
+        "export fn f(a: i32) -> bool { return a as bool }",
+    );
+    // 체크드 오버플로 is in the same bullet and is deliberately NOT here: it is a property of
+    // arithmetic, not a construct one can write, so there is no source text to reject.
+    // `-i32::MIN == i32::MIN` is measured in unary.rs instead.
 }
 
 // ------------------------------------------------------------------ data and declarations
@@ -146,9 +171,63 @@ fn data_shapes_that_do_not_exist_yet() {
         "host fn import",
         "import fn host_log(x: i32)\nexport fn f(a: i32) -> i32 { return a }",
     );
+    // "null 안전 또는 option" is a whole bullet of the gap block, and neither half was pinned.
+    rejected("option type", "export fn f(a: f64?) -> f64 { return a }");
+    rejected("null literal", "export fn f(a: f64) -> f64 { return null }");
 }
 
 // ------------------------------------------------------------------ the list itself
+
+/// Each gap named in `LANGUAGE.md`'s block, and the `rejected(…)` label that pins it here.
+///
+/// The right column is not decoration: it is checked against the actual call sites below, so
+/// a row cannot name a case that does not exist.
+///
+/// One item of the block is deliberately absent — 체크드 오버플로. It is a property of
+/// arithmetic rather than a construct, so there is no source text to reject; see
+/// `conversions_that_do_not_exist_yet`.
+const GAPS: &[(&str, &str)] = &[
+    ("부분문자열", "substring"),
+    ("순서 비교", "string ordering"),
+    ("길이", "string length"),
+    ("포맷", "f64 as string"),
+    ("지역 변수", "string local"),
+    ("struct", "struct declaration"),
+    ("배열", "array type"),
+    ("option", "option type"),
+    ("for", "for"),
+    ("else", "else"),
+    ("break", "break"),
+    ("복합 대입", "compound assign"),
+    ("비트", "bitwise &"),
+    ("상수 선언", "const declaration"),
+    ("import", "host fn import"),
+    ("재귀", "recursion"),
+    ("나머지", "f64 %"),
+    ("bool` 변환", "bool as i32"),
+];
+
+/// The label of every `rejected(…)` call in this file, read out of its own source.
+///
+/// Reading the call sites — not the table above — is what stops the check being circular.
+/// A table entry naming a case nobody wrote would otherwise satisfy a search of this file,
+/// because the table is *in* this file.
+fn pinned_labels() -> Vec<String> {
+    let src = include_str!("language_gaps.rs");
+    let mut out = Vec::new();
+    let mut rest = src;
+    while let Some(i) = rest.find("rejected(") {
+        rest = &rest[i + "rejected(".len()..];
+        let after = rest.trim_start();
+        let Some(stripped) = after.strip_prefix('"') else {
+            continue; // a call whose label is not a literal — nothing to record
+        };
+        if let Some(end) = stripped.find('"') {
+            out.push(stripped[..end].to_string());
+        }
+    }
+    out
+}
 
 #[test]
 fn this_file_covers_the_language_md_gap_list() {
@@ -162,14 +241,50 @@ fn this_file_covers_the_language_md_gap_list() {
     )
     .expect("docs/LANGUAGE.md");
 
-    // Each term must appear in LANGUAGE.md somewhere. Loose on purpose — the document is
-    // Korean prose, so this catches a gap being DELETED from the doc while still rejected
-    // here (or the reverse), not every wording change.
-    for term in ["else", "break", "for", "struct", "배열", "재귀", "import"] {
+    // Matched inside the GAP BLOCK, not the whole document. Searching the whole file was the
+    // defect (STATUS §9-A A1): every term also occurs in the "현재 구현된 표면" list above it
+    // — `else` in "**`else` 없음**", `재귀` in "**재귀는 금지**", `배열` in "정적 NUL 종료
+    // 바이트 배열" — so the entire block could be DELETED and this test stayed green. It was
+    // asserting that the document mentions the words, and a document saying the opposite
+    // mentions them too.
+    let anchor = "아직 아님";
+    assert_eq!(
+        language_md.matches(anchor).count(),
+        1,
+        "LANGUAGE.md's gap-block anchor '{anchor}' is missing or no longer unique, so this \
+         test can no longer find the block it mirrors"
+    );
+    let from = language_md.find(anchor).expect("anchor counted above");
+    let rest = &language_md[from..];
+    let block = &rest[..rest.find("\n## ").unwrap_or(rest.len())];
+    let bullets = block
+        .lines()
+        .filter(|l| l.trim_start().starts_with("- "))
+        .count();
+    assert!(
+        bullets >= 5,
+        "the \"아직 아님\" block is down to {bullets} bullets — it was probably truncated, and \
+         a truncated block is exactly what this test used to miss:\n{block}"
+    );
+
+    let labels = pinned_labels();
+    for (term, label) in GAPS {
         assert!(
-            language_md.contains(term),
-            "LANGUAGE.md no longer mentions '{term}', but this file still pins it as rejected \
-             — one of the two is out of date"
+            block.contains(term),
+            "LANGUAGE.md's \"아직 아님\" block no longer lists '{term}', but this file still \
+             pins it as rejected (case '{label}') — one of the two is out of date"
+        );
+        assert!(
+            labels.iter().any(|l| l == label),
+            "GAPS maps '{term}' to a case '{label}' that no rejected(…) call in this file \
+             declares. Add the case, or fix the row"
         );
     }
+
+    // What this does NOT do: catch a gap ADDED to the block with no case here. Matching Korean
+    // prose bullet-by-bullet was tried and rejected — a bullet lists several gaps separated by
+    // `·` and `,`, so a per-bullet check passes on its first recognised term and leaves the
+    // rest unpinned, which is how 부분문자열, option, and `bool` 변환 sat unpinned under a
+    // guard that claimed to cover the list. They are pinned now; a NEW item still needs a
+    // human to add its row above.
 }

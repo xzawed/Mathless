@@ -142,7 +142,7 @@
   연결 결과는 `return` 자리에만 놓을 수 있고 이름을 붙일 수 없다 — 모듈에 할당자가 없다)
 - struct/record, 배열, null 안전 또는 option
 - `for`, `else`, `break`/`continue`, 복합 대입, 비트 연산자
-- 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향), 재귀, 실패 가능 함수 호출
+- 상수 선언, **호스트 함수 import**(현재는 모듈 export 단방향), 재귀
 - 복합 대입(`+= -= *=`) — `=`만 구현됨
 - `f64` 나머지(`%`는 i32 전용 — SPEC-i32-division DP-D4), 체크드 오버플로, `bool` 변환
 

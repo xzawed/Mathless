@@ -57,8 +57,10 @@ Version 1.0, 2026-09-02
        documentation in this repository — those stay Apache-2.0 OR MIT;
      - any file of this project you copy into your own tree by hand rather than
        receiving as Compiler Output. `runtime/ml_abi.h` is such a file: it is
-       hand-written, and (measured 2026-09-02) nothing copies or includes it, so
-       it is not Compiler Output today;
+       hand-written, and `mlc` never copies it into your output, so it is not
+       Compiler Output. (This repository's own acceptance-D harness compiles it
+       standalone to check it is valid C — measured 2026-09-03 — but that is a
+       test of ours, not something `mlc` hands to you.);
      - your own input source, which was never ours.
 
    It grants no trademark rights, and no patent rights beyond those already

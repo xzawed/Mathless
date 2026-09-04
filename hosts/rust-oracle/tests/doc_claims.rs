@@ -146,6 +146,36 @@ fn string_literals_in_vec_after(src: &str, anchor: &str) -> Vec<String> {
     out
 }
 
+/// Collapse a file to a single line of prose, so a multi-word phrase can be matched without
+/// the match depending on where the line happened to wrap.
+///
+/// Comment markers (`//!`, `///`, `//`, a C block comment's leading `*`, Markdown bullets
+/// and quote markers) are dropped from the front of each line; backticks and asterisks are
+/// dropped everywhere, so inline markup does not split a phrase; runs of whitespace collapse
+/// to one space. This exists so a *meaningful* phrase can be required. The alternative —
+/// shortening the required text until it survives any reflow — is how the pin it serves
+/// degenerated into a noun phrase that a negated sentence satisfied.
+fn flatten_prose(src: &str) -> String {
+    let mut words: Vec<String> = Vec::new();
+    for line in src.lines() {
+        let mut t = line.trim();
+        loop {
+            let before = t;
+            for marker in ["//!", "///", "//", "*", ">", "#", "-"] {
+                if let Some(rest) = t.strip_prefix(marker) {
+                    t = rest.trim_start();
+                }
+            }
+            if t == before {
+                break;
+            }
+        }
+        let cleaned: String = t.chars().filter(|c| *c != '`' && *c != '*').collect();
+        words.extend(cleaned.split_whitespace().map(str::to_string));
+    }
+    words.join(" ")
+}
+
 /// D18 puts the version check on the host. For a year that was true of this repository
 /// too — nothing here refused anything — and four files said so. The reference C host now
 /// refuses, so no file may still say the refusal exists nowhere.
@@ -190,13 +220,48 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
             );
         }
         // The positive half: absence of the old sentence is not the presence of the true one.
-        let affirms = ["reference C host", "This host does reject"];
+        //
+        // This used to be `["reference C host", "This host does reject"]` — two bare
+        // substrings, and the first one is just a NOUN PHRASE. "The reference C host does
+        // not refuse a version mismatch" contains it, so the sentence that most needed to
+        // fail passed (STATUS §9-A A6). A positive pin has to require the predicate, and
+        // the phrases below all carry subject + affirmative verb in one span.
+        // Every accepted phrasing carries its own polarity. An earlier draft of this list
+        // also took "reference C host does exactly that", which `runtime/ml_abi.h` used —
+        // and that is an anaphor: the refusal lives in the PREVIOUS sentence, outside the
+        // span being matched, so inverting that sentence would have left this green. The
+        // header now states the claim in one clause instead (Grok raised the hole while
+        // verifying this change).
+        let flat = flatten_prose(&text);
+        let affirms = [
+            "reference C host does refuse",
+            "reference C host does reject",
+            "reference C host refuses",
+            "reference C host rejects",
+            "This host does refuse",
+            "This host does reject",
+        ];
         assert!(
-            affirms.iter().any(|a| text.contains(a)),
-            "{doc} no longer says that the reference C host refuses a version mismatch. \
-             Dropping the denial is not enough — the file has to state what is true, or a \
-             reworded denial passes this test"
+            affirms.iter().any(|a| flat.contains(a)),
+            "{doc} no longer states, in one sentence, that the reference C host refuses a \
+             version mismatch. Dropping the denial is not enough — the file has to say what \
+             is true. Accepted phrasings: {affirms:?}"
         );
+        // Belt and braces: the negated forms of the same sentence, which no rewording of a
+        // true claim can produce.
+        for denial in [
+            "reference C host does not",
+            "reference C host never",
+            "reference C host cannot",
+            "This host does not refuse",
+            "This host does not reject",
+        ] {
+            assert!(
+                !flat.contains(denial),
+                "{doc} says '{denial}', but hosts/c-host/host.c refuses on every module it \
+                 loads and acceptance D exercises it"
+            );
+        }
     }
 }
 

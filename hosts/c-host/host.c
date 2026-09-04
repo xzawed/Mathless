@@ -702,6 +702,12 @@ int main(int argc, char **argv) {
      * example of a contract nobody calls), so the refusal is exercised here, and the two
      * checks below say WHY it is the fingerprint doing the work: the symbol still resolves,
      * and the ABI version still matches. */
+    /* The block is guarded by argc, and for a slice that guard was silent: without argv[3]
+     * the refusal was never exercised and the host still printed GATE_D_OK and exited 0, so
+     * a harness that stopped passing the drifted module would have gone on passing (STATUS
+     * section 9-A A8). A condition that can skip a check has to say which way it went, and
+     * the harness asserts on the marker. (`drift == NULL` was never silent: load_raw counts
+     * a failure itself.) */
     if (argc >= 4) {
         HMODULE drift = load_raw(dir, argv[3]);
         if (drift != NULL) {
@@ -714,7 +720,16 @@ int main(int argc, char **argv) {
             check(drift_abi != NULL && drift_abi() == (uint32_t)expected_abi,
                   "control: the drifted module still reports the expected abi version");
             FreeLibrary(drift);
+            /* Inside the NULL check on purpose: printed one level out, the marker would mean
+               "an argument was given", not "the refusal ran" (Grok verify). A module that
+               fails to load already counts a failure in load_raw, so GATE_D_OK cannot print
+               either way - but a marker that names the wrong thing is how a green run comes
+               to mean less than the reader thinks. */
+            printf("GATE_D_DRIFT_CHECKED\n");
         }
+    } else {
+        printf("GATE_D_DRIFT_SKIPPED: no drifted module named on the command line, so the "
+               "refusal path was NOT exercised by this run\n");
     }
 
     if (failures == 0) {

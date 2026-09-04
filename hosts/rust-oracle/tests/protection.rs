@@ -21,6 +21,20 @@ use mlc::{codegen::build_cdylib, compile_to_rust};
 /// silence. `doc_claims.rs` reads these constants out of this file and requires the
 /// documents to carry BOTH observations, so the prose cannot go back to implying one exact
 /// byte count is universal.
+///
+/// **Each constant is asserted against the artifact in the environment it names, not merely
+/// reported** (STATUS §9-A A3). For a slice they were used only in a failure message and in
+/// the document cross-check, so a toolchain producing a size anywhere inside the range below
+/// passed while both numbers — and the four documents that publish them — became quietly
+/// false. The word for the two of them is *observations*, and an observation nobody
+/// re-observes is prose.
+///
+/// The pin is per environment rather than "the size is one of these two". Set membership
+/// reads as the stronger guard and is the weaker one: a single run sees a single machine, so
+/// it can only ever reproduce one of the two, and membership lets the OTHER number rot
+/// undetected — which is the failure this row is about. `GITHUB_ACTIONS` separates them.
+/// An environment that produces neither fails on purpose: the documents are then publishing
+/// a byte count nothing on this machine produces, and the fix is to re-measure both.
 const DISCOUNT_DLL_MEASURED_DEV: u64 = 9_728;
 const DISCOUNT_DLL_MEASURED_CI: u64 = 9_216;
 const DISCOUNT_DLL_MIN: u64 = 8_192;
@@ -92,7 +106,33 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
          update these constants AND the documents doc_claims.rs checks"
     );
 
-    println!("W6 measured: size={size} bytes, exports={exports:?}");
+    // ...and the range on its own is still not enough, because the two constants above are
+    // published as *measurements* in SECURITY.md, STATUS.md and both READMEs. The range
+    // admits 10,240 B, and at 10,240 B every one of those documents states a number nothing
+    // produces.
+    //
+    // Pinned PER ENVIRONMENT, not as set membership. Membership would be the wrong
+    // invariant: one run sees one machine, so it can reproduce at most one of the two
+    // observations, and the other could quietly stop being true forever while this stayed
+    // green. Each document sentence names the environment it was measured in, and
+    // `GITHUB_ACTIONS` is what tells the two apart.
+    let on_ci = std::env::var_os("GITHUB_ACTIONS").is_some();
+    let (expected, environment) = if on_ci {
+        (DISCOUNT_DLL_MEASURED_CI, "GitHub's windows-latest runner")
+    } else {
+        (DISCOUNT_DLL_MEASURED_DEV, "the development machine")
+    };
+    assert_eq!(
+        size, expected,
+        "the stripped module measures {size} B on {environment}, where SECURITY.md, \
+         STATUS.md and both READMEs publish {expected} B. That is not necessarily a defect \
+         in the module — the byte count is machine-dependent (D3: the toolchain pin covers \
+         rustc, not MSVC link.exe or the Windows SDK) — but it does mean those documents \
+         now state a number this environment does not produce. Re-measure and update the \
+         constant above AND the documents doc_claims.rs checks, in the same commit"
+    );
+
+    println!("W6 measured: size={size} bytes on {environment}, exports={exports:?}");
 
     // Nothing holds the file open here (we read bytes, not LoadLibrary) — clean up.
     let _ = std::fs::remove_dir_all(&workdir);

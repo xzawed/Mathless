@@ -101,8 +101,10 @@ fn non_positive_error_code_is_rejected() {
 /// It was survivable while a code never crossed a function boundary — the author who wrote
 /// the codes was the author who read them. `try` propagation ends that: a code now arrives
 /// from a helper the host has never seen, three levels down, and the host has nothing but the
-/// number. Rejecting the collision is the cheap half of Q14 (the other half, module-prefixing
-/// `ML_ERR_*`, is still open).
+/// number. Rejecting the collision was the cheap half of Q14; the other half, giving the
+/// constant its module (`ML_<MODULE>_ERR_<NAME>`), closed on 2026-09-03. This test still
+/// earns its place: the prefix stops two MODULES colliding, and this stops two names inside
+/// ONE module resolving to the same number, which no prefix can help with.
 #[test]
 fn two_error_names_may_not_share_a_code() {
     let err = compile_to_ir(

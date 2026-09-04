@@ -159,7 +159,7 @@ Rust 생태계에서 흔히 쓰는 조합입니다. MIT는 단순하고 GPLv2와
 허여를 더해 줍니다.
 
 **`mlc`가 여러분의 소스로부터 만들어 낸 것은 여러분의 것입니다** —
-[LICENSE-OUTPUT-EXCEPTION](LICENSE-OUTPUT-EXCEPTION)을 보십시오. 생성된 `.dll`·`.h`·`.pas`에는
+[LICENSE-OUTPUT-EXCEPTION](LICENSE-OUTPUT-EXCEPTION)을 보십시오. 생성된 `.dll`·`.h`·`.pas`·`.lib`에는
 위 라이선스의 의무가 붙지 않습니다. 생성 헤더의 대부분이 저희 템플릿 문장인데도 그렇습니다
 (실측: `discount.h` 39줄 중 여러분의 소스에서 온 것은 1줄, 저희 템플릿에서 온 것이 38줄입니다 —
 그 비율이 이 예외를 가정하지 않고 문서로 적어 둔 이유입니다). 이 예외는 **산출물에만** 적용되며,

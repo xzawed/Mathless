@@ -166,7 +166,7 @@ at your option. This is the Rust ecosystem's usual pair: MIT keeps things simple
 GPLv2-compatible, and Apache-2.0 adds an explicit patent grant.
 
 **What `mlc` produces from your source is yours** — see
-[LICENSE-OUTPUT-EXCEPTION](LICENSE-OUTPUT-EXCEPTION). The generated `.dll`, `.h` and `.pas`
+[LICENSE-OUTPUT-EXCEPTION](LICENSE-OUTPUT-EXCEPTION). The generated `.dll`, `.h`, `.pas` and `.lib`
 carry no obligation from the licences above, even though a generated header is mostly our
 template text (measured: `discount.h` is 39 lines, 1 from your source and 38 from ours — which
 is exactly why the exception is written down rather than assumed). It covers **output only**;

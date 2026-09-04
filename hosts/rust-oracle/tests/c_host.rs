@@ -382,9 +382,29 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         })
         .collect();
     header_stems.sort();
+    // DERIVED from the corpus, not a literal. It was `>= 18` — written when there were 18
+    // examples, so the floor had one header of slack; adding `refund.mls` silently widened
+    // that to two, and a hardcoded floor only ever gets looser as the corpus grows. Counting
+    // examples/ makes the check say what it means: every example's header is here, plus the
+    // drifted fixture the gate builds on top.
+    let example_count = std::fs::read_dir(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples"),
+    )
+    .expect("examples/")
+    .filter(|e| {
+        e.as_ref()
+            .map(|e| e.path().extension().and_then(|x| x.to_str()) == Some("mls"))
+            .unwrap_or(false)
+    })
+    .count();
     assert!(
-        header_stems.len() >= 18,
-        "expected every example's header in the artifact dir, found {}: {header_stems:?}",
+        header_stems.len() >= example_count,
+        "expected every example's header in the artifact dir: {} examples but {} headers \
+         ({header_stems:?})",
+        example_count,
         header_stems.len()
     );
 

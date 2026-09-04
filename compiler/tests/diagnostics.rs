@@ -270,3 +270,97 @@ export fn f(s: string) -> string! { return try g(s) }",
         );
     }
 }
+
+/// The gaps a user actually hits, and whether the message names the gap.
+///
+/// Measured 2026-09-05 by writing twelve business rules in today's surface: nine compiled,
+/// and all three failures were reported as a stray CHARACTER rather than a missing feature.
+///
+///   xs: f64[]            -> "unexpected character '['"
+///   c.tier               -> "unexpected character '.'"
+///   struct P { x: i32 }  -> "expected 'fn', found Ident(\"struct\")"
+///
+/// None of those contains the words "array", "field" or "struct declaration", so a user is
+/// told a character is wrong when a FEATURE is missing. The lexer already does better for
+/// `&` and `|` ("did you mean `&&`?"); this extends the same idea to the gaps.
+///
+/// **A floor, not a freeze.** These assert that the message NAMES the thing — not its exact
+/// wording — because `language_gaps.rs` deliberately prints diagnostics instead of pinning
+/// them, so that an improvement never reads as a failure.
+#[test]
+fn a_missing_feature_is_reported_as_a_missing_feature() {
+    for (src, want, what) in [
+        (
+            "export fn total(lines: f64[]) -> f64 { return 0.0 }",
+            "array",
+            "an array type",
+        ),
+        (
+            "export fn f(xs: f64) -> f64 { return xs[0] }",
+            "array",
+            "an index expression",
+        ),
+        (
+            "export fn f(a: f64) -> f64 { return a.x }",
+            "field",
+            "a field access",
+        ),
+        (
+            "struct P { x: i32 }\nexport fn f(a: i32) -> i32 { return a }",
+            "struct",
+            "a struct declaration",
+        ),
+        (
+            "export fn f(a: f64?) -> f64 { return 0.0 }",
+            "option",
+            "an option type",
+        ),
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::from("<it compiled>"))
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            shown.to_lowercase().contains(want),
+            "the diagnostic for {what} never says {want:?} — a user is told a character is \
+             wrong when a feature is missing.\n  source:  {src}\n  message: {shown}"
+        );
+    }
+}
+
+/// The two ways the change above nearly gave a confident WRONG answer. Both were found by
+/// Grok verify and are pinned here because both would regress silently.
+#[test]
+fn naming_the_gap_does_not_name_the_wrong_gap() {
+    // `eat()` is shared. Before scoping, an `Ident("struct")` anywhere a token was expected
+    // claimed "the top level takes `export fn`…", which is nonsense inside a parameter list.
+    let shown = compile_to_ir("export fn f(a: f64 struct) -> f64 { return a }")
+        .map(|_| String::new())
+        .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("expected ')'"),
+        "a struct-shaped token mid-declaration must still report the token that was \
+         expected, not the top-level rule: {shown}"
+    );
+
+    // A range reaches the lexer two different ways: `0..3` leaves a dot whose PREVIOUS
+    // character is a dot (the number path ate `0.`), `a..b` leaves one whose NEXT is.
+    for src in [
+        "export fn f(a: f64) -> f64 { for i in 0..3 { } return a }",
+        "export fn f(a: i32, b: i32) -> i32 { while a..b { } return a }",
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::new())
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            shown.contains("range"),
+            "a range must be reported as a range, not as field access: {src}\n  {shown}"
+        );
+    }
+
+    // And none of these words became reserved: #101 made function names unrestricted.
+    compile_to_ir(
+        "fn struct_ok(a: i32) -> i32 { return a }\n\
+         export fn f(a: i32) -> i32 { return struct_ok(a) }",
+    )
+    .expect("naming a function after a gap keyword must still compile");
+}

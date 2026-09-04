@@ -66,7 +66,7 @@ extern "C" {
 
 /* The module ABI version. Contract for hosts: resolve it (GetProcAddress on Windows today;
  * there is no .so target yet, so the dlsym path is unexercised) and refuse the module on a
- * major mismatch. The reference C host does exactly that since 2026-09-02 - it refuses
+ * major mismatch. The reference C host does refuse, since 2026-09-02, and it does so
  * before the first call on every module it loads (hosts/c-host/host.c, gate()). For a
  * third-party host it stays a CONTRACT: nothing in the module enforces it, and the Rust
  * oracle only asserts the value matches. */

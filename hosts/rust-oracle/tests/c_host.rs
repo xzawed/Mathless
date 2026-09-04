@@ -473,6 +473,15 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         "the C host did not pass:\n{stdout}\n{}",
         String::from_utf8_lossy(&run.stderr)
     );
+    // GATE_D_OK alone does not say the refusal ran. The drift block is behind `argc >= 4`,
+    // and a run that never reached it printed exactly the same OK line (STATUS §9-A A8), so
+    // the one check whose whole point is that the gate REFUSES could stop running without
+    // anything here noticing. The host now marks which branch it took; this asserts on it.
+    assert!(
+        stdout.contains("GATE_D_DRIFT_CHECKED"),
+        "the C host never exercised the drift refusal — it printed GATE_D_DRIFT_SKIPPED, so \
+         the drifted module was not passed on the command line:\n{stdout}"
+    );
 
     // Cross-check our own PE reader against Microsoft's dumpbin on the same file: until now
     // the export measurement (acceptance C) had exactly one implementation — ours.
@@ -499,6 +508,24 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
             ours,
             theirs,
             "our PE reader and dumpbin disagree about {}",
+            dll.display()
+        );
+        // Agreement is not measurement. Two readers that both returned nothing agree
+        // perfectly, and the import check below has had this guard since it was written
+        // while the export check — the older and more load-bearing of the two, since
+        // acceptance C's whole claim is "exactly these three symbols" — did not (STATUS
+        // §9-A A4). Assert the shape every module must have, not merely non-emptiness:
+        // both reserved symbols plus at least one `mlx_` entry point.
+        assert!(
+            ours.iter().any(|s| s == "ml_module_abi_version")
+                && ours.iter().any(|s| s == "ml_iface_hash")
+                && ours.iter().any(|s| s.starts_with("mlx_")),
+            "the export set read for {} is {ours:?}; every module must export \
+             ml_module_abi_version, ml_iface_hash and at least one mlx_ function. An empty \
+             read, or one that lost a reserved symbol, would otherwise match dumpbin's and \
+             prove nothing. (It does NOT catch a read that drops one of several mlx_ names \
+             while keeping the shape — section_invariants.rs pins the exact count against \
+             the module's declarations; this is the floor, not the ceiling.)",
             dll.display()
         );
 

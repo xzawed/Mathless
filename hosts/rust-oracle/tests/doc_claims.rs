@@ -216,19 +216,27 @@ fn the_generated_header_does_not_deny_a_verification_that_exists() {
     if !link_host.exists() {
         return;
     }
-    let header_rs = read("compiler/src/header.rs");
+
+    // The EMITTED note, not the emitter's source. Matching source text was the first shape
+    // of this test and of its neighbour above; both were brittle in the same way — a
+    // reworded or reflowed literal breaks the match without changing the artifact, and a
+    // literal left behind unused satisfies it without reaching the artifact. What a user
+    // reads is the output, so that is what is asserted.
+    let ir = mlc::compile_to_ir("export fn f(x: f64) -> f64 { return x }\n")
+        .expect("the probe module must compile");
+    let h = mlc::header::emit_c_header(&ir, "widget");
 
     assert!(
-        !header_rs.contains("link-time binding via an"),
-        "compiler/src/header.rs still emits 'Not verified: … link-time binding via an import \
-         library' into every generated header, but hosts/c-host-link/host.c links against \
-         the packaged .lib and acceptance D runs it"
+        !h.contains("link-time binding via an"),
+        "the generated header still tells its reader 'Not verified: … link-time binding via \
+         an import library', but hosts/c-host-link/host.c links against the packaged .lib \
+         and acceptance D runs it:\n{h}"
     );
     assert!(
-        header_rs.contains("hosts/c-host-link"),
+        h.contains("hosts/c-host-link"),
         "the generated header's verification note does not mention the link host. Dropping \
          the denial is not enough — the note is what a user reads to know which consumption \
-         paths were actually proved"
+         paths were actually proved:\n{h}"
     );
 }
 
@@ -242,31 +250,49 @@ fn the_generated_header_does_not_deny_a_verification_that_exists() {
 /// silently accepted a bare `ML_ERR_` is exactly the failure mode this file exists for.
 #[test]
 fn the_emitter_prefixes_error_constants_with_the_module() {
-    let header_rs = read("compiler/src/header.rs");
+    // Run the emitter and read WHAT IT WROTE. The first version of this test matched source
+    // text in header.rs instead — including a `format!` call character for character — and
+    // Grok showed it had a hole big enough to drive the regression through: leave
+    // `error_macro` defined but stop calling it, and every source-text assertion still
+    // passed while the emitted constants lost their prefix. It also failed on harmless
+    // changes (rustfmt wrapping the call, renaming the helper).
+    //
+    // Text generation needs no build, so this stays off `cfg(windows)` and the ubuntu job
+    // runs it. The module name is deliberately NOT one of the corpus names: the rule is
+    // being checked, not one fixture.
+    let ir = mlc::compile_to_ir(
+        "error E_NEG = 3\n\
+         error E_LATE = 4\n\
+         export fn take(x: f64) -> f64! {\n\
+         \x20 if x < 0.0 { fail E_NEG }\n\
+         \x20 return x\n\
+         }\n",
+    )
+    .expect("the probe module must compile");
 
-    // The format strings that build the two bindings' constant lines.
-    for emitted in ["\"#define {} {}\"", "\"  {} = {};\""] {
+    let h = mlc::header::emit_c_header(&ir, "widget");
+    let pas = mlc::header::emit_delphi_unit(&ir, "widget", "widget");
+
+    for (binding, text, expected) in [
+        ("the C header", &h, "#define ML_WIDGET_ERR_E_NEG 3"),
+        ("the Delphi unit", &pas, "ML_WIDGET_ERR_E_NEG = 3;"),
+    ] {
         assert!(
-            header_rs.contains(emitted),
-            "compiler/src/header.rs no longer emits {emitted} — if the shape changed, this \
-             test's idea of where the error constant is built is stale"
+            text.contains(expected),
+            "{binding} does not carry the module in the error constant's name (expected \
+             '{expected}'). Two modules that both declare a common error name would collide \
+             again — measured as C4005 under /W4 /WX before Q14 was closed:\n{text}"
+        );
+        assert!(
+            !text.contains("ML_ERR_"),
+            "{binding} still emits a bare 'ML_ERR_', which is the collision itself:\n{text}"
         );
     }
-    assert!(
-        header_rs.contains("fn error_macro(dll_name: &str, error_name: &str)"),
-        "header.rs no longer routes error constants through `error_macro`, which is the one \
-         place the module prefix is applied (DP-Q1)"
-    );
-    assert!(
-        header_rs.contains("format!(\"ML_{}_ERR_{}\", macro_stem(dll_name), error_name)"),
-        "`error_macro` no longer produces ML_<MODULE>_ERR_<NAME>. Two modules that both \
-         declare a common error name would collide again — measured as C4005 under /W4 /WX \
-         before Q14 was closed"
-    );
+
     // The guard that must NOT be added (DP-Q3): it would let the first header win and turn
     // that loud C4005 into a silent wrong meaning.
     assert!(
-        !header_rs.contains("#ifndef ML_{}_ERR"),
+        !h.contains("#ifndef ML_WIDGET_ERR"),
         "an #ifndef guard around a per-module error constant makes a genuine conflict silent"
     );
 }

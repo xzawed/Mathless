@@ -60,7 +60,55 @@ type Scope = HashMap<String, (IrType, Binding)>;
 /// They exist because `f64::floor` and friends are **not in `core`**, so a module that needs
 /// to round had only `(x) as i32 as f64`, which saturates at `i32::MAX` and silently returns
 /// 2,147,483,647 for any larger amount (measured).
-pub const BUILTIN_ROUNDERS: &[&str] = &["floor", "ceil", "round", "trunc"];
+///
+/// **An enum, not `&[&str]`, and that is the whole point.** It was a string list, and the
+/// emitter that turns a name into a Rust body matched on `&str` with a `_ => {}` tail — so
+/// adding a fifth name made the frontend accept the call while codegen emitted nothing for
+/// it. Measured: adding `"sqrt"` to the list made `export fn f(x: f64) -> f64 { return
+/// sqrt(x) }` pass the frontend and emit `ml_sqrt(x)` with no `fn ml_sqrt` anywhere — a
+/// generated crate calling a function it does not define, which is exactly the defect #158
+/// fixed in a different helper family.
+///
+/// A `&str` match is a decision the compiler cannot check. An enum is one it must: measured
+/// after this change, adding a fifth variant fails to build with `error[E0004]:
+/// non-exhaustive patterns: `Rounder::Sqrt` not covered` at both the emitter and `name()`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Rounder {
+    Floor,
+    Ceil,
+    Round,
+    Trunc,
+}
+
+impl Rounder {
+    /// Every rounder, in the order a diagnostic should list them.
+    ///
+    /// A list, so it can drift from the enum — but only in the harmless direction. Dropping a
+    /// variant from here loses it from a message; ADDING a variant to the enum is caught by
+    /// the exhaustive matches in [`Rounder::name`] and `emit_rounding_helpers`, which is the
+    /// direction that shipped a broken module.
+    pub const ALL: &'static [Rounder] = &[
+        Rounder::Floor,
+        Rounder::Ceil,
+        Rounder::Round,
+        Rounder::Trunc,
+    ];
+
+    /// The surface name a user calls. Exhaustive on purpose.
+    pub fn name(self) -> &'static str {
+        match self {
+            Rounder::Floor => "floor",
+            Rounder::Ceil => "ceil",
+            Rounder::Round => "round",
+            Rounder::Trunc => "trunc",
+        }
+    }
+
+    /// The rounder a call names, if it names one.
+    pub fn from_name(name: &str) -> Option<Rounder> {
+        Rounder::ALL.iter().copied().find(|r| r.name() == name)
+    }
+}
 
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
@@ -163,9 +211,9 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Builtins go in first, so a user function of the same name collides below rather than
     // silently shadowing one. DP-R1: these are signatures, NOT lexer keywords — `let round = 1`
     // stays legal, because calls and variables are separate namespaces.
-    for name in BUILTIN_ROUNDERS {
+    for r in Rounder::ALL {
         sigs.insert(
-            (*name).to_string(),
+            r.name().to_string(),
             Sig {
                 params: vec![IrType::F64],
                 ret: IrType::F64,
@@ -176,13 +224,17 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
         );
     }
     for f in &module.functions {
-        if BUILTIN_ROUNDERS.contains(&f.name.as_str()) {
+        if Rounder::from_name(&f.name).is_some() {
             return Err(TypeError::new(format!(
                 "function '{}' collides with the built-in `{}` — rename it (the built-ins are \
                  {}, all f64 -> f64)",
                 f.name,
                 f.name,
-                BUILTIN_ROUNDERS.join(", ")
+                Rounder::ALL
+                    .iter()
+                    .map(|r| r.name())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )));
         }
         sigs.insert(
@@ -646,6 +698,13 @@ fn check_block(
     };
     let last = out.len().saturating_sub(1);
     if let Some(i) = out[..last].iter().position(terminates) {
+        // Exempt from the crate's `wildcard_enum_match_arm` deny: this picks the WORD in a
+        // message, not what goes into an artifact. A new terminator falling through here is
+        // read by a person as a slightly wrong noun; the arm above it, `terminates`, is where
+        // a new terminator would actually matter — and note that a `matches!` positive list
+        // is invisible to the lint, which is this guard's known blind spot (it is what let
+        // #161 happen).
+        #[allow(clippy::wildcard_enum_match_arm)]
         let kw = match &out[i] {
             IrStmt::Fail(_) => "fail",
             IrStmt::TryCall { .. } => "return try",

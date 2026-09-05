@@ -1,6 +1,20 @@
 //! Lexer for the Mathless MVP subset. Tracks line/col so the parser can report
 //! positions. Skips whitespace and `// line comments`.
 
+// Exempt from the crate-wide `wildcard_enum_match_arm` deny (compiler/Cargo.toml).
+//
+// The wildcard here is `_ => Token::Ident(s)`: a word that is no keyword is an identifier.
+// That builds a TOKEN, not an artifact — the identifier then goes through every check in
+// `reserved.rs` and `typeck` before any emitter sees it. The deny is aimed at the sites
+// between the IR and an emitted `.dll`/`.h`/`.pas`/`.lib`, which is where the measured
+// failure was silent (see the note in compiler/Cargo.toml).
+//
+// Its limit is that adding a keyword to the `match` above and forgetting it here would make
+// the word lex as an identifier rather than as the new keyword. That is a real gap and the
+// lint would not close it either way, because the arm it needs is on the string, not on the
+// enum.
+#![allow(clippy::wildcard_enum_match_arm)]
+
 use crate::error::ParseError;
 
 #[derive(Debug, PartialEq, Clone)]

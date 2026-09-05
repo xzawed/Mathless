@@ -115,3 +115,36 @@ fn only_the_builtins_actually_called_are_emitted() {
     assert!(one.contains("ml_floor"), "{one}");
     assert!(!one.contains("ml_ceil"), "only what is called:\n{one}");
 }
+
+/// Every rounder the frontend accepts is a rounder codegen emits.
+///
+/// The compile-time half of this is stronger and lives in the types: `Rounder` is an enum and
+/// `emit_rounding_helpers` matches on it exhaustively, so adding a variant does not build
+/// until the emitter answers. Measured — adding a fifth variant gives
+/// `error[E0004]: non-exhaustive patterns: `Rounder::Sqrt` not covered` at two sites.
+///
+/// This test covers what the type cannot: `Rounder::ALL` is a hand-written list, and dropping
+/// a variant FROM it compiles fine — the signature would simply never be registered, and a
+/// call would be rejected as an unknown function. That is a benign direction, but it is the
+/// one direction left, so it gets an assertion rather than an argument.
+///
+/// Before the enum, the missing direction was the dangerous one: with `BUILTIN_ROUNDERS` as
+/// `&[&str]` and a `_ => {}` in the emitter, adding `"sqrt"` made `return sqrt(x)` pass the
+/// frontend, emit `ml_sqrt(x)`, and emit no `fn ml_sqrt` — measured.
+#[test]
+fn every_declared_rounder_is_emitted_when_it_is_called() {
+    for r in mlc::typeck::Rounder::ALL {
+        let name = r.name();
+        let src = format!("export fn f(x: f64) -> f64 {{ return {name}(x) }}");
+        let rust = mlc::compile_to_rust(&src)
+            .unwrap_or_else(|e| panic!("the frontend must accept the built-in `{name}`: {e}"));
+        assert!(
+            rust.contains(&format!("fn ml_{name}(")),
+            "`{name}` is registered as a built-in but codegen emits no `fn ml_{name}`:\n{rust}"
+        );
+        assert!(
+            rust.contains(&format!("ml_{name}(x)")),
+            "...and the call must reach it:\n{rust}"
+        );
+    }
+}

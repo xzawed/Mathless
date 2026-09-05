@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::ir::*;
+use crate::typeck::Rounder;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CodegenError {
@@ -313,8 +314,19 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             RetAbi::StringOut => match &e.kind {
                 // Built here: pieces appended in order (SPEC-string-concat §2.3).
                 IrExprKind::Concat(pieces) => emit_concat_return(pieces, indent, out),
-                // Borrowed: one pointer, the #92 path, unchanged.
-                _ => {
+                // Borrowed: one pointer, the #92 path, unchanged. Spelled out rather than
+                // `_`, because "everything else is already a pointer" is a fact about
+                // today's variants, not about the enum — a new string-shaped one would be
+                // handed to `ml_strout` as if it were an address.
+                IrExprKind::ConstStr(_)
+                | IrExprKind::Var(_)
+                | IrExprKind::Call { .. }
+                | IrExprKind::Cast { .. }
+                | IrExprKind::ConstF64(_)
+                | IrExprKind::ConstI32(_)
+                | IrExprKind::ConstBool(_)
+                | IrExprKind::Unary { .. }
+                | IrExprKind::Binary { .. } => {
                     let _ = writeln!(
                         out,
                         "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
@@ -472,7 +484,7 @@ fn emit_expr(e: &IrExpr) -> String {
             //
             // Function names no longer need the rule: since the wrapper refactor a user
             // function is `ml_fn_<name>`, which cannot collide with `ml_floor` (DP-W4).
-            if crate::typeck::BUILTIN_ROUNDERS.contains(&name.as_str()) {
+            if crate::typeck::Rounder::from_name(name).is_some() {
                 format!("ml_{name}({})", args.join(", "))
             } else {
                 // Every Mathless function is one body named `ml_fn_<name>`, exported or not,
@@ -573,11 +585,24 @@ fn emit_expr(e: &IrExpr) -> String {
             // override a manifest profile — so the rule goes where nothing can override it:
             // the emitted expression. Same move the `/` and `%` guard above already makes.
             if lhs.ty == IrType::I32 {
+                // Enumerated, not `_ => None`: a new i32 arithmetic operator falling through
+                // here would silently get the plain Rust operator back, which is precisely
+                // the defect this arm exists to fix.
                 if let Some(method) = match op {
                     IrBinOp::Add => Some("wrapping_add"),
                     IrBinOp::Sub => Some("wrapping_sub"),
                     IrBinOp::Mul => Some("wrapping_mul"),
-                    _ => None,
+                    // Guarded above with an explicit zero check and `wrapping_div`/`_rem`.
+                    IrBinOp::Div | IrBinOp::Rem => None,
+                    // Comparisons and the logical operators yield bool; nothing to wrap.
+                    IrBinOp::Lt
+                    | IrBinOp::Gt
+                    | IrBinOp::Le
+                    | IrBinOp::Ge
+                    | IrBinOp::Eq
+                    | IrBinOp::Ne
+                    | IrBinOp::And
+                    | IrBinOp::Or => None,
                 } {
                     return format!("({}).{method}({})", emit_expr(lhs), emit_expr(rhs));
                 }
@@ -669,6 +694,44 @@ fn emit_strout_helper(module: &IrModule, out: &mut String) {
 /// `ml_ilen` and `ml_wint` must agree to the byte or pass 2 walks off the end of the host's
 /// buffer. They agree by construction: `ml_wint` asks `ml_ilen` for the width and fills that
 /// exact span right-to-left (SPEC §5.2).
+/// How one concat piece reaches the host's buffer.
+///
+/// The three passes of [`emit_concat_return`] each asked this question separately, with their
+/// own `IrExprKind::Cast { .. } => … , _ => …`. Three copies of one rule, each able to drift —
+/// and the two counting passes disagreeing is a write past the end of the host's buffer, which
+/// is why the same function already refuses to let `ml_wint` recount.
+///
+/// Asked once, here, exhaustively: a new `IrExprKind` does not build until this says which
+/// side it falls on. That is the shape the concat slice's own history argues for — commit
+/// 9240ee7 updated three exhaustive walkers in this file correctly and missed the one that
+/// ended in `_`, in the same commit (#158).
+enum PieceKind<'a> {
+    /// Decimal digits the module renders: `<i32> as string`. Counted by `ml_ilen`, written by
+    /// `ml_wint`, and both are handed the CAST'S OPERAND, not the cast.
+    Digits { operand: &'a IrExpr },
+    /// Bytes the module borrows — from a literal or from the host. Counted by `ml_slen`,
+    /// copied by `ml_wstr`.
+    Bytes,
+}
+
+fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
+    match &p.kind {
+        IrExprKind::Cast { operand, .. } => PieceKind::Digits { operand },
+        // Every piece is `Str` by the time codegen sees it (typeck flattens and checks), so
+        // each of these is already a pointer. Spelled out so that a future string-shaped
+        // variant has to say which it is instead of being assumed to be an address.
+        IrExprKind::ConstStr(_)
+        | IrExprKind::Var(_)
+        | IrExprKind::Call { .. }
+        | IrExprKind::Concat(_)
+        | IrExprKind::ConstF64(_)
+        | IrExprKind::ConstI32(_)
+        | IrExprKind::ConstBool(_)
+        | IrExprKind::Unary { .. }
+        | IrExprKind::Binary { .. } => PieceKind::Bytes,
+    }
+}
+
 fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     let pad = "    ".repeat(indent);
     // Each piece is bound ONCE, before either pass, and both passes use the binding.
@@ -682,9 +745,9 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     // is what sized the host's buffer. `ml_wint` already refuses to recount for exactly that
     // reason (it asks `ml_ilen`); this gives the string pieces the same guarantee.
     for (i, p) in pieces.iter().enumerate() {
-        let e = match &p.kind {
-            IrExprKind::Cast { operand, .. } => emit_expr(operand),
-            _ => emit_expr(p),
+        let e = match piece_kind(p) {
+            PieceKind::Digits { operand } => emit_expr(operand),
+            PieceKind::Bytes => emit_expr(p),
         };
         let _ = writeln!(out, "{pad}let __p{i} = {e};");
     }
@@ -692,11 +755,11 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     // empty result is 1, never 0. That keeps `*needed == 0` impossible, exactly as #92.
     let _ = writeln!(out, "{pad}let mut __n: i32 = 1;");
     for (i, p) in pieces.iter().enumerate() {
-        match &p.kind {
-            IrExprKind::Cast { .. } => {
+        match piece_kind(p) {
+            PieceKind::Digits { .. } => {
                 let _ = writeln!(out, "{pad}__n += ml_ilen(__p{i});");
             }
-            _ => {
+            PieceKind::Bytes => {
                 let _ = writeln!(out, "{pad}__n += ml_slen(__p{i});");
             }
         }
@@ -714,11 +777,11 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     // conforming host nothing, because `ml_cap >= __n` was already checked above.
     let _ = writeln!(out, "{pad}let mut __o: i32 = 0;");
     for (i, p) in pieces.iter().enumerate() {
-        match &p.kind {
-            IrExprKind::Cast { .. } => {
+        match piece_kind(p) {
+            PieceKind::Digits { .. } => {
                 let _ = writeln!(out, "{pad}__o = ml_wint(ml_buf, __o, __p{i});");
             }
-            _ => {
+            PieceKind::Bytes => {
                 let _ = writeln!(out, "{pad}__o = ml_wstr(ml_buf, __o, __p{i}, ml_cap);");
             }
         }
@@ -916,15 +979,12 @@ fn emit_string_helper(module: &IrModule, out: &mut String) {
 }
 
 /// Which built-in rounders this module actually calls, so an unused one is not emitted.
-fn used_rounders(module: &IrModule) -> Vec<&'static str> {
-    fn walk_expr(e: &IrExpr, found: &mut Vec<&'static str>) {
+fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
+    fn walk_expr(e: &IrExpr, found: &mut Vec<crate::typeck::Rounder>) {
         match &e.kind {
             IrExprKind::Call { name, args, .. } => {
-                if let Some(b) = crate::typeck::BUILTIN_ROUNDERS
-                    .iter()
-                    .find(|b| **b == name.as_str())
-                {
-                    if !found.contains(b) {
+                if let Some(b) = crate::typeck::Rounder::from_name(name) {
+                    if !found.contains(&b) {
                         found.push(b);
                     }
                 }
@@ -952,7 +1012,7 @@ fn used_rounders(module: &IrModule) -> Vec<&'static str> {
             | IrExprKind::Var(_) => {}
         }
     }
-    fn walk_stmts(body: &[IrStmt], found: &mut Vec<&'static str>) {
+    fn walk_stmts(body: &[IrStmt], found: &mut Vec<crate::typeck::Rounder>) {
         for s in body {
             match s {
                 IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
@@ -1007,21 +1067,27 @@ fn emit_rounding_helpers(module: &IrModule, out: &mut String) {
          // would be +0.0 and C would disagree (DP-R3).\n\
          fn ml_sz(r: f64, x: f64) -> f64 { if r == 0.0 { x * 0.0 } else { r } }\n",
     );
-    for name in &used {
-        match *name {
-            "trunc" => out.push_str("fn ml_trunc(x: f64) -> f64 { ml_sz(ml_trunc_raw(x), x) }\n"),
-            "floor" => out.push_str(
+    // Exhaustive over `Rounder`, with no `_` arm. It matched on `&str` and ended `_ => {}`,
+    // which made a fifth builtin a silent nothing: measured, adding `"sqrt"` to the list let
+    // `return sqrt(x)` pass the frontend and emit `ml_sqrt(x)` with no `fn ml_sqrt` anywhere
+    // — the generated crate calling a function it does not define, which is #158's defect in
+    // a different helper family. Now the same edit does not build until this match answers.
+    for r in &used {
+        match r {
+            Rounder::Trunc => {
+                out.push_str("fn ml_trunc(x: f64) -> f64 { ml_sz(ml_trunc_raw(x), x) }\n")
+            }
+            Rounder::Floor => out.push_str(
                 "fn ml_floor(x: f64) -> f64 { let t = ml_trunc_raw(x); ml_sz(if t > x { t - 1.0 } else { t }, x) }\n",
             ),
-            "ceil" => out.push_str(
+            Rounder::Ceil => out.push_str(
                 "fn ml_ceil(x: f64) -> f64 { let t = ml_trunc_raw(x); ml_sz(if t < x { t + 1.0 } else { t }, x) }\n",
             ),
             // NOT `floor(x + 0.5)`: that returns 1 for 0.49999999999999994. The fractional
             // part is computed exactly instead (`x - trunc(x)` is exact below 2^53).
-            "round" => out.push_str(
+            Rounder::Round => out.push_str(
                 "fn ml_round(x: f64) -> f64 { let t = ml_trunc_raw(x); if t != t { return t; } let d = x - t; ml_sz(if d >= 0.5 { t + 1.0 } else if d <= -0.5 { t - 1.0 } else { t }, x) }\n",
             ),
-            _ => {}
         }
     }
     out.push('\n');

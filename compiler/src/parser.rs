@@ -39,6 +39,25 @@
 //! (`typeck`) — an `out` parameter is export-only, a `string` return demands `!`, a `try`
 //! caller must itself be fallible.
 
+// Exempt from the crate-wide `wildcard_enum_match_arm` deny (compiler/Cargo.toml).
+//
+// The wildcards here match a `Token`, and they do two things: choose the noun in an
+// "expected …, found …" message, and end a precedence loop (`_ => break`). Neither writes an
+// artifact — a new token falling through gives a less helpful sentence, or stops a loop that
+// would have stopped anyway on a token no production accepts. The deny is aimed at the sites
+// between the IR and an emitted `.dll`/`.h`/`.pas`/`.lib`, which is where the measured
+// failure was silent (see the note in compiler/Cargo.toml).
+//
+// (An earlier draft of this note said "every wildcard chooses a diagnostic", which is not
+// true of `_ => break`. Grok caught it while verifying the change that added the note —
+// which is the defect class this whole change is about, committed in the comment explaining
+// the fix for it.)
+//
+// Exempting a whole module is coarser than exempting each site; that is deliberate, and its
+// limit is that a future artifact-deciding match added HERE would not be asked. There is
+// none today: this module produces the AST and never writes a file.
+#![allow(clippy::wildcard_enum_match_arm)]
+
 use crate::ast::*;
 use crate::error::ParseError;
 use crate::lexer::{Spanned, Token};

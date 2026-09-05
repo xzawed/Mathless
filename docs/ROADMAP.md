@@ -1,6 +1,6 @@
 # ROADMAP
 
-구현은 문서의 열린 질문 중 MVP에 필요한 것만 닫은 뒤에 시작한다.
+구현은 문서의 열린 질문 중 MVP에 필요한 것만 닫은 뒤에 시작한다 — **그 게이트는 2026-08-28에 닫혔고(Q1~Q5 → D14~D18) Phase 1 구현이 진행 중이다.** 현재 상태의 정본은 [docs/STATUS.md](STATUS.md)다.
 
 ## Phase 0 — 설계 고정 (완료)
 
@@ -21,7 +21,7 @@
 - 타입체크 ✅ (모든 경로 return·혼합 타입·예약어·중복 식별자 거부 포함)
 - 네이티브 출력 (IR → `no_std`/`extern "C"` Rust → `cargo` cdylib) ✅
 - C ABI 로더 (Rust kernel32 오라클) ✅
-- `mlc build` CLI → `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit) 산출 ✅
+- `mlc build` CLI → `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit) + `.lib`(MSVC 임포트 라이브러리) **네 가지** 산출 ✅
 - **C 데모 호스트 ✅**(MSVC `cl`, `hosts/c-host/host.c` — 수용 D 통과) · Delphi 데모 앱은 여전히 **BLOCKED**(`dcc64` 미확보)
 
 완료 조건: `discount(price, vip)` 같은 함수를 모듈에서 호출.

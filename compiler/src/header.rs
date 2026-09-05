@@ -418,6 +418,29 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     for e in &module.errors {
         let _ = writeln!(s, "  {} = {};", error_macro(dll_name, &e.name), e.code);
     }
+    // The Q12 truncation status, on the same terms the C header gives it (DP-T6): a
+    // runtime-wide band, OUTSIDE the module's error namespace, and emitted only for a module
+    // that can actually return it.
+    //
+    // The header defined and explained it from the start and the unit said nothing, so a
+    // Delphi host had to retype `-1` — the very thing `hosts/c-host/host.c` refuses to do on
+    // the C side ("the error constant comes from the header too … not from a number retyped
+    // here"). No `#ifndef` equivalent is needed or possible: a Pascal unit has its own
+    // namespace, so two generated units in one program do not collide the way two included
+    // headers would.
+    if module
+        .functions
+        .iter()
+        .any(|f| f.exported && f.ret == IrType::Str)
+    {
+        let _ = writeln!(
+            s,
+            "  {{ Q12 caller-allocates protocol: the buffer was too small to hold the result,\n    \
+             NUL included. Truncation is a FAILURE, not a short success - nothing is written,\n    \
+             and ml_needed is the exact size to allocate, in the same unit as ml_cap. }}"
+        );
+        let _ = writeln!(s, "  ML_ST_INSUFFICIENT_BUFFER = -1;");
+    }
     s.push('\n');
     let _ = writeln!(
         s,

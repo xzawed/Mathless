@@ -647,6 +647,10 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
 }
 
 /// Does this module build a string anywhere? Only then are the concat helpers emitted.
+///
+/// Exhaustive for the same reason [`compares_strings`] is — see the note there. This walker
+/// had two catch-alls, and the statement one was also short: `AssignOut` and `TryCall` carry
+/// ordinary expressions and were both falling to `_ => false`.
 fn builds_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
@@ -656,17 +660,24 @@ fn builds_strings(module: &IrModule) -> bool {
                 in_expr(operand)
             }
             IrExprKind::Call { args, .. } => args.iter().any(in_expr),
-            _ => false,
+            IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
         }
     }
     fn in_stmts(stmts: &[IrStmt]) -> bool {
         stmts.iter().any(|s| match s {
-            IrStmt::Return(e) => in_expr(e),
             IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
                 in_expr(cond) || in_stmts(body)
             }
-            IrStmt::Let { value, .. } | IrStmt::Assign { value, .. } => in_expr(value),
-            _ => false,
+            IrStmt::Return(e)
+            | IrStmt::Let { value: e, .. }
+            | IrStmt::Assign { value: e, .. }
+            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+            IrStmt::Fail(_) => false,
         })
     }
     module.functions.iter().any(|f| in_stmts(&f.body))
@@ -735,6 +746,21 @@ fn emit_concat_helpers(module: &IrModule, out: &mut String) {
 }
 
 /// Does this module compare strings anywhere? Only then is the helper emitted.
+///
+/// The arms are written out one per variant, with **no `_` catch-all**, and that is the whole
+/// point. This walker used to end in `_ => false`, which made "a variant nobody thought about"
+/// indistinguishable from "no comparison here" — and `Concat` was that variant. A comparison
+/// reachable only through a concatenation piece did not turn the helper on, so
+///
+/// ```text
+/// fn score(b: bool) -> i32 { if b { return 1 }  return 0 }
+/// export fn label(a: string, b: string) -> string! { return "eq=" + score(a == b) as string }
+/// ```
+///
+/// compiled here and then failed inside the generated crate with `error[E0425]: cannot find
+/// function `ml_streq` in this scope` — a valid program rejected by an error in code the user
+/// never wrote. Adding the missing arm fixes today's bug; deleting the catch-all is what stops
+/// the next variant from reintroducing it silently, because then it will not build.
 fn compares_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
@@ -747,7 +773,12 @@ fn compares_strings(module: &IrModule) -> bool {
                 in_expr(operand)
             }
             IrExprKind::Call { args, .. } => args.iter().any(in_expr),
-            _ => false,
+            IrExprKind::Concat(pieces) => pieces.iter().any(in_expr),
+            IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
         }
     }
     fn in_stmts(body: &[IrStmt]) -> bool {

@@ -532,6 +532,11 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
         "docs/HOST_ABI.md",
         "LICENSE-OUTPUT-EXCEPTION",
         "docs/STATUS.md",
+        // D23 is the decision record for a LICENCE GRANT, and it enumerated four items while
+        // LICENSE-OUTPUT-EXCEPTION §1 listed five — the import library was missing from the
+        // decision that points at that licence. A grant that under-lists what it grants is the
+        // worst place for this drift, and it sat outside this guard until 2026-09-05.
+        "docs/DECISIONS.md",
     ] {
         let text = read(doc);
         for ext in &exts {
@@ -563,6 +568,29 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
          A file written and not reported is one the user does not know they have",
         exts.len()
     );
+
+    // D23 specifically, because the whole-file check above is not enough for it. D23 is the
+    // decision record for a LICENCE GRANT: it enumerates what belongs to the user. A
+    // file-wide `contains` is satisfied by the D18 addendum mentioning the same extension
+    // somewhere else, so the grant could quietly under-list again and stay green — measured,
+    // and Grok raised it independently. The grant's own sentence is therefore checked.
+    let decisions = read("docs/DECISIONS.md");
+    let at = decisions
+        .find("D23 산출물 라이선스")
+        .expect("docs/DECISIONS.md no longer has a D23 licence entry — this test reads it");
+    let grant: String = decisions[at..]
+        .lines()
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(" ");
+    for ext in &exts {
+        assert!(
+            grant.contains(&format!("`{ext}`")),
+            "D23 grants the user what `mlc` produces but its own enumeration omits `{ext}`. \
+             LICENSE-OUTPUT-EXCEPTION §1 lists it, so the decision record under-states the \
+             licence it points at. The artifact set is {exts:?}.\nD23 says: {grant}"
+        );
+    }
 }
 
 /// The README's `mlc build` transcript, against what the CLI actually prints.

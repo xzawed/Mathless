@@ -370,10 +370,28 @@ fn check_function(
                 targets.join(", ")
             )));
         }
+        // The generated header includes `<stdint.h>`, so its macros are already defined when
+        // the declarations below them are read — and a macro is substituted, not shadowed.
+        // Measured: a parameter named `INT32_MAX` emitted `double mlx_f(double INT32_MAX);`,
+        // which the preprocessor turns into `double mlx_f(double 2147483647);`.
+        if name_scope == crate::reserved::NameScope::Bindings {
+            if let Some(header) = crate::reserved::included_macro(&p.name) {
+                return Err(TypeError::new(format!(
+                    "function '{}': parameter '{}' is a macro from <{header}>, which the \
+                     generated header includes — the preprocessor would replace it with its \
+                     value inside the declaration. Rename it.",
+                    f.name, p.name
+                )));
+            }
+        }
         // A parameter lands in the same emitted scope as the identifiers codegen injects, and
         // shadowing there is silent: a parameter named `__d` was captured by the `i32 /`
         // guard's divisor binding and made `__d / b` return 1 for every nonzero `b`.
-        if let Some(prefix) = crate::reserved::generated_prefix(&p.name) {
+        //
+        // Scope-aware since the measurement in `reserved::generated_prefix_in`: for a name
+        // that reaches the bindings the comparison is case-insensitive, because `ML_BUF` and
+        // the generated `ml_buf` are one identifier to Delphi.
+        if let Some(prefix) = crate::reserved::generated_prefix_in(&p.name, name_scope) {
             return Err(TypeError::new(format!(
                 "function '{}': parameter '{}' starts with `{}`, which the compiler generates \
                  into the same scope — {}. Rename it.",
@@ -429,7 +447,16 @@ fn check_function(
     }
     // The fallible ABI synthesizes an `out_value` out-param; a user param of that name would
     // collide in the generated Rust (Grok verify). Reject it with a clear message.
-    if f.fallible && f.params.iter().any(|p| p.name == "out_value") {
+    //
+    // Case-insensitively, because the collision the message describes is worse in the `.pas`
+    // than in the Rust: measured, `export fn f(OUT_VALUE: f64) -> f64!` emitted
+    // `function mlx_f(OUT_VALUE: Double; out out_value: Double)` — one Pascal identifier,
+    // twice in one parameter list.
+    if f.fallible
+        && f.params
+            .iter()
+            .any(|p| p.name.eq_ignore_ascii_case("out_value"))
+    {
         return Err(TypeError::new(format!(
             "function '{}': parameter name 'out_value' is reserved in a fallible function \
              (it names the D17 out-param) — rename it",

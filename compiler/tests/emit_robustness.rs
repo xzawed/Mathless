@@ -5,9 +5,15 @@
 //!    name, so a stem like `if`, `my-mod` or `2fast` used to surface as a confusing *cargo*
 //!    failure instead of a clear frontend error — and a quoted stem could break out of the
 //!    TOML string entirely.
-//! 2. **Output lands all-or-nothing.** The three deliverables are staged and only then moved
+//! 2. **Output lands all-or-nothing.** The **four** deliverables are staged and only then moved
 //!    into `out_dir`, so a failure part-way through does not leave a `.dll` with no bindings
-//!    next to it — a partial set a host could still load.
+//!    next to it — a partial set a host could still load. (It said "three" until 2026-09-05;
+//!    the `.lib` arrived in #124 and this sentence did not move.)
+//!
+//!    **Against I/O errors, not against process death.** The rollback runs in memory, so a
+//!    kill during the four renames leaves whatever the OS had already done — a mixed old/new
+//!    set. Nothing in-process can close that window, and this file does not pretend to: the
+//!    tests below inject FAILURES, which is the case the design does handle.
 
 use std::path::Path;
 

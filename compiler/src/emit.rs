@@ -174,6 +174,13 @@ static WINDOWS_DEVICE_NAMES: &[&str] = &[
 /// four files exist complete in `stage`, so the only remaining failure window is the moves
 /// themselves — and those are undone.
 ///
+/// **The guarantee is against I/O ERRORS, not against process death.** The undo is in-memory
+/// state (`done`), so a kill in the middle of these renames leaves whatever the OS already
+/// committed — a mixed old/new set that nothing here can repair, because the code that would
+/// repair it is the code that died. Making that survivable needs an on-disk journal, which is
+/// out of proportion to a four-file publish; the honest move is to say so rather than let
+/// "all-or-nothing" be read as crash-safe (Grok verify raised it).
+///
 /// If a restore *itself* fails, the displaced file is still sitting in `stage`, and silently
 /// deleting the staging directory afterwards would destroy it (Grok verify). So the error
 /// reports those paths and the caller keeps the directory.

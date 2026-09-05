@@ -11,3 +11,22 @@ publish = false
 [[bin]]
 name = "mlc"
 path = "src/main.rs"
+
+# A wildcard arm over an IR enum is a decision the compiler cannot check, and this repository
+# has the controlled experiment. Commit 9240ee7 (#108, the concat slice) added
+# `IrExprKind::Concat` arms at four walkers in `codegen.rs`. It got three of them right and
+# missed `compares_strings` — same commit, same file, same author, same day. The only
+# difference: the three that were updated had no `_` arm, so rustc REFUSED TO BUILD without
+# them, while `compares_strings` ended `_ => false` and absorbed the new variant in silence.
+# That miss shipped as #158, where a valid program failed with `error[E0425]: ml_streq not
+# found` inside generated code the user never wrote. Commit 937853f (#98, `try`) repeats it
+# exactly: adding `IrStmt::TryCall` forced and got correct arms at three exhaustive sites and
+# missed only a `matches!` positive list, which rustc cannot see (that became #161).
+#
+# So the determining variable was never care, diff scope, or test coverage. It was whether
+# the construct made the compiler ask. This makes it ask everywhere.
+#
+# Both CI jobs already run `cargo clippy --workspace --all-targets -- -D warnings`, so a
+# missing arm is a red build that needs no test input to fire.
+[lints.clippy]
+wildcard_enum_match_arm = "deny"

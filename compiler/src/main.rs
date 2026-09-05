@@ -66,7 +66,15 @@ fn run(args: &[String]) -> Result<(), String> {
             "{msg}\n       the module name is the input file's stem — rename {}",
             input.display()
         ),
-        other => other.to_string(),
+        // Enumerated rather than `other =>`, under the crate's `wildcard_enum_match_arm` deny.
+        // These three carry everything the user needs in the library's own `Display`; the one
+        // above does not, because only the CLI knows the module name came from a filename.
+        // A future variant has to answer the same question here instead of quietly taking the
+        // bare message — which is exactly the kind of "silence reads as a decision" this deny
+        // exists to end.
+        e @ (mlc::emit::EmitError::Compile(_)
+        | mlc::emit::EmitError::Io { .. }
+        | mlc::emit::EmitError::RollbackIncomplete { .. }) => e.to_string(),
     })?;
 
     println!("mlc: wrote");

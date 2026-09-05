@@ -60,7 +60,17 @@ pub fn manifest(module: &IrModule) -> String {
     let mut s = String::from("ml-iface/1\n");
     s.push_str(&format!("abi={}\n", crate::abi::ML_MODULE_ABI_VERSION));
 
-    let mut fns: Vec<String> = module
+    // Sorted BY NAME, which is what SPEC §2.1 / DP-H4 says and what the doc comment above
+    // says — so sort on the name, not on the rendered line. The two are not the same order:
+    // sorting the line compares the separator that follows the name against the next
+    // character of a longer name, and for `err` lines that separator is `=` (0x3D), which
+    // every digit sorts below. `error E_1` + `error E_10` came out as `err E_10` then
+    // `err E_1` (measured).
+    //
+    // `fn` lines happened to be right, because their separator is `(` (0x28) and nothing an
+    // identifier can contain sorts below it. That is a property of the separator, not of the
+    // approach, so both lists now carry their key explicitly rather than relying on it.
+    let mut fns: Vec<(&str, String)> = module
         .functions
         .iter()
         .filter(|f| f.exported)
@@ -79,24 +89,27 @@ pub fn manifest(module: &IrModule) -> String {
             // `!` is part of the return type: a fallible function's C declaration is a
             // status plus an out-param, which a host cannot read as a plain value.
             let bang = if f.fallible { "!" } else { "" };
-            format!("fn {}({}) -> {}{}\n", f.name, params, f.ret, bang)
+            (
+                f.name.as_str(),
+                format!("fn {}({}) -> {}{}\n", f.name, params, f.ret, bang),
+            )
         })
         .collect();
-    fns.sort();
-    for line in fns {
+    fns.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    for (_, line) in fns {
         s.push_str(&line);
     }
 
     // Error codes are compiled INTO the host as `ML_ERR_*` (header.rs), so renumbering one
     // while the host keeps the old value is the same silent misreading as a swapped
     // parameter (DP-H6).
-    let mut errs: Vec<String> = module
+    let mut errs: Vec<(&str, String)> = module
         .errors
         .iter()
-        .map(|e| format!("err {}={}\n", e.name, e.code))
+        .map(|e| (e.name.as_str(), format!("err {}={}\n", e.name, e.code)))
         .collect();
-    errs.sort();
-    for line in errs {
+    errs.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    for (_, line) in errs {
         s.push_str(&line);
     }
 

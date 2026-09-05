@@ -317,3 +317,56 @@ fn fnv1a64_matches_the_published_vectors() {
     assert_eq!(iface::fnv1a64(b"a"), 0xaf63_dc4c_8601_ec8c);
     assert_eq!(iface::fnv1a64(b"foobar"), 0x8594_4171_f739_67e8);
 }
+
+/// SPEC §2.1 / DP-H4: both top-level lists are sorted **by name**, byte-ascending. The doc
+/// comment on `manifest` says the same thing, twice.
+///
+/// The code sorted the RENDERED LINES instead, which is a different order whenever one name
+/// is a prefix of another and the next character sorts below `=` (0x3D) — every digit does.
+/// With `error E_1 = 1` and `error E_10 = 2` the manifest came out
+///
+/// ```text
+/// err E_10=2
+/// err E_1=1
+/// ```
+///
+/// because `'0'` (0x30) is below `'='`. Nothing misbehaves today — the module and the header
+/// both get their value from `fingerprint`, so they agree with each other — but the manifest
+/// is the *contract* for anyone recomputing it (the D19 C-emit backend, a host-side checker),
+/// and it was not the contract the spec and the comment describe.
+#[test]
+fn the_error_lines_are_sorted_by_name_not_by_rendered_line() {
+    let m = manifest(
+        "error E_10 = 2\n\
+         error E_1 = 1\n\
+         export fn f(x: f64) -> f64! { if x < 0.0 { fail E_1 }  return x }",
+    );
+    let errs: Vec<&str> = m.lines().filter(|l| l.starts_with("err ")).collect();
+    assert_eq!(
+        errs,
+        vec!["err E_1=1", "err E_10=2"],
+        "byte-ascending BY NAME, so E_1 precedes E_10:\n{m}"
+    );
+}
+
+/// The same rule for `fn` lines, which the spec states first.
+///
+/// This one was already right, and for a reason worth writing down rather than rediscovering:
+/// a `fn` line puts `(` (0x28) after the name, and `(` sorts below every character an
+/// identifier can contain, so a shorter name always came first either way. Sorting by name is
+/// now what the code says as well as what it did — and this test would catch a future
+/// separator that does not have that property.
+#[test]
+fn the_fn_lines_are_sorted_by_name_including_the_prefix_case() {
+    let m = manifest(
+        "export fn f10(x: f64) -> f64 { return x }\n\
+         export fn f1(x: f64) -> f64 { return x }\n\
+         export fn f(x: f64) -> f64 { return x }",
+    );
+    let fns: Vec<&str> = m
+        .lines()
+        .filter(|l| l.starts_with("fn "))
+        .map(|l| l.split('(').next().unwrap())
+        .collect();
+    assert_eq!(fns, vec!["fn f", "fn f1", "fn f10"], "{m}");
+}

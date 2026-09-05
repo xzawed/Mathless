@@ -10,7 +10,14 @@ const NEGATE_IF: &str = include_str!("../../examples/negate_if.mls");
 fn a_negative_literal_can_finally_be_written() {
     // The gap this slice exists to close: `return -5` used to be a parse error.
     let rust = compile_to_rust("export fn f() -> i32 { return -5 }").expect("negative i32");
-    assert!(rust.contains("-5i32") || rust.contains("(-5i32)"), "{rust}");
+    // `(5i32).wrapping_neg()` since DP-I4 put i32's wrap rule in the emitted code — the same
+    // form every other i32 negation gets, with no special case for a literal. Safe for every
+    // literal that reaches codegen: `-2147483648` is already refused earlier, by the range
+    // check on the literal itself ("integer literal 2147483648 does not fit in i32").
+    assert!(
+        rust.contains("(5i32).wrapping_neg()"),
+        "a negative i32 literal:\n{rust}"
+    );
     compile_to_rust("export fn f() -> f64 { return -1.5 }").expect("negative f64");
 }
 
@@ -18,7 +25,9 @@ fn a_negative_literal_can_finally_be_written() {
 fn unary_not_and_neg_lower_to_rust() {
     let rust = compile_to_rust(NEGATE_IF).expect("compile negate_if");
     assert!(rust.contains("!flip"), "logical not:\n{rust}");
-    assert!(rust.contains("-x"), "negation:\n{rust}");
+    // `!` stays a plain operator; `-` on an i32 is `wrapping_neg` (DP-I4). Asserting both in
+    // one place is the point: only the arithmetic one carries an overflow rule.
+    assert!(rust.contains("(x).wrapping_neg()"), "negation:\n{rust}");
     assert!(rust.contains("mlx_negate_if"), "{rust}");
 }
 
@@ -28,8 +37,10 @@ fn unary_binds_tighter_than_multiplication() {
     // the emitted shape: the negation must be inside the left operand.
     let rust =
         compile_to_rust("export fn f(a: i32, b: i32) -> i32 { return -a * b }").expect("compile");
+    // Both operators are now methods on i32 (DP-I4), so the nesting is what says which bound
+    // tighter: the negation is the RECEIVER of the multiplication.
     assert!(
-        rust.contains("((-a) * b)"),
+        rust.contains("((a).wrapping_neg()).wrapping_mul(b)"),
         "unary should bind tighter than `*`:\n{rust}"
     );
 }

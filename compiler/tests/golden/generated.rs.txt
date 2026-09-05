@@ -18,7 +18,7 @@ pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 pub extern "C" fn ml_iface_hash() -> u64 { 0x224A2953E2699E31 }
 
 fn ml_fn_add(a: i32, b: i32) -> i32 {
-    let sum = (a + b);
+    let sum = (a).wrapping_add(b);
     return sum;
 }
 #[no_mangle]
@@ -180,7 +180,7 @@ pub extern "C" fn ml_iface_hash() -> u64 { 0xE83F762BFBFC9CA4 }
 fn ml_fn_count_bounded(n: i32, cap: i32) -> i32 {
     let mut i = 0i32;
     while ((i < n) && (i < cap)) {
-        i = (i + 1i32);
+        i = (i).wrapping_add(1i32);
     }
     return i;
 }
@@ -425,7 +425,7 @@ fn ml_fn_negate_if(x: i32, flip: bool) -> i32 {
     if (!flip) {
         return x;
     }
-    return (-x);
+    return (x).wrapping_neg();
 }
 #[no_mangle]
 pub extern "C" fn mlx_negate_if(x: i32, flip: bool) -> i32 {
@@ -641,7 +641,7 @@ fn ml_fn_receipt_line(item: *const u8, qty: i32, unit_price: i32, ml_buf: *mut u
     __n += ml_slen(b" x \0".as_ptr());
     __n += ml_ilen(qty);
     __n += ml_slen(b" = \0".as_ptr());
-    __n += ml_ilen((qty * unit_price));
+    __n += ml_ilen((qty).wrapping_mul(unit_price));
     unsafe { *ml_needed = __n; }
     if ml_cap < __n { return -1; }
     let mut __o: i32 = 0;
@@ -649,7 +649,7 @@ fn ml_fn_receipt_line(item: *const u8, qty: i32, unit_price: i32, ml_buf: *mut u
     __o = ml_wstr(ml_buf, __o, b" x \0".as_ptr());
     __o = ml_wint(ml_buf, __o, qty);
     __o = ml_wstr(ml_buf, __o, b" = \0".as_ptr());
-    __o = ml_wint(ml_buf, __o, (qty * unit_price));
+    __o = ml_wint(ml_buf, __o, (qty).wrapping_mul(unit_price));
     unsafe { *ml_buf.add(__o as usize) = 0; }
     return 0;
 }
@@ -830,7 +830,7 @@ fn ml_fn_bump(n: i32) -> Result<i32, i32> {
     if (n < 0i32) {
         return Err(1);
     }
-    return Ok((n - 7i32));
+    return Ok((n).wrapping_sub(7i32));
 }
 #[no_mangle]
 pub extern "C" fn mlx_bump(n: i32, out_value: *mut i32) -> i32 {
@@ -854,8 +854,8 @@ pub extern "C" fn mlx_pi_ish() -> f64 {
 }
 
 fn ml_fn_span(n: i32, lo: *mut i32, hi: *mut i32) -> i32 {
-    unsafe { *lo = (n - 1i32); }
-    unsafe { *hi = (n + 1i32); }
+    unsafe { *lo = (n).wrapping_sub(1i32); }
+    unsafe { *hi = (n).wrapping_add(1i32); }
     return n;
 }
 #[no_mangle]
@@ -878,7 +878,7 @@ fn ml_fn_grade(n: i32, tier: *mut i32) -> Result<i32, i32> {
         return Err(1);
     }
     unsafe { *tier = 1i32; }
-    return Ok((n * 10i32));
+    return Ok((n).wrapping_mul(10i32));
 }
 #[no_mangle]
 pub extern "C" fn mlx_grade(n: i32, tier: *mut i32, out_value: *mut i32) -> i32 {
@@ -934,8 +934,8 @@ fn ml_fn_sum_to(n: i32) -> i32 {
     let mut total = 0i32;
     let mut i = 1i32;
     while (i <= n) {
-        total = (total + i);
-        i = (i + 1i32);
+        total = (total).wrapping_add(i);
+        i = (i).wrapping_add(1i32);
     }
     return total;
 }

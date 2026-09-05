@@ -15,8 +15,12 @@ fn i32_function_lowers_to_i32_rust() {
         rust.contains(r#"pub extern "C" fn mlx_add(a: i32, b: i32) -> i32"#),
         "i32 signature:\n{rust}"
     );
+    // `(a).wrapping_add(b)`, not `(a + b)`: i32 arithmetic wraps by the language's rule
+    // (DP-I4), and the plain operator only wraps while `overflow-checks` happens to be off.
+    // See `i32_arithmetic_wraps_in_the_emitted_code_not_in_a_build_flag` for the measurement
+    // that changed this line.
     assert!(
-        rust.contains("let sum = (a + b);"),
+        rust.contains("let sum = (a).wrapping_add(b);"),
         "i32 arithmetic:\n{rust}"
     );
 }
@@ -77,5 +81,72 @@ fn i32_maps_to_int32_t_and_integer_in_the_bindings() {
     assert!(
         p.contains("a: Integer; b: Integer") && p.contains("): Integer;"),
         "{p}"
+    );
+}
+
+/// i32 arithmetic wraps because the emitted code says so, not because a default happens to be
+/// off.
+///
+/// `ir.rs` states the contract — "Overflow wraps, same rule as the rest of i32 arithmetic
+/// (DP-I4), so `-i32::MIN == i32::MIN`" — and codegen emitted Rust's plain `+ - *` and unary
+/// `-`, which wrap only while `overflow-checks` is off. The generated `[profile.release]`
+/// pinned `panic`, `strip`, `lto` and `opt-level`, and not that one.
+///
+/// Measured, same `.mls` and same compiler, one environment variable apart. A C host loading
+/// the built `.dll` and calling `bump(2147483647)`:
+///
+/// | build | result |
+/// |---|---|
+/// | `mlc build` | `bump(2147483647) = -2147483648` — the documented wrap |
+/// | `CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true mlc build` | **timed out at 8s**; the host thread never returned |
+///
+/// The hang is the documented `ml_panic` behaviour (STATUS §5-4): in `no_std` the panic
+/// handler IS the panic runtime, `panic = "abort"` only drops unwinding tables, so a panic
+/// lands in `loop {}` and spins with the process still up. Reachable from an environment
+/// variable that appears nowhere in the source.
+///
+/// The assertions below are on the emitted text rather than on a call, deliberately: the
+/// failure mode is a hang, and a test that reproduces it would hang CI rather than fail it.
+/// The runtime column above is the measurement; this is the regression guard.
+#[test]
+fn i32_arithmetic_wraps_in_the_emitted_code_not_in_a_build_flag() {
+    let rust = compile_to_rust(
+        "export fn bump(x: i32) -> i32 { return x + 1 }\n\
+         export fn drop1(x: i32) -> i32 { return x - 1 }\n\
+         export fn twice(x: i32) -> i32 { return x * 2 }\n\
+         export fn neg(x: i32) -> i32 { return -x }",
+    )
+    .expect("compile");
+    for method in [
+        "wrapping_add",
+        "wrapping_sub",
+        "wrapping_mul",
+        "wrapping_neg",
+    ] {
+        assert!(
+            rust.contains(method),
+            "i32 arithmetic must wrap in the emitted code:\n{rust}"
+        );
+    }
+
+    // f64 has no wrapping_* and needs none — this must not become "every operator gets a
+    // method call".
+    let f = compile_to_rust("export fn add(a: f64, b: f64) -> f64 { return a + b }")
+        .expect("compile f64");
+    assert!(
+        !f.contains("wrapping_"),
+        "f64 arithmetic must stay a plain operator:\n{f}"
+    );
+}
+
+/// The generated profile pins the flag too — belt and braces for the emitted HELPERS, which
+/// are hand-written Rust (`ml_slen`'s `n += 1`, `ml_wint`'s index arithmetic) and are not
+/// covered by the lowering above.
+#[test]
+fn the_generated_profile_pins_overflow_checks() {
+    let manifest = mlc::codegen::CARGO_TOML_PROFILE;
+    assert!(
+        manifest.contains("overflow-checks = false"),
+        "the emitted [profile.release] must say what it relies on:\n{manifest}"
     );
 }

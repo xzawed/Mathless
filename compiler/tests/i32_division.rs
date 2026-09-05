@@ -20,9 +20,18 @@ fn remainder_binds_at_the_multiplicative_level() {
     let rust = compile_to_rust("export fn f(a: i32, b: i32, c: i32) -> i32 { return a % b * c }")
         .expect("compile");
     // `(a % b) * c`, not `a % (b * c)`: the remainder is the left operand of the product.
+    //
+    // Asserted through the shape rather than the operator spelling — i32 `*` is now emitted as
+    // `wrapping_mul` (DP-I4, see i32_type.rs), and the previous pin on the literal text `* c)`
+    // broke on that without the precedence changing at all. What this test is about is which
+    // subexpression is the RECEIVER of the product: the guarded remainder, closing with `}`.
     assert!(
-        rust.contains("* c)") && !rust.contains("(b * c)"),
-        "expected ((a % b) * c):\n{rust}"
+        rust.contains("}).wrapping_mul(c)"),
+        "expected the guarded remainder to be the left operand of the product:\n{rust}"
+    );
+    assert!(
+        !rust.contains("(b).wrapping_mul(c)"),
+        "`b * c` must not be the product — that would be `a % (b * c)`:\n{rust}"
     );
 }
 

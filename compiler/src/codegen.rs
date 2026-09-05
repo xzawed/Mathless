@@ -31,6 +31,24 @@ impl std::fmt::Display for CodegenError {
 
 impl std::error::Error for CodegenError {}
 
+/// The `[profile.release]` written into every generated crate.
+///
+/// A `pub const` rather than an inline literal so a test can read what is actually shipped
+/// instead of restating it — the pinned settings are load-bearing, not cosmetic.
+///
+/// `overflow-checks = false` is the newest of them and the reason for this constant. The
+/// profile pinned `panic`, `strip`, `lto` and `opt-level` and left that one to cargo's
+/// default, so an ambient `CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true` reached the generated
+/// crate and changed the shipped module. Measured with a C host on the built `.dll`:
+/// `bump(2147483647)` returned `-2147483648` normally and **hung the calling thread** under
+/// that variable (`ml_panic`'s `loop {}`, STATUS §5-4).
+///
+/// It is belt-and-braces, not the fix: cargo's env vars override a manifest profile, so this
+/// alone would not hold. The lowering emits `wrapping_*` for i32 so the semantics live in the
+/// code. What this pin still buys is the emitted HELPERS — `ml_slen`'s `n += 1`, `ml_wint`'s
+/// index arithmetic — which are hand-written Rust the lowering never touches.
+pub const CARGO_TOML_PROFILE: &str = "[profile.release]\npanic = \"abort\"\nstrip = true\nlto = true\nopt-level = \"z\"\noverflow-checks = false\n";
+
 /// Emit Rust source implementing the IR module as a C-ABI cdylib (D18 exports:
 /// `mlx_<fn>` + reserved `ml_module_abi_version`).
 pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
@@ -72,10 +90,16 @@ pub fn emit(module: &IrModule) -> Result<String, CodegenError> {
     }
 
     // A no_std cdylib requires a panic handler. Nothing on today's surface can reach this one:
-    // `f64 /0` is inf, `as` saturates, integer arithmetic wraps (release leaves overflow-checks
-    // off) and i32 `/`/`%` are emitted guarded below, so neither a zero divisor nor
+    // `f64 /0` is inf, `as` saturates, i32 `+ - *` and unary `-` are emitted as `wrapping_*`
+    // and i32 `/`/`%` are emitted guarded below, so neither an overflow, a zero divisor nor
     // `i32::MIN / -1` reaches a panicking operator. So it exists to satisfy `no_std`, not to
     // handle anything.
+    //
+    // "integer arithmetic wraps because release leaves overflow-checks off" is what this said
+    // until the wrapping lowering landed, and it was not true of the artifact: an ambient
+    // `CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true` turned the checks back on and `bump(i32::MAX)`
+    // hung a real C host (measured). A reason that an environment variable can revoke is not a
+    // reason.
     //
     // What it does if a future slice DOES reach it matters, because it is easy to get wrong:
     // in `no_std` the `#[panic_handler]` IS the panic runtime, and the profile's
@@ -481,6 +505,12 @@ fn emit_expr(e: &IrExpr) -> String {
             // Parenthesised like the binary case, so precedence never depends on the target
             // language's table. Rust's unary binds tighter than `*` anyway; this makes it
             // explicit and survives a future C backend unchanged.
+            // i32 negation wraps — `ir.rs` says so on `IrUnOp::Neg` itself ("`-i32::MIN ==
+            // i32::MIN`"), and Rust's plain `-` only wraps while `overflow-checks` is off.
+            // Same reasoning as the `wrapping_*` arms below: put the rule in the code.
+            if matches!(op, IrUnOp::Neg) && operand.ty == IrType::I32 {
+                return format!("({}).wrapping_neg()", emit_expr(operand));
+            }
             let sym = match op {
                 IrUnOp::Neg => "-",
                 IrUnOp::Not => "!",
@@ -521,6 +551,30 @@ fn emit_expr(e: &IrExpr) -> String {
                     emit_expr(lhs),
                     method
                 );
+            }
+            // `+ - *` on i32 wrap (DP-I4, stated on `IrBinOp` in ir.rs). Rust's plain
+            // operators wrap only while `overflow-checks` is off, and the generated profile
+            // left that to cargo's default — so the module's arithmetic depended on the
+            // environment it was built in, not on anything in the source.
+            //
+            // Measured, one variable apart, with a C host calling the built `.dll`:
+            //
+            //     mlc build                                        bump(2147483647) = -2147483648
+            //     CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true …     hung; killed at 8s
+            //
+            // The hang is `ml_panic`'s `loop {}` (STATUS §5-4), not a crash the host can see.
+            // Pinning the flag in the profile is not enough on its own — cargo's env vars
+            // override a manifest profile — so the rule goes where nothing can override it:
+            // the emitted expression. Same move the `/` and `%` guard above already makes.
+            if lhs.ty == IrType::I32 {
+                if let Some(method) = match op {
+                    IrBinOp::Add => Some("wrapping_add"),
+                    IrBinOp::Sub => Some("wrapping_sub"),
+                    IrBinOp::Mul => Some("wrapping_mul"),
+                    _ => None,
+                } {
+                    return format!("({}).{method}({})", emit_expr(lhs), emit_expr(rhs));
+                }
             }
             // A string is a `*const u8` (DP-S1). Rust's `==` on raw pointers compares the
             // ADDRESSES, which would make `country == "KR"` false for a host string that
@@ -990,7 +1044,7 @@ pub fn build_cdylib(
     std::fs::write(
         crate_dir.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"{crate_name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[profile.release]\npanic = \"abort\"\nstrip = true\nlto = true\nopt-level = \"z\"\n"
+            "[package]\nname = \"{crate_name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n{CARGO_TOML_PROFILE}"
         ),
     )
     .map_err(|e| CodegenError::new(format!("write Cargo.toml: {e}")))?;

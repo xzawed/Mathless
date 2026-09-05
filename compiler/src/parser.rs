@@ -29,14 +29,52 @@ pub fn parse(tokens: Vec<Spanned>) -> Result<Module, ParseError> {
     Parser::new(tokens).parse_module()
 }
 
+/// How deep expressions and blocks may nest.
+///
+/// Measured on the CLI before this limit existed (debug build): `return` with 110 nested
+/// parentheses compiled all the way to a `.dll`, 125 aborted the process with
+/// `thread 'main' has overflowed its stack` and exit 127 — no diagnostic, no position.
+/// 100 nested `if` blocks compiled; 150 aborted the same way.
+///
+/// The limit is well under that cliff on purpose. The parser is not the only pass that walks
+/// the tree recursively — typecheck, codegen and even dropping the `Box` chain do — so a tree
+/// the parser accepts has to be safe for all of them. Depth 110 was measured safe end to end,
+/// which is the evidence for 64 being safe; 64 is also far above anything hand-written
+/// (`((a+b)*c)` is 3), so it does not trade a rare crash for a common false rejection.
+const MAX_NESTING: u32 = 64;
+
 struct Parser {
     toks: Vec<Spanned>,
     pos: usize,
+    /// Current recursive-descent depth — see [`MAX_NESTING`].
+    depth: u32,
 }
 
 impl Parser {
     fn new(toks: Vec<Spanned>) -> Self {
-        Parser { toks, pos: 0 }
+        Parser {
+            toks,
+            pos: 0,
+            depth: 0,
+        }
+    }
+
+    /// Descend one level, or refuse before the stack runs out.
+    ///
+    /// Expressions and blocks share one counter because the stack does: a `return` inside 40
+    /// nested `if`s inside 30 parentheses costs 70 frames regardless of which construct spent
+    /// them. Every caller pairs this with `self.depth -= 1` on the way out, including the
+    /// error path, so a rejected parse does not leave the counter raised.
+    fn enter(&mut self) -> Result<(), ParseError> {
+        if self.depth >= MAX_NESTING {
+            return self.err(format!(
+                "expressions and blocks may not be nested more than {MAX_NESTING} levels deep \
+                 — every pass of the compiler walks the tree recursively, so a deeper one would \
+                 exhaust the stack instead of producing a message like this one"
+            ));
+        }
+        self.depth += 1;
+        Ok(())
     }
 
     fn peek(&self) -> &Token {
@@ -263,6 +301,15 @@ impl Parser {
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        // The other re-entry point: an `if` or `while` body is a block, so nesting them
+        // recurses here. Counted against the same budget as expressions (see `enter`).
+        self.enter()?;
+        let stmts = self.parse_block_body();
+        self.depth -= 1;
+        stmts
+    }
+
+    fn parse_block_body(&mut self) -> Result<Vec<Stmt>, ParseError> {
         self.eat(&Token::LBrace, "'{'")?;
         let mut stmts = Vec::new();
         while *self.peek() != Token::RBrace {
@@ -408,7 +455,13 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        self.parse_or()
+        // The one re-entry point for nested expressions: `(e)`, a call argument and a `try`
+        // argument all come back through here, and the precedence chain below it does not
+        // recurse into itself.
+        self.enter()?;
+        let e = self.parse_or();
+        self.depth -= 1;
+        e
     }
 
     /// `or := and ('||' and)*` — the loosest binding level.

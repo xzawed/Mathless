@@ -18,3 +18,12 @@ Desktop.ini
 *.dll
 *.so
 *.dylib
+
+# MSVC leftovers. `vcvars64.bat` writes vc.log into the working directory, so an
+# acceptance-D run drops one in the repository root — and #147 committed it, because
+# `git add -A` cannot tell a build artifact from a source file.
+vc.log
+*.exe
+*.lib
+*.pdb
+*.ilk

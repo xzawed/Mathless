@@ -181,3 +181,46 @@ fn the_delphi_unit_uses_pbyte_and_ships_no_executable_code() {
         "the implementation section must stay empty (DP-T3b):\n{body}"
     );
 }
+
+/// The Delphi unit has to name the truncation status too.
+///
+/// Measured, for `export fn label(a: string, b: string) -> string!`:
+///
+/// - the `.h` defines `ML_ST_INSUFFICIENT_BUFFER (-1)` and explains the Q12 protocol above it;
+/// - the `.pas` declared the same function with the same buffer triple and said **nothing** —
+///   no constant, no note.
+///
+/// So a Delphi host had to retype `-1`, which is exactly what `hosts/c-host/host.c` refuses to
+/// do for the C side ("the error constant comes from the header too … not from a number
+/// retyped here"). The error codes already reach the unit as `ML_<MODULE>_ERR_<NAME>`; the one
+/// status a string-returning call can ALWAYS produce did not.
+///
+/// DP-T3b still holds: this is a `const` and a comment, not a statement. No `dcc64` exists
+/// here, so no Pascal code ships.
+#[test]
+fn the_delphi_unit_declares_the_truncation_status_like_the_header_does() {
+    let ir = compile_to_ir(CARRIER).expect("compile");
+    let pas = mlc::header::emit_delphi_unit(&ir, "Mlx_Carrier", "carrier");
+    assert!(
+        pas.contains("ML_ST_INSUFFICIENT_BUFFER = -1;"),
+        "a Delphi host needs the name, not the number:\n{pas}"
+    );
+    assert!(
+        pas.to_lowercase().contains("truncation"),
+        "and the rule that makes it a failure rather than a short success:\n{pas}"
+    );
+    // Outside the module's error namespace, exactly as in the header (DP-T6).
+    assert!(
+        !pas.contains("ML_CARRIER_ERR_TRUNCATED"),
+        "the truncation status must not join the module's error namespace:\n{pas}"
+    );
+
+    // ...and only for a module that can produce it. A module with no string return must not
+    // carry a constant for a status none of its functions can return.
+    let plain = compile_to_ir("export fn f(x: f64) -> f64 { return x }").expect("compile");
+    let plain_pas = mlc::header::emit_delphi_unit(&plain, "Mlx_M", "m");
+    assert!(
+        !plain_pas.contains("ML_ST_INSUFFICIENT_BUFFER"),
+        "an unrelated module must not carry it:\n{plain_pas}"
+    );
+}

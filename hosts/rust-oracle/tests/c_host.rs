@@ -665,3 +665,137 @@ fn a_c_host_that_links_against_the_import_library() {
     println!("{}", refused_out.trim_end());
     println!("GATE_LINK_OK: link-time binding verified, and a drifted module refused.");
 }
+
+/// A generated header must compile where a real host actually reads it — **after** the
+/// platform headers that host includes.
+///
+/// `hosts/c-host/host.c` includes `<windows.h>` before every generated header. The C++ gate
+/// above and the header gate in the same file compile the generated headers *alone*, so
+/// nothing had ever read one in that context. Measured, with `mlc build` reporting **exit 0**
+/// and writing all four artifacts each time:
+///
+/// | parameter name | emitted declaration | `cl /W4 /WX /std:c11` after `<windows.h>` |
+/// |---|---|---|
+/// | `TRUE`     | `double mlx_f(double TRUE);`     | C2059, C2143 — the preprocessor made it `double 1` |
+/// | `FALSE`    | `double mlx_f(double FALSE);`    | C2059, C2143 |
+/// | `VOID`     | `double mlx_f(double VOID);`     | C2632 — `double void` |
+/// | `small`    | `double mlx_f(double small);`    | C2632 — `double char` |
+/// | `WINAPI`   | `double mlx_f(double WINAPI);`   | C2220 — `double __stdcall` |
+/// | `CALLBACK` | `double mlx_f(double CALLBACK);` | C2220 |
+/// | `ERROR`    | `double mlx_f(double ERROR);`    | C2059, C2143 — `double 0` |
+///
+/// `IN`, `OUT`, `CONST` and `interface` were refused — but **by accident**, as Pascal reserved
+/// words, exactly the accident that hid `class` until #159.
+///
+/// This is the third time a name rule has been written for one reader and met another: C
+/// keywords missed C++ keywords, keywords missed `<stdint.h>` macros, and the header alone
+/// missed the headers a host includes before it. The set of macros in headers this project
+/// does not own is unbounded, so the fix is not a fourth list — the names go where the
+/// preprocessor cannot reach them (a comment is removed in translation phase 3, before macro
+/// expansion in phase 4). This test is what keeps that true.
+#[test]
+fn a_generated_header_compiles_after_the_platform_headers_a_host_includes() {
+    let Some(vcvars) = vcvars64() else {
+        if std::env::var("MATHLESS_GATE_D").as_deref() == Ok("require") {
+            panic!(
+                "MATHLESS_GATE_D=require but MSVC was not found — this gate cannot be verified."
+            );
+        }
+        println!("GATE_D_SKIPPED: no MSVC toolchain; the platform-header gate is NOT verified.");
+        return;
+    };
+    let work = common::TempOut::new("hdr_after_platform");
+
+    // Every one of these is a macro `<windows.h>` (or a header it pulls in) defines, and every
+    // one is a name a person could reasonably give a business parameter. They are deliberately
+    // NOT in any reserved list — the point is that no list is needed.
+    let hostile = [
+        "TRUE",
+        "FALSE",
+        "VOID",
+        "WINAPI",
+        "CALLBACK",
+        "ERROR",
+        "small",
+        "IN",
+        "OUT",
+        "CONST",
+        "INT32_MAX",
+        "SIZE_MAX",
+    ];
+    let mut units: Vec<String> = Vec::new();
+    let mut built: Vec<&str> = Vec::new();
+    for name in hostile {
+        let src = format!("export fn probe({name}: f64) -> f64 {{ return {name} }}\n");
+        let stem = format!("hp_{}", name.to_ascii_lowercase());
+        // Some of these are refused by the frontend for other reasons (Pascal words, stdint
+        // macros). That is fine and not what this test is about — it only compiles the headers
+        // that were actually produced.
+        if emit_artifacts(&src, &stem, &work).is_err() {
+            continue;
+        }
+        built.push(name);
+        let unit = format!("u_{stem}.c");
+        std::fs::write(
+            work.join(&unit),
+            format!(
+                "#include <windows.h>\n#include \"{stem}.h\"\nint probe_{stem}(void) {{ return 0; }}\n"
+            ),
+        )
+        .expect("write probe TU");
+        units.push(unit);
+    }
+    assert!(
+        built.len() >= 6,
+        "the frontend now refuses too many of these for this gate to mean anything: built \
+         {built:?}. If a name became reserved for a good reason, replace it here with another \
+         macro from a header a host includes — do not let the corpus shrink to nothing"
+    );
+
+    let out = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /W4 /WX /std:c11 /c /I\"{}\" {}",
+            work.display(),
+            units.join(" ")
+        ),
+    );
+    assert!(
+        out.status.success(),
+        "a generated header does not compile after <windows.h>, which is exactly how \
+         hosts/c-host/host.c reads it. Names built into this run: {built:?}\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // ...and as C++, where the same declarations also meet the C++ keywords.
+    let cpp_units: Vec<String> = units
+        .iter()
+        .map(|u| {
+            let c = u.replace(".c", ".cpp");
+            std::fs::copy(work.join(u), work.join(&c)).expect("copy TU");
+            c
+        })
+        .collect();
+    let cpp = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /TP /W4 /WX /c /I\"{}\" {}",
+            work.display(),
+            cpp_units.join(" ")
+        ),
+    );
+    assert!(
+        cpp.status.success(),
+        "a generated header does not compile after <windows.h> as C++:\n{}\n{}",
+        String::from_utf8_lossy(&cpp.stdout),
+        String::from_utf8_lossy(&cpp.stderr)
+    );
+    println!(
+        "GATE_PLATFORM_HEADERS_OK: {} headers compiled after <windows.h> as C and C++, \
+              with parameter names that are macros there: {built:?}",
+        built.len()
+    );
+}

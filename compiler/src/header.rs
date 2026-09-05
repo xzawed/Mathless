@@ -313,6 +313,42 @@ fn error_provenance(module: &IrModule) -> HashMap<&str, Vec<String>> {
     result
 }
 
+/// A user-chosen parameter name, placed where the preprocessor cannot reach it.
+///
+/// **A name this project does not control must not be a token in a header.** Three name rules
+/// have now been written for one reader and met another: the C keyword list missed C++
+/// keywords (#159), the keyword lists missed `<stdint.h>`'s macros (#159), and the header
+/// compiled alone missed the platform headers a host includes *before* it. Measured, with
+/// `mlc build` reporting exit 0 every time, `hosts/c-host/host.c`'s own include order
+/// (`<windows.h>` first) and `cl /W4 /WX /std:c11`:
+///
+/// ```text
+/// double mlx_f(double TRUE);      -> double mlx_f(double 1);          C2059, C2143
+/// double mlx_f(double VOID);      -> double mlx_f(double void);       C2632
+/// double mlx_f(double small);     -> double mlx_f(double char);       C2632
+/// double mlx_f(double WINAPI);    -> double mlx_f(double __stdcall);  C2220
+/// ```
+///
+/// A fourth list cannot close this: the macros defined by headers a host includes are an
+/// unbounded set this project does not own. A **comment** can, and by construction rather
+/// than by maintenance — comments are removed in translation phase 3, before macro expansion
+/// in phase 4, so no macro and no keyword can touch one. Measured: all seven names above, and
+/// `new`/`template`/`INT32_MAX`, compile clean in this form as C **and** as C++.
+///
+/// The C ABI loses nothing: a parameter name in a prototype has never affected linkage. What
+/// it costs is a third-party binding generator reading our header, which would see unnamed
+/// parameters — this project ships its own bindings from the IR (`.pas` today, and those keep
+/// real names: Pascal has no preprocessor), so the loss is to tools we do not use.
+///
+/// **Only user-chosen names move.** `ml_buf`, `ml_cap`, `ml_needed` and `out_value` stay as
+/// real tokens: they are the compiler's own namespace, already reserved from user identifiers,
+/// documented by name in this very header, and no header outside this project defines them.
+/// The rule is not "hide every name" — it is "a name we do not control does not go where a
+/// preprocessor can eat it".
+fn c_param_name(name: &str) -> String {
+    format!("/* {name} */")
+}
+
 fn c_signature(f: &IrFunction) -> String {
     let mut parts: Vec<String> = f
         .params
@@ -320,9 +356,9 @@ fn c_signature(f: &IrFunction) -> String {
         .map(|p| {
             // A declared `out` is a pointer, exactly like D17's `out_value` below it.
             if p.out {
-                format!("{}* {}", c_type(p.ty), p.name)
+                format!("{}* {}", c_type(p.ty), c_param_name(&p.name))
             } else {
-                format!("{} {}", c_type(p.ty), p.name)
+                format!("{} {}", c_type(p.ty), c_param_name(&p.name))
             }
         })
         .collect();

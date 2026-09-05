@@ -47,11 +47,15 @@ fn the_c_abi_does_not_change() {
     let ir = compile_to_ir(QUOTE).expect("compile");
     let h = mlc::header::emit_c_header(&ir, "quote");
     assert!(
-        h.contains("int32_t mlx_unit_price(double total, int32_t qty, double* out_value);"),
+        h.contains(
+            "int32_t mlx_unit_price(double /* total */, int32_t /* qty */, double* out_value);"
+        ),
         "{h}"
     );
     assert!(
-        h.contains("int32_t mlx_line_check(int32_t qty, int32_t* tier, int32_t* out_value);"),
+        h.contains(
+            "int32_t mlx_line_check(int32_t /* qty */, int32_t* /* tier */, int32_t* out_value);"
+        ),
         "DP-O1 still puts the declared out first and out_value last:\n{h}"
     );
     // The helpers are internal: they must not appear in the header at all.
@@ -209,6 +213,16 @@ fn try_is_not_a_reserved_variable_name() {
 /// Written as a test rather than a claim because "no ABI change" is the kind of sentence that
 /// stays in a document after it stops being true. The corpus is every example in the repo,
 /// so it grows with the language rather than freezing at today's set.
+///
+/// **These strings moved once, deliberately, and this note is the record.** The parameter
+/// names became comments (`double /* price */`) because a name this project does not control
+/// must not be a token in a header — measured, `hosts/c-host/host.c`'s own include order made
+/// `double mlx_f(double TRUE)` into `double mlx_f(double 1)` and the build failed while
+/// `mlc build` reported success. Nothing about the **ABI** moved: a parameter name in a C
+/// prototype has never affected linkage, the argument types and their order are unchanged,
+/// and `hosts/c-host` and `hosts/c-host-link` both still compile, link and call. If a future
+/// change moves one of these strings again, the question this test asks is the right one —
+/// answer it before editing the string.
 #[test]
 fn no_existing_example_changes_its_bindings() {
     // A representative slice of the corpus: one per earlier slice's shape. If a future change
@@ -216,23 +230,23 @@ fn no_existing_example_changes_its_bindings() {
     const EXPECT: &[(&str, &str)] = &[
         (
             "discount",
-            "double mlx_discount(double price, bool vip);",
+            "double mlx_discount(double /* price */, bool /* vip */);",
         ),
         (
             "safe_div",
-            "int32_t mlx_safe_div(double a, double b, double* out_value);",
+            "int32_t mlx_safe_div(double /* a */, double /* b */, double* out_value);",
         ),
         (
             "commission",
-            "double mlx_commission(double amount, int32_t* tier);",
+            "double mlx_commission(double /* amount */, int32_t* /* tier */);",
         ),
         (
             "vat",
-            "double mlx_vat_rate(const char* country);",
+            "double mlx_vat_rate(const char* /* country */);",
         ),
         (
             "carrier",
-            "int32_t mlx_carrier_name(const char* scac, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);",
+            "int32_t mlx_carrier_name(const char* /* scac */, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);",
         ),
     ];
     for (name, decl) in EXPECT {
@@ -274,7 +288,9 @@ fn the_header_names_the_codes_each_export_can_return() {
 
     // Still comments: not one declaration changes.
     assert!(
-        h.contains("int32_t mlx_unit_price(double total, int32_t qty, double* out_value);"),
+        h.contains(
+            "int32_t mlx_unit_price(double /* total */, int32_t /* qty */, double* out_value);"
+        ),
         "{h}"
     );
 }

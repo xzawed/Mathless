@@ -19,7 +19,7 @@ fn c_header_matches_module_abi() {
     assert!(h.contains(r#"extern "C""#), "{h}");
     assert!(h.contains("uint32_t ml_module_abi_version(void);"), "{h}");
     assert!(
-        h.contains("double mlx_discount(double price, bool vip);"),
+        h.contains("double mlx_discount(double /* price */, bool /* vip */);"),
         "{h}"
     );
 }

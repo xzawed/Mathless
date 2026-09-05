@@ -344,9 +344,16 @@ fn naming_the_gap_does_not_name_the_wrong_gap() {
 
     // A range reaches the lexer two different ways: `0..3` leaves a dot whose PREVIOUS
     // character is a dot (the number path ate `0.`), `a..b` leaves one whose NEXT is.
+    //
+    // These used to be `for i in 0..3` and `while a..b`. Both now report the STATEMENT
+    // instead — `for` loops are named, and the earlier-error rule prefers that over the
+    // range the lexer choked on later. That is a better answer, and this test asserting the
+    // old one would have made the improvement look like a regression: exactly what
+    // language_gaps.rs warns about, walked into by the test written to avoid it. The sources
+    // moved to a position where the range genuinely IS the first thing wrong.
     for src in [
-        "export fn f(a: f64) -> f64 { for i in 0..3 { } return a }",
-        "export fn f(a: i32, b: i32) -> i32 { while a..b { } return a }",
+        "export fn f(a: f64) -> f64 { let x = 0..3  return a }",
+        "export fn f(a: i32, b: i32) -> i32 { let x = a..b  return a }",
     ] {
         let shown = compile_to_ir(src)
             .map(|_| String::new())
@@ -363,4 +370,84 @@ fn naming_the_gap_does_not_name_the_wrong_gap() {
          export fn f(a: i32) -> i32 { return struct_ok(a) }",
     )
     .expect("naming a function after a gap keyword must still compile");
+}
+
+/// The ordering §9-2 measured and #144 deliberately left: lexing runs to completion before the
+/// parser sees a token, so a bad CHARACTER late in the file hides a real error early in it.
+///
+///   struct P { x: i32 }          <- the actual mistake, line 1
+///   export fn f(p: P) -> i32 { return p.x }   <- reported instead, because `.` fails lexing
+///
+/// Both messages are true after #144, so the user was told *something* real either way — but
+/// not the first thing wrong with their program, which is the one they can act on.
+#[test]
+fn the_earlier_error_wins_even_when_the_later_one_is_a_lex_error() {
+    let shown = compile_to_ir("struct P { x: i32 }\nexport fn f(p: P) -> i32 { return p.x }")
+        .map(|_| String::new())
+        .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("1:1"),
+        "the struct on line 1 is the first thing wrong; the `.` on line 2 only fails later: \
+         {shown}"
+    );
+    assert!(
+        shown.contains("struct"),
+        "and it should still name the gap, not the token: {shown}"
+    );
+}
+
+/// Statement position gets the same treatment as the top level (#144 did declarations only).
+#[test]
+fn control_flow_that_does_not_exist_is_named_in_statement_position() {
+    for (src, want) in [
+        (
+            "export fn f(a: f64) -> f64 { for i in 0..3 { } return a }",
+            "for",
+        ),
+        (
+            "export fn f(a: f64, b: f64) -> f64 { if a > b { return a } else { return b } }",
+            "else",
+        ),
+        (
+            "export fn f(a: f64, b: f64) -> f64 { while a > b { break } return a }",
+            "break",
+        ),
+        (
+            "export fn f(a: f64, b: f64) -> f64 { while a > b { continue } return a }",
+            "continue",
+        ),
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::new())
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            shown.contains(want) && shown.contains("not in Mathless yet"),
+            "`{want}` should be reported as a missing feature: {shown}"
+        );
+    }
+}
+
+/// The other half of the earlier-error rule: truncation must not INVENT an earlier error.
+///
+/// Parsing a prefix could in principle fail before the point where lexing stopped, and then
+/// a truncation artefact would hide the real reason (Grok verify raised it). It cannot here —
+/// this parser is single pass, so a failure at token k is decided by tokens up to k, which are
+/// identical in the prefix and in the whole file — but that is an argument, and the repository's
+/// standing rule is to measure instead.
+#[test]
+fn a_late_bad_character_is_still_reported_when_nothing_earlier_is_wrong() {
+    let shown = compile_to_ir(
+        "export fn f(a: f64) -> f64 { return a }\n\
+         export fn g(a: f64) -> f64 { return a @ }",
+    )
+    .map(|_| String::new())
+    .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("unexpected character '@'"),
+        "everything before the `@` is valid, so the lex error must survive: {shown}"
+    );
+    assert!(
+        shown.contains("2:"),
+        "and keep its own position rather than the truncation's: {shown}"
+    );
 }

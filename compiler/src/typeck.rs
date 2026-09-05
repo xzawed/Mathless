@@ -75,6 +75,8 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // codes also read them. `try` propagation ends that: a code now arrives from a helper the
     // host has never seen, and the host has nothing but the number.
     let mut by_code: HashMap<i32, String> = HashMap::new();
+    // lowercased name -> the spelling it was first declared with.
+    let mut by_name: HashMap<String, String> = HashMap::new();
     for e in &module.errors {
         if let Some(first) = by_code.get(&e.code) {
             return Err(TypeError::new(format!(
@@ -85,9 +87,20 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
             )));
         }
         by_code.insert(e.code, e.name.clone());
-        if error_table.insert(e.name.clone(), e.code).is_some() {
-            return Err(TypeError::new(format!("duplicate error code '{}'", e.name)));
+        // Case-insensitively, for the same reason function names (below) and parameter names
+        // (`check_fn`) are: the name is emitted verbatim as a constant in the generated Delphi
+        // unit, and Pascal does not distinguish case. Measured before this check, `error E_Neg
+        // = 1` + `error E_NEG = 2` compiled and put both `ML_M_ERR_E_Neg = 1;` and
+        // `ML_M_ERR_E_NEG = 2;` into one `.pas` — the same identifier, declared twice.
+        if let Some(first) = by_name.insert(e.name.to_ascii_lowercase(), e.name.clone()) {
+            return Err(TypeError::new(format!(
+                "duplicate error '{}' — it collides with '{first}'. Error names must be unique \
+                 case-insensitively, because each becomes a constant in the generated Delphi \
+                 unit and Pascal does not distinguish case",
+                e.name
+            )));
         }
+        error_table.insert(e.name.clone(), e.code);
         errors.push(IrErrorDecl {
             name: e.name.clone(),
             code: e.code,

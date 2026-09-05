@@ -117,6 +117,12 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
         (out, Some(e))
     }
 
+    // A leading byte-order mark is what a Windows editor writes by default, and it is not an
+    // error in the source — it is an encoding artefact in front of it. Left in, it reached the
+    // unexpected-character arm and the compiler refused a perfectly good file while quoting a
+    // character the user cannot see.
+    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
+
     let chars: Vec<char> = src.chars().collect();
     let mut i = 0usize;
     let mut line = 1usize;
@@ -282,6 +288,28 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
                                     "non-ASCII character '{c}' in a string literal — generated \
                                      artifacts stay ASCII (non-ASCII trips MSVC C4819 under \
                                      `/WX`)"
+                                ),
+                                line,
+                                col,
+                            ),
+                        )
+                    }
+                    // A control character is ASCII, so the guard above lets it through — and
+                    // NUL is the one that bites. codegen lowers a literal to `b"…\0"`, a C
+                    // string that ENDS at the first NUL, so `s == "a\0b"` compared ONE byte
+                    // where the author wrote three. That is a silent wrong answer at the ABI,
+                    // which is the class this repository refuses to ship; the rest of the C0
+                    // range goes with it because none of it can be typed on purpose here and
+                    // all of it travels invisibly through a header.
+                    c if c.is_ascii_control() => {
+                        return stop(
+                            out,
+                            ParseError::new(
+                                format!(
+                                    "control character U+{:04X} in a string literal — it would \
+                                     travel invisibly into the generated header, and a NUL \
+                                     would silently cut the string short at the C ABI",
+                                    c as u32
                                 ),
                                 line,
                                 col,
@@ -458,6 +486,15 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
             '?' => {
                 "`?` is not in Mathless — there is no option or null-safety type yet".to_string()
             }
+            // Quoting the character is useless when it has no glyph — a non-breaking space
+            // printed as a space, so the message showed the user exactly what their editor
+            // already showed them. Name the codepoint instead.
+            c if !c.is_ascii_graphic() => format!(
+                "unexpected character U+{:04X} — it is invisible or non-printable, so it does \
+                 not look wrong in an editor. A non-breaking space (U+00A0) pasted from a \
+                 document is the usual cause; replace it with a plain space",
+                c as u32
+            ),
             _ => format!("unexpected character '{c}'"),
         };
         out.push(Spanned {

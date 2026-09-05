@@ -172,6 +172,52 @@ fn dead_code_after_return_says_so_instead_of_blaming_the_return() {
     }
 }
 
+/// The compiler holds two views of "this statement ends the block", and they disagreed.
+///
+/// `ir::block_always_returns` counts `TryCall { dest: IrTryDest::Return, .. }` as a terminator
+/// "exactly as a plain `return` does" — which is why `return try g(n)` satisfies the
+/// all-paths-return check. The dead-code scan in `check_block` matched only `Return` and
+/// `Fail`, so it did not.
+///
+/// Measured: this compiled, exit 0, and wrote a `.dll`,
+///
+/// ```text
+/// export fn g(n: i32) -> i32! {
+///   return try half(n)
+///   return 999
+/// }
+/// ```
+///
+/// while the same shape with a plain `return` was rejected. The dead statement is dead either
+/// way; only the report went missing.
+#[test]
+fn dead_code_after_a_try_return_is_reported_like_any_other() {
+    let shown = compile_to_ir(
+        "error E = 1\n\
+         fn half(n: i32) -> i32! { if n < 0 { fail E }  return n / 2 }\n\
+         export fn g(n: i32) -> i32! { return try half(n)  return 999 }\n",
+    )
+    .map(|_| String::from("<it compiled>"))
+    .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("unreachable"),
+        "a `return try …` ends the block, so what follows is dead: {shown}"
+    );
+    assert!(
+        !shown.contains("may not return on all paths"),
+        "and it must not be reported as a missing return: {shown}"
+    );
+
+    // The other three `try` destinations do NOT end the block — they bind or assign and then
+    // fall through — so a statement after one of them is ordinary live code.
+    compile_to_ir(
+        "error E = 1\n\
+         fn half(n: i32) -> i32! { if n < 0 { fail E }  return n / 2 }\n\
+         export fn g(n: i32) -> i32! { let h = try half(n)  return h + 1 }\n",
+    )
+    .expect("a try-let is not a terminator");
+}
+
 #[test]
 fn a_fallible_fn_reports_dead_code_after_fail_too() {
     let shown = compile_to_ir("error E = 1\nexport fn f() -> i32! { fail E let x = 2 }")

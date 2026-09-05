@@ -625,15 +625,31 @@ fn check_block(
     // Anything after a `return`/`fail` is dead. Say that, instead of letting the
     // all-paths-return check below report "may not return on all paths" — which sends the
     // reader hunting for a missing `return` that is right there in front of them.
+    //
+    // `return try g(x)` counts too. It is a terminator by `ir::block_always_returns`'s
+    // reckoning — that is why the all-paths check accepts it — and this scan matched only
+    // `Return` and `Fail`, so the two views of "ends the block" disagreed. Measured: a
+    // `return 999` after a `return try half(n)` compiled and shipped a `.dll`, while the same
+    // shape after a plain `return` was refused. The statement was dead either way; only the
+    // report went missing. The other three `try` destinations bind or assign and fall
+    // through, so they are deliberately not terminators here either.
+    let terminates = |s: &IrStmt| {
+        matches!(
+            s,
+            IrStmt::Return(_)
+                | IrStmt::Fail(_)
+                | IrStmt::TryCall {
+                    dest: IrTryDest::Return,
+                    ..
+                }
+        )
+    };
     let last = out.len().saturating_sub(1);
-    if let Some(i) = out[..last]
-        .iter()
-        .position(|s| matches!(s, IrStmt::Return(_) | IrStmt::Fail(_)))
-    {
-        let kw = if matches!(out[i], IrStmt::Fail(_)) {
-            "fail"
-        } else {
-            "return"
+    if let Some(i) = out[..last].iter().position(terminates) {
+        let kw = match &out[i] {
+            IrStmt::Fail(_) => "fail",
+            IrStmt::TryCall { .. } => "return try",
+            _ => "return",
         };
         return Err(TypeError::new(format!(
             "function '{fname}': unreachable statement after `{kw}` — everything following it \

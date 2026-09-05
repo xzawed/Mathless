@@ -1039,6 +1039,10 @@ pub fn build_cdylib(
     workdir: &Path,
 ) -> Result<CdylibArtifacts, CodegenError> {
     let crate_dir = workdir.join(crate_name);
+    // Where cargo is TOLD to put its output, so `release` below is that same path rather than
+    // cargo's default reconstructed by hand. Kept inside the crate directory, which is where
+    // the default would have been, so the temp tree this caller removes is unchanged.
+    let target_dir = crate_dir.join("target");
     std::fs::create_dir_all(crate_dir.join("src"))
         .map_err(|e| CodegenError::new(format!("create crate dir: {e}")))?;
     std::fs::write(
@@ -1061,6 +1065,20 @@ pub fn build_cdylib(
     let out = Command::new(cargo)
         .args(["build", "--release", "--manifest-path"])
         .arg(crate_dir.join("Cargo.toml"))
+        // Say where the output goes, instead of reconstructing it below and hoping. Cargo
+        // honours an ambient `CARGO_TARGET_DIR`, and `mlc` is very often run from inside a
+        // cargo build that has set one — so the artifacts landed somewhere else and the
+        // reconstruction failed:
+        //
+        //     CARGO_TARGET_DIR=… mlc build ovf.mls
+        //     mlc: codegen error: expected dll not found:
+        //          …\mlc-build-71108-1\ovf\target\release\ovf.dll
+        //
+        // A build that works or not depending on an environment variable the user never
+        // mentioned. `--target-dir` overrides the variable, which turns the path below from a
+        // guess into the same value cargo was told.
+        .arg("--target-dir")
+        .arg(&target_dir)
         .output()
         .map_err(|e| CodegenError::new(format!("spawn cargo: {e}")))?;
     if !out.status.success() {
@@ -1075,7 +1093,7 @@ pub fn build_cdylib(
         )));
     }
 
-    let release = crate_dir.join("target").join("release");
+    let release = target_dir.join("release");
     let dll = release.join(format!("{crate_name}.dll"));
     if !dll.exists() {
         return Err(CodegenError::new(format!(

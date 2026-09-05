@@ -348,3 +348,54 @@ fn rejects_a_module_name_that_delphi_reserves() {
     }
     assert!(entries(&out).is_empty());
 }
+
+/// `mlc build` must not depend on the environment it happens to be run from.
+///
+/// `build_cdylib` reconstructed cargo's output directory — `<crate>/target/release` — instead
+/// of controlling it. Cargo honours an ambient `CARGO_TARGET_DIR`, and `mlc` is very often run
+/// from inside a cargo build that has set one, so the artifacts landed somewhere else and the
+/// reconstruction failed. Measured:
+///
+/// ```text
+/// CARGO_TARGET_DIR=…/alt_target  mlc build ovf.mls
+/// mlc: codegen error: expected dll not found:
+///      C:\…\mlc-build-71108-1\ovf\target\release\ovf.dll
+/// ```
+///
+/// A build that works or not depending on a variable the user never mentioned. `--target-dir`
+/// overrides it, which turns that path from a guess into the value cargo was given.
+///
+/// The test spawns the real binary rather than calling the library, because the variable has
+/// to be set for the CHILD cargo — and because the env of this test process is shared with
+/// every other test in the binary.
+#[cfg(windows)]
+#[test]
+fn a_build_ignores_an_ambient_cargo_target_dir() {
+    let dir = std::env::temp_dir().join(format!("mlc_ctd_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let src = dir.join("ctd.mls");
+    std::fs::write(&src, "export fn bump(x: i32) -> i32 { return x + 1 }\n").expect("write src");
+    let hostile = dir.join("someone_elses_target");
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_mlc"))
+        .args(["build".as_ref(), src.as_os_str()])
+        .arg("-o")
+        .arg(&dir)
+        .env("CARGO_TARGET_DIR", &hostile)
+        .output()
+        .expect("run mlc");
+
+    assert!(
+        out.status.success(),
+        "an ambient CARGO_TARGET_DIR must not change where mlc finds its own artifacts:\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for ext in ["dll", "h", "pas", "lib"] {
+        let a = dir.join(format!("ctd.{ext}"));
+        assert!(a.exists(), "missing artifact {}", a.display());
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

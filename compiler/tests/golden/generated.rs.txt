@@ -589,9 +589,20 @@ fn ml_ilen(v: i32) -> i32 {
     n
 }
 
-fn ml_wstr(buf: *mut u8, off: i32, src: *const u8) -> i32 {
+fn ml_wstr(buf: *mut u8, off: i32, src: *const u8, cap: i32) -> i32 {
+    // `cap` is a hard stop, not a length. It exists for the host that passes a
+    // string ALIASING its own output buffer: nothing in the C ABI forbids that,
+    // and without the bound this loop would copy its own output forward and run
+    // off the end of the caller's memory. One byte is left for the NUL.
+    //
+    // It is REACHED on a conforming call, and returns the same offset the source
+    // NUL would have: when the result exactly fills the buffer, `off + i` hits
+    // `cap - 1` on the same iteration the NUL is read. So it never truncates a
+    // legitimate result — it just gets there first (Grok verify; the exact-fill
+    // retry is measured through a loaded module in the oracle's string_concat).
     let mut i: i32 = 0;
     loop {
+        if off + i >= cap - 1 { return off + i; }
         let b = unsafe { *src.add(i as usize) };
         if b == 0 { return off + i; }
         unsafe { *buf.add((off + i) as usize) = b; }
@@ -617,16 +628,19 @@ fn ml_wint(buf: *mut u8, off: i32, v: i32) -> i32 {
 }
 
 fn ml_fn_full_name(first: *const u8, last: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+    let __p0 = last;
+    let __p1 = b" \0".as_ptr();
+    let __p2 = first;
     let mut __n: i32 = 1;
-    __n += ml_slen(last);
-    __n += ml_slen(b" \0".as_ptr());
-    __n += ml_slen(first);
+    __n += ml_slen(__p0);
+    __n += ml_slen(__p1);
+    __n += ml_slen(__p2);
     unsafe { *ml_needed = __n; }
     if ml_cap < __n { return -1; }
     let mut __o: i32 = 0;
-    __o = ml_wstr(ml_buf, __o, last);
-    __o = ml_wstr(ml_buf, __o, b" \0".as_ptr());
-    __o = ml_wstr(ml_buf, __o, first);
+    __o = ml_wstr(ml_buf, __o, __p0, ml_cap);
+    __o = ml_wstr(ml_buf, __o, __p1, ml_cap);
+    __o = ml_wstr(ml_buf, __o, __p2, ml_cap);
     unsafe { *ml_buf.add(__o as usize) = 0; }
     return 0;
 }
@@ -636,20 +650,25 @@ pub extern "C" fn mlx_full_name(first: *const u8, last: *const u8, ml_buf: *mut 
 }
 
 fn ml_fn_receipt_line(item: *const u8, qty: i32, unit_price: i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+    let __p0 = item;
+    let __p1 = b" x \0".as_ptr();
+    let __p2 = qty;
+    let __p3 = b" = \0".as_ptr();
+    let __p4 = (qty).wrapping_mul(unit_price);
     let mut __n: i32 = 1;
-    __n += ml_slen(item);
-    __n += ml_slen(b" x \0".as_ptr());
-    __n += ml_ilen(qty);
-    __n += ml_slen(b" = \0".as_ptr());
-    __n += ml_ilen((qty).wrapping_mul(unit_price));
+    __n += ml_slen(__p0);
+    __n += ml_slen(__p1);
+    __n += ml_ilen(__p2);
+    __n += ml_slen(__p3);
+    __n += ml_ilen(__p4);
     unsafe { *ml_needed = __n; }
     if ml_cap < __n { return -1; }
     let mut __o: i32 = 0;
-    __o = ml_wstr(ml_buf, __o, item);
-    __o = ml_wstr(ml_buf, __o, b" x \0".as_ptr());
-    __o = ml_wint(ml_buf, __o, qty);
-    __o = ml_wstr(ml_buf, __o, b" = \0".as_ptr());
-    __o = ml_wint(ml_buf, __o, (qty).wrapping_mul(unit_price));
+    __o = ml_wstr(ml_buf, __o, __p0, ml_cap);
+    __o = ml_wstr(ml_buf, __o, __p1, ml_cap);
+    __o = ml_wint(ml_buf, __o, __p2);
+    __o = ml_wstr(ml_buf, __o, __p3, ml_cap);
+    __o = ml_wint(ml_buf, __o, __p4);
     unsafe { *ml_buf.add(__o as usize) = 0; }
     return 0;
 }
@@ -659,12 +678,13 @@ pub extern "C" fn mlx_receipt_line(item: *const u8, qty: i32, unit_price: i32, m
 }
 
 fn ml_fn_label(n: i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
+    let __p0 = n;
     let mut __n: i32 = 1;
-    __n += ml_ilen(n);
+    __n += ml_ilen(__p0);
     unsafe { *ml_needed = __n; }
     if ml_cap < __n { return -1; }
     let mut __o: i32 = 0;
-    __o = ml_wint(ml_buf, __o, n);
+    __o = ml_wint(ml_buf, __o, __p0);
     unsafe { *ml_buf.add(__o as usize) = 0; }
     return 0;
 }
@@ -680,14 +700,16 @@ fn ml_fn_summary(count: i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) 
     if (count == 1i32) {
         return ml_strout(b"1 item\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
+    let __p0 = count;
+    let __p1 = b" items\0".as_ptr();
     let mut __n: i32 = 1;
-    __n += ml_ilen(count);
-    __n += ml_slen(b" items\0".as_ptr());
+    __n += ml_ilen(__p0);
+    __n += ml_slen(__p1);
     unsafe { *ml_needed = __n; }
     if ml_cap < __n { return -1; }
     let mut __o: i32 = 0;
-    __o = ml_wint(ml_buf, __o, count);
-    __o = ml_wstr(ml_buf, __o, b" items\0".as_ptr());
+    __o = ml_wint(ml_buf, __o, __p0);
+    __o = ml_wstr(ml_buf, __o, __p1, ml_cap);
     unsafe { *ml_buf.add(__o as usize) = 0; }
     return 0;
 }

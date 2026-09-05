@@ -142,7 +142,7 @@ fn the_c_header_declares_the_triple_and_the_truncation_constant() {
     let ir = compile_to_ir(CARRIER).expect("compile");
     let h = mlc::header::emit_c_header(&ir, "carrier");
     assert!(
-        h.contains("int32_t mlx_name_of(const char* scac, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);"),
+        h.contains("int32_t mlx_name_of(const char* /* scac */, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);"),
         "{h}"
     );
     assert!(h.contains("#ifndef ML_ST_INSUFFICIENT_BUFFER"), "{h}");

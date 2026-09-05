@@ -76,7 +76,10 @@ fn i32_maps_to_int32_t_and_integer_in_the_bindings() {
     let ir = compile_to_ir("export fn add(a: i32, b: i32) -> i32 { let s = a + b return s }")
         .expect("compile");
     let h = mlc::header::emit_c_header(&ir, "add");
-    assert!(h.contains("int32_t mlx_add(int32_t a, int32_t b);"), "{h}");
+    assert!(
+        h.contains("int32_t mlx_add(int32_t /* a */, int32_t /* b */);"),
+        "{h}"
+    );
     let p = mlc::header::emit_delphi_unit(&ir, "add", "add");
     assert!(
         p.contains("a: Integer; b: Integer") && p.contains("): Integer;"),

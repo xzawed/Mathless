@@ -90,6 +90,33 @@ pub struct Spanned {
 }
 
 pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
+    match tokenize_partial(src) {
+        (tokens, None) => Ok(tokens),
+        (_, Some(e)) => Err(e),
+    }
+}
+
+/// Everything lexed before the first bad character, plus that error if there was one.
+///
+/// The whole file is lexed before the parser sees a single token, so a bad CHARACTER late in
+/// the source hides a real error EARLY in it: `struct P { x: i32 }` on line 1 with a `p.x` on
+/// line 2 reported the `.`, because the struct is only wrong to the *parser* and the parser
+/// never ran (STATUS §9-2, measured). Returning the prefix lets the caller parse it anyway and
+/// keep whichever error comes first in the file.
+///
+/// The prefix always ends with `Eof`, so the parser cannot run off the end of it.
+pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
+    /// Stop lexing here: close the prefix with `Eof` so it is parseable on its own, and hand
+    /// back the error beside it.
+    fn stop(mut out: Vec<Spanned>, e: ParseError) -> (Vec<Spanned>, Option<ParseError>) {
+        out.push(Spanned {
+            tok: Token::Eof,
+            line: e.line,
+            col: e.col,
+        });
+        (out, Some(e))
+    }
+
     let chars: Vec<char> = src.chars().collect();
     let mut i = 0usize;
     let mut line = 1usize;
@@ -210,11 +237,14 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             let mut s = String::new();
             loop {
                 let Some(&ch) = chars.get(i) else {
-                    return Err(ParseError::new(
-                        "unterminated string literal — a string must close on the same line",
-                        line0,
-                        col0,
-                    ));
+                    return stop(
+                        out,
+                        ParseError::new(
+                            "unterminated string literal — a string must close on the same line",
+                            line0,
+                            col0,
+                        ),
+                    );
                 };
                 match ch {
                     '"' => {
@@ -223,29 +253,40 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                         break;
                     }
                     '\n' => {
-                        return Err(ParseError::new(
-                            "unterminated string literal — a string must close on the same line",
-                            line0,
-                            col0,
-                        ))
+                        return stop(
+                            out,
+                            ParseError::new(
+                                "unterminated string literal — a string must close on the \
+                                 same line",
+                                line0,
+                                col0,
+                            ),
+                        )
                     }
                     '\\' => {
-                        return Err(ParseError::new(
-                            "escapes are not supported in a string literal yet — `\\` has no \
-                             meaning here, so it would silently be a backslash",
-                            line,
-                            col,
-                        ))
+                        return stop(
+                            out,
+                            ParseError::new(
+                                "escapes are not supported in a string literal yet — `\\` has \
+                                 no meaning here, so it would silently be a backslash",
+                                line,
+                                col,
+                            ),
+                        )
                     }
                     c if !c.is_ascii() => {
-                        return Err(ParseError::new(
-                            format!(
-                                "non-ASCII character '{c}' in a string literal — generated \
-                                 artifacts stay ASCII (non-ASCII trips MSVC C4819 under `/WX`)"
+                        return stop(
+                            out,
+                            ParseError::new(
+                                format!(
+                                    "non-ASCII character '{c}' in a string literal — generated \
+                                     artifacts stay ASCII (non-ASCII trips MSVC C4819 under \
+                                     `/WX`)"
+                                ),
+                                line,
+                                col,
                             ),
-                            line,
-                            col,
-                        ))
+                        )
                     }
                     c => {
                         s.push(c);
@@ -284,28 +325,37 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
                 }
             }
             let tok = if has_dot {
-                let n: f64 = s
-                    .parse()
-                    .map_err(|_| ParseError::new(format!("invalid number '{s}'"), sl, sc))?;
+                let Ok(n) = s.parse::<f64>() else {
+                    return stop(
+                        out,
+                        ParseError::new(format!("invalid number '{s}'"), sl, sc),
+                    );
+                };
                 // `f64::from_str` yields `inf` on overflow (never `Err`); reject it so codegen
                 // never emits an invalid `inff64`. (NaN is impossible from a digit string;
                 // negatives are a separate `Minus` token — so `is_finite` catches only overflow.)
                 if !n.is_finite() {
-                    return Err(ParseError::new(
-                        "number literal is out of range for f64 (overflows to infinity)",
-                        sl,
-                        sc,
-                    ));
+                    return stop(
+                        out,
+                        ParseError::new(
+                            "number literal is out of range for f64 (overflows to infinity)",
+                            sl,
+                            sc,
+                        ),
+                    );
                 }
                 Token::Number(n)
             } else {
-                let n: i64 = s.parse().map_err(|_| {
-                    ParseError::new(
-                        format!("integer literal '{s}' is out of range for i64"),
-                        sl,
-                        sc,
-                    )
-                })?;
+                let Ok(n) = s.parse::<i64>() else {
+                    return stop(
+                        out,
+                        ParseError::new(
+                            format!("integer literal '{s}' is out of range for i64"),
+                            sl,
+                            sc,
+                        ),
+                    );
+                };
                 Token::Int(n)
             };
             out.push(Spanned {
@@ -385,7 +435,12 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
             }
             _ => format!("unexpected character '{c}'"),
         };
-        return Err(ParseError::new(msg, sl, sc));
+        out.push(Spanned {
+            tok: Token::Eof,
+            line: sl,
+            col: sc,
+        });
+        return (out, Some(ParseError::new(msg, sl, sc)));
     }
 
     out.push(Spanned {
@@ -393,7 +448,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, ParseError> {
         line,
         col,
     });
-    Ok(out)
+    (out, None)
 }
 
 #[cfg(test)]

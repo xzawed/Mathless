@@ -24,9 +24,23 @@ pub use error::ParseError;
 pub use typeck::{check, TypeError};
 
 /// Parse Mathless source into a [`Module`] AST (W2).
+///
+/// When lexing fails, the prefix is parsed anyway and the EARLIER of the two errors wins.
+/// Lexing runs over the whole file before the parser sees a token, so without this a bad
+/// character late in the source hides a real error early in it — measured on
+/// `struct P { x: i32 }` followed by a field access, which reported the `.` on line 2 and
+/// never mentioned the struct on line 1 (STATUS §9-2).
 pub fn parse(src: &str) -> Result<ast::Module, ParseError> {
-    let tokens = lexer::tokenize(src)?;
-    parser::parse(tokens)
+    let (tokens, lex_err) = lexer::tokenize_partial(src);
+    let Some(lex) = lex_err else {
+        return parser::parse(tokens);
+    };
+    match parser::parse(tokens) {
+        // Strictly earlier, so a parse error AT the truncation point — which is just the
+        // prefix running out — never displaces the real reason lexing stopped.
+        Err(p) if (p.line, p.col) < (lex.line, lex.col) => Err(p),
+        _ => Err(lex),
+    }
 }
 
 /// Parse then typecheck, returning the typed IR (W2 + W3).

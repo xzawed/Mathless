@@ -139,6 +139,22 @@ impl Parser {
         }
     }
 
+    /// The plural noun for a control-flow form the language does not have, or `None`.
+    ///
+    /// Same shape and same caveat as [`Self::unsupported_declaration`]: these stay legal as
+    /// ordinary names, and this only improves the message where a statement was expected.
+    fn unsupported_statement(name: &str) -> Option<&'static str> {
+        match name {
+            "for" | "foreach" => Some("`for` loops"),
+            "else" => Some("`else` branches"),
+            "break" => Some("`break` statements"),
+            "continue" => Some("`continue` statements"),
+            "switch" | "match" | "case" => Some("`switch`/`match` statements"),
+            "do" | "repeat" => Some("`do`/`repeat` loops"),
+            _ => None,
+        }
+    }
+
     /// `error NAME = N` — N must be a positive integer (Q13: 0 is OK, negatives reserved).
     fn parse_error_decl(&mut self) -> Result<ErrorDecl, ParseError> {
         self.eat(&Token::Error, "'error'")?;
@@ -332,6 +348,17 @@ impl Parser {
                 }
                 let value = self.parse_expr()?;
                 Ok(Stmt::Assign { name, value })
+            }
+            // Control flow the language does not have yet arrives here as a plain identifier,
+            // so the fallback below names the token instead of the gap — the same defect the
+            // top level had (#144). `for i in 0..3` was worse still: lexing died on the `..`
+            // first, so the user heard about ranges rather than about `for`.
+            Token::Ident(name) if Self::unsupported_statement(name).is_some() => {
+                let gap = Self::unsupported_statement(name).expect("checked in the guard");
+                self.err(format!(
+                    "{gap} are not in Mathless yet — a statement is if, while, return, fail, \
+                     let, or an assignment"
+                ))
             }
             other => self.err(format!(
                 "expected statement (if|while|return|fail|let|assignment), found {other:?}"

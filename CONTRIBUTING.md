@@ -32,6 +32,20 @@
    merge. (A cross-platform SO/ELF **target** is still deferred with D22 — the Linux job is
    not it.)
 
+   **Locally, on Windows, run what that job runs — and read the exit codes:**
+
+   ```sh
+   cargo fmt --all --check
+   cargo clippy --workspace --all-targets -- -D warnings
+   MATHLESS_GATE_D=require cargo test --workspace --locked
+   ```
+
+   Without `MATHLESS_GATE_D=require`, a machine with no MSVC **skips** acceptance D and still
+   prints a green summary — the skip is loud on stdout, but the exit code is 0. And never pipe
+   these: `cargo fmt --all --check | tail -1 && echo clean` reports **`tail`'s** exit code, so
+   it says "clean" forever. A commit passed that way and CI caught it.
+   Test counts belong in `docs/STATUS.md` §1, not here.
+
    **Run those commands the way CI runs them, and judge them by the exit code.** Do not wrap
    one in a pipeline to shorten its output. `cargo fmt --all --check | tail -1 && echo clean`
    reports the exit status of `tail`, which is always `0`, so it prints `clean` on a tree that

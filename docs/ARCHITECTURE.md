@@ -37,7 +37,10 @@
 3. **IR**  
    언어 중립에 가깝되, 네이티브/Delphi 실행 모델(값 타입, 명시적 수명 후보)을 표현할 수 있어야 함
 4. **Codegen**  
-   1차 현실 후보: LLVM 또는 기존 네이티브 툴체인에 lowering  
+   내부 IR → `no_std`·`extern "C"`·`repr(C)` Rust → `cargo cdylib` (**D19, 잠정**).
+   C-emit 백엔드 슬롯은 열려 있고 LLVM 직접 방출은 이연했다 — 이 줄은 "LLVM 또는 기존 네이티브
+   툴체인에 lowering"이라는 **후보**로 적혀 있었으나, D19가 2026-08-28에 정했고 그 뒤로 계속
+   출하돼 왔다(`compiler/src/codegen.rs`).  
    “내부가 Delphi 방식”이 Delphi 컴파일러를 반드시 호출한다는 뜻은 아님.  
    **의미 모델**이 Object Pascal/네이티브에 가깝다는 뜻이다.
 5. **Packaging**  

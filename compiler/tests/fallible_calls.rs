@@ -295,3 +295,83 @@ fn a_fallible_export_that_cannot_actually_fail_says_so() {
     let h = mlc::header::emit_c_header(&ir, "nofail");
     assert!(h.contains("/* may fail with: (no domain error) */"), "{h}");
 }
+
+/// A `try` call must apply the same argument rules an ordinary call does.
+///
+/// `check_expr::Call` runs `reject_built_string` over its arguments, and comparisons do too —
+/// a "built" string (`a + b`, or `n as string`) exists only as bytes written straight into the
+/// host's buffer, so it has nowhere to live as an argument. `check_try_call` type-checked its
+/// arguments but never ran that guard, so the one call form that skipped it was `try`.
+#[test]
+fn a_try_call_rejects_a_built_string_argument_like_any_other_call() {
+    for (what, src) in [
+        (
+            "concatenation",
+            "error E = 1\n\
+             fn take(s: string) -> f64! { if s == \"x\" { fail E }  return 1.0 }\n\
+             export fn f(a: string, b: string) -> f64! { let v = try take(a + b)  return v }\n",
+        ),
+        (
+            "i32 as string",
+            "error E = 1\n\
+             fn take(s: string) -> f64! { if s == \"x\" { fail E }  return 1.0 }\n\
+             export fn f(n: i32) -> f64! { let v = try take(n as string)  return v }\n",
+        ),
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::from("<it compiled>"))
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            !shown.contains("<it compiled>"),
+            "a built string ({what}) must not reach a callee's `string` parameter through \
+             `try` — an ordinary call rejects it: {shown}"
+        );
+    }
+}
+
+/// `let x = try f(…)` binds a name, so it owes the same DP-L2 rule plain `let` owes.
+///
+/// Plain `Stmt::Let` refuses a name already in scope ("no redeclaration or shadowing"). The
+/// try-let destination inserted straight into the scope map, so the one binding form that
+/// could silently shadow a parameter was the one introduced last.
+#[test]
+fn a_try_let_cannot_shadow_a_name_already_in_scope() {
+    for (what, src) in [
+        (
+            "a parameter",
+            "error E = 1\n\
+             fn g(x: f64) -> f64! { if x < 0.0 { fail E }  return x }\n\
+             export fn f(v: f64) -> f64! { let v = try g(v)  return v }\n",
+        ),
+        (
+            "an existing local",
+            "error E = 1\n\
+             fn g(x: f64) -> f64! { if x < 0.0 { fail E }  return x }\n\
+             export fn f(a: f64) -> f64! { let v = a  let v = try g(a)  return v }\n",
+        ),
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::from("<it compiled>"))
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            shown.contains("already in scope"),
+            "a try-let must not shadow {what}, exactly as a plain `let` may not: {shown}"
+        );
+    }
+
+    // The other half a plain `let` owes in a fallible function: `out_value` names the D17
+    // out-param, so a local may not take it. Added because Grok pointed out the fix carried
+    // this rule with no test behind it — half a guard regresses as quietly as none.
+    let shown = compile_to_ir(
+        "error E = 1\n\
+         fn g(x: f64) -> f64! { if x < 0.0 { fail E }  return x }\n\
+         export fn f(a: f64) -> f64! { let out_value = try g(a)  return out_value }\n",
+    )
+    .map(|_| String::from("<it compiled>"))
+    .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("out_value"),
+        "a try-let named `out_value` in a fallible function must be rejected — it is the name \
+         of the D17 out-param: {shown}"
+    );
+}

@@ -374,6 +374,31 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
                 i += 1;
                 col += 1;
             }
+            // Identifiers are emitted RAW into every backend — the `.h`, the `.pas`, and the
+            // `#[no_mangle]` Rust — so they must be ASCII for the same reason a string literal
+            // must be, ninety lines above: a generated artifact that is not ASCII trips MSVC
+            // C4819 under `/WX`. `emit.rs` already refuses a non-ASCII MODULE name; identifiers
+            // were the hole between the two, and they are the ones that reach the header.
+            //
+            // Measured before this check: `export fn café(…)` compiled and then failed inside
+            // GENERATED Rust with `#[no_mangle] requires ASCII identifier`, and
+            // `export fn f(가격: f64)` built successfully and wrote a `.h` MSVC read as valid
+            // under CP949 and rejected under CP1252 — a header whose meaning depends on the
+            // reader's code page is worse than one that simply fails.
+            if let Some(bad) = s.chars().find(|c| !c.is_ascii()) {
+                return stop(
+                    out,
+                    ParseError::new(
+                        format!(
+                            "'{bad}' is not allowed in a name — identifiers must be ASCII \
+                             letters, digits and `_`, because they are written unchanged into \
+                             the generated C header and Delphi unit"
+                        ),
+                        sl,
+                        sc,
+                    ),
+                );
+            }
             let tok = match s.as_str() {
                 "export" => Token::Export,
                 "fn" => Token::Fn,

@@ -451,3 +451,51 @@ fn a_late_bad_character_is_still_reported_when_nothing_earlier_is_wrong() {
         "and keep its own position rather than the truncation's: {shown}"
     );
 }
+
+/// Identifiers must be ASCII, because they are emitted RAW into every backend.
+///
+/// The lexer already rejects a non-ASCII byte inside a string literal, and says why:
+/// "generated artifacts stay ASCII (non-ASCII trips MSVC C4819 under `/WX`)". `emit.rs`
+/// rejects a non-ASCII module name for the same reason. Identifiers were the hole in the
+/// middle — and they are the ones that reach the generated header verbatim.
+///
+/// Measured before this check existed, on the real compiler:
+///   export fn café(x: f64) -> f64 { return x }          -> accepted; header not ASCII
+///   export fn f(가격: f64) -> f64 { return 가격 }        -> accepted; header not ASCII
+///   export fn f(gebühr: f64) -> f64 { return gebühr }   -> accepted; header not ASCII
+///
+/// Downstream that produced either a rustc error inside generated code the user never wrote
+/// (`#[no_mangle] requires ASCII identifier`) or a `.h` whose meaning depends on the reader's
+/// code page — MSVC read one of them as a valid identifier under CP949 and rejected it under
+/// CP1252. A header that compiles or not depending on the locale is the worst of the three.
+#[test]
+fn a_non_ascii_identifier_is_rejected_in_the_frontend() {
+    for (what, src) in [
+        ("an exported function name", "export fn caf\u{e9}(x: f64) -> f64 { return x }"),
+        (
+            "a parameter name",
+            "export fn f(geb\u{fc}hr: f64) -> f64 { return geb\u{fc}hr }",
+        ),
+        (
+            "a local name",
+            "export fn f(x: f64) -> f64 { let \u{ac00}\u{aca9} = x  return \u{ac00}\u{aca9} }",
+        ),
+        (
+            "an internal function name",
+            "fn \u{e9}t(x: f64) -> f64 { return x }\nexport fn f(x: f64) -> f64 { return \u{e9}t(x) }",
+        ),
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::from("<it compiled>"))
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            shown.to_lowercase().contains("ascii"),
+            "{what} must be rejected with a reason mentioning ASCII, because it is emitted raw \
+             into the .h and .pas.\n  source:  {src}\n  message: {shown}"
+        );
+    }
+
+    // And the ordinary case still works — this must not become "identifiers must be letters".
+    compile_to_ir("export fn f(_x: f64) -> f64 { let y2 = _x  return y2 }")
+        .expect("plain ASCII identifiers, including `_` and digits, must still compile");
+}

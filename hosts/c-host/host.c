@@ -118,6 +118,19 @@ _Static_assert(_Generic(&mlx_commission_checked, commission_checked_fn: 1, defau
                "generated mlx_commission_checked signature changed");
 _Static_assert(_Generic(&mlx_deduction, unary_f64_fn: 1, default: 0),
                "generated mlx_deduction signature changed");
+/* The four rounding builtins are called through `unary_f64_fn` too, and were the one place
+   this file's headline claim - "each function pointer type below is checked against the
+   header's own declaration" - was not true. `mlx_deduction` carried the whole typedef, so a
+   change to `mlx_fl`'s generated shape alone would have left this file compiling and calling
+   through a prototype the module no longer has. Four asserts, and the claim is true again. */
+_Static_assert(_Generic(&mlx_fl, unary_f64_fn: 1, default: 0),
+               "generated mlx_fl signature changed");
+_Static_assert(_Generic(&mlx_ce, unary_f64_fn: 1, default: 0),
+               "generated mlx_ce signature changed");
+_Static_assert(_Generic(&mlx_ro, unary_f64_fn: 1, default: 0),
+               "generated mlx_ro signature changed");
+_Static_assert(_Generic(&mlx_tr, unary_f64_fn: 1, default: 0),
+               "generated mlx_tr signature changed");
 /* DP-S1: a string parameter must reach C as `const char*`. If the generator ever emitted a
    pointer+length pair, or a plain char*, these stop compiling - which is the point: the shape
    appears at every host call site, so it has to be caught at the boundary, not at runtime. */
@@ -407,13 +420,26 @@ int main(int argc, char **argv) {
         check(tier == 1, "commission_checked writes the declared out");
         check(fee == 500000.0 * 0.03, "commission_checked writes out_value");
 
-        /* DP-O3: a failure writes neither. */
+        /* The two outs below are NOT the same promise, and this said "DP-O3: a failure writes
+           neither", which made them look like one.
+
+           `fee` is `out_value`. The generated adapter writes it only on the Ok branch, so a
+           failing call leaving it alone is a property of the wrapper (DP-E3) - and one this
+           repository paid for: SPEC-export-wrappers line 172 records an adapter that DID write
+           it on the failure path as the decisive evidence against that shape.
+
+           `tier` is a DECLARED out, and there is no such guarantee. DP-O3 is a host contract -
+           on a failing call the host must not READ any out - not a statement that the module
+           left it alone. `hosts/rust-oracle/tests/out_params.rs` measures the other side of
+           that with a module which assigns its out and then fails, which is legal Mathless.
+           `commission.mls` happens to check its input first, so the sentinel survives here as
+           a property of THAT program. */
         tier = -7;
         fee = -7.0;
         status = commission_checked(-1.0, &tier, &fee);
         check(status == ML_COMMISSION_ERR_E_NEGATIVE, "commission_checked(-1) status == ML_COMMISSION_ERR_E_NEGATIVE");
-        check(tier == -7, "a failed call leaves the declared out untouched");
-        check(fee == -7.0, "a failed call leaves out_value untouched");
+        check(tier == -7, "commission_checked fails before assigning, so its declared out is untouched");
+        check(fee == -7.0, "a failed call leaves out_value untouched (DP-E3, the adapter's own rule)");
     }
 
     /* --- deduction.dll: the rounding builtins. A C host is the right place to check these,

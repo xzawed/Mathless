@@ -963,3 +963,65 @@ fn the_slice_index_is_one_table_and_lists_every_spec() {
         );
     }
 }
+
+/// The hand-written C and C++ sources must be pure ASCII, because MSVC reads them in the
+/// machine's ANSI code page and `/W4 /WX` turns "not representable there" into an error.
+///
+/// Found by writing an em-dash into a `host.c` comment. On this development machine (code
+/// page 949) the acceptance-D gate failed immediately:
+///
+/// ```text
+/// host.c(1): warning C4819: <character not representable in code page 949>
+/// host.c(1): error C2220: warning treated as error
+/// ```
+///
+/// The reason this is a test and not just "the build caught it" is that the build would NOT
+/// have caught it everywhere. An em-dash *is* representable in CP1252, so on a runner with
+/// that code page the same file compiles clean — the failure is a property of the reader, not
+/// of the file, which is exactly the shape that reaches one developer and not the next. It is
+/// the same argument the generated headers already make for identifiers (`reserved.rs`), and
+/// the hand-written hosts had no equivalent.
+///
+/// Text only, so the ubuntu insurance job runs it too — which is the point: it needs no MSVC.
+#[test]
+fn the_hand_written_c_sources_are_pure_ascii() {
+    let root = repo_root();
+    // Discovered, not listed: a hand-written host added next year is covered without anyone
+    // remembering this file. Generated artifacts are not here — they live in temp dirs, and
+    // `compiler/tests/emit.rs` already asserts the header is ASCII.
+    let mut sources: Vec<(String, PathBuf)> = Vec::new();
+    for dir in ["hosts/c-host", "hosts/c-host-link", "runtime"] {
+        let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
+            if matches!(ext, "c" | "h" | "cpp" | "hpp") {
+                let name = p.file_name().and_then(|x| x.to_str()).unwrap_or("?");
+                sources.push((format!("{dir}/{name}"), p));
+            }
+        }
+    }
+    let mut checked = 0;
+    for (rel, path) in &sources {
+        let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+        checked += 1;
+        if let Some(i) = bytes.iter().position(|b| !b.is_ascii()) {
+            let line = 1 + bytes[..i].iter().filter(|b| **b == b'\n').count();
+            panic!(
+                "{rel}:{line} holds the non-ASCII byte 0x{:02X}. MSVC reads this file in the \
+                 machine's ANSI code page, so under `/W4 /WX` it is C4819 -> C2220 on any code \
+                 page that cannot represent it — a build that fails for one developer and not \
+                 the next. Write it in ASCII.",
+                bytes[i]
+            );
+        }
+    }
+    assert!(
+        checked >= 3,
+        "expected at least the two C hosts and the ABI header; found {checked} ({:?}). A guard \
+         that scans an empty set passes forever — if these moved, point it at where they went",
+        sources.iter().map(|(r, _)| r).collect::<Vec<_>>()
+    );
+}

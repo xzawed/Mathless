@@ -78,6 +78,18 @@ fn the_helper_is_only_emitted_when_a_comparison_exists() {
         !plain.contains("ml_streq"),
         "unused helper emitted:\n{plain}"
     );
+
+    // The gate learned to look inside `Concat` (see `compares_strings`), and a widened gate
+    // can over-emit as easily as a narrow one under-emits. A module that concatenates but
+    // never compares must still not carry the helper — otherwise every string-building module
+    // grows dead code, and dead code in the module is dead code in the shipped `.dll`.
+    let concat = compile_to_rust("export fn f(a: string, b: string) -> string! { return a + b }")
+        .expect("a concatenation without a comparison compiles");
+    assert!(
+        !concat.contains("ml_streq"),
+        "the widened gate emitted the comparison helper for a module that never compares:\n\
+         {concat}"
+    );
 }
 
 #[test]
@@ -168,4 +180,71 @@ fn the_bindings_say_const_char_and_pansichar() {
         pas.to_lowercase().contains("unicodestring"),
         "the Delphi unit must warn about UnicodeString:\n{pas}"
     );
+}
+
+/// Every `ml_*` helper the generated crate CALLS must also be DEFINED in it.
+///
+/// Each helper is emitted behind a gate that walks the IR looking for a reason to emit it, and
+/// two of those walkers (`compares_strings`, `builds_strings`) ended their `match` with
+/// `_ => false`. A variant nobody thought about therefore reads as "no reason found" instead
+/// of failing to compile — and `IrExprKind::Concat` was exactly that variant for
+/// `compares_strings`.
+///
+/// Measured before the fix, with `mlc build` on
+///
+///     fn score(b: bool) -> i32 { if b { return 1 }  return 0 }
+///     export fn label(a: string, b: string) -> string! { return "eq=" + score(a == b) as string }
+///
+///     mlc: codegen error: cargo build of generated crate failed ...
+///     error[E0425]: cannot find function `ml_streq` in this scope
+///       --> src\lib.rs:87:32
+///        |
+///     87 |     __n += ml_ilen(ml_fn_score(ml_streq(a, b)));
+///
+/// A valid program, rejected with a rustc error inside code the user never wrote.
+///
+/// This test is deliberately not "does `ml_streq` appear for this one input" — that is the
+/// assertion that was already there, and it passed throughout. It asserts the invariant the
+/// gates exist to keep, so a future helper with a future gate is covered without editing it.
+#[test]
+fn every_helper_the_generated_crate_calls_is_also_defined_in_it() {
+    let corpus = [
+        // The reproduction: the comparison is reachable only through a concat piece.
+        "fn score(b: bool) -> i32 { if b { return 1 }  return 0 }\n\
+         export fn label(a: string, b: string) -> string! { return \"eq=\" + score(a == b) as string }",
+        // The same shape one level deeper, through a cast as well as a call.
+        "fn score(b: bool) -> i32 { if b { return 1 }  return 0 }\n\
+         export fn label(a: string, b: string) -> string! { return \"n=\" + (score(a == b) + 1) as string }",
+        // A rounder reachable only through a concat piece — the walker that already got
+        // this right, kept here so the three stay tested as one class.
+        "export fn label(x: f64) -> string! { return \"n=\" + round(x) as i32 as string }",
+        // A comparison in the ordinary place, so the test still fails if emission breaks
+        // outright rather than only in the nested case.
+        "export fn f(s: string) -> bool { return s == \"x\" }",
+    ];
+    for src in corpus {
+        let rust = compile_to_rust(src).expect("should compile");
+        // Call sites look like `ml_name(`; definitions like `fn ml_name(`.
+        let mut missing = Vec::new();
+        for (i, _) in rust.match_indices("ml_") {
+            let rest = &rust[i..];
+            let Some(open) = rest.find('(') else { continue };
+            let name = &rest[..open];
+            if !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+                continue;
+            }
+            // `ml_fn_*` and `mlx_*` are the user's own functions, emitted with their bodies.
+            if name.starts_with("ml_fn_") || rust.contains(&format!("fn {name}(")) {
+                continue;
+            }
+            if !missing.contains(&name.to_string()) {
+                missing.push(name.to_string());
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "the generated crate calls {missing:?} but defines none of them — \
+             a helper gate did not see the use.\nsource:\n{src}\n\ngenerated:\n{rust}"
+        );
+    }
 }

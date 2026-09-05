@@ -8,7 +8,7 @@
 > 내부 함수와 호출 · `as`까지 전부 머지됐다. (이 줄이 W10에서 멈춰 있었다 — 2026-08-31 정정.)
 > **수용 A/B/C 완료 + D는 C 호스트로 통과**(2026-08-29). **Delphi(`dcc64`)만 미검증**.
 > 테스트 수·CI 구성의 정본은 `docs/STATUS.md`다(여기 숫자를 복제하면 곧 낡는다 — 실제로 두 번 낡았다).
-> 잔여 작업 목록의 정본은 `docs/STATUS.md` §3.
+> 잔여 작업 목록의 정본은 `docs/STATUS.md` §9(**▶ 여기서 시작한다** 블록)다.
 >
 > **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 값은 `docs/STATUS.md`), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. (당시) `.h`/`.pas`의 실제 로드는 미검증이었다 — **`.h`는 이후 W12에서 해소**, `.pas`는 여전히 DRAFT.
 >
@@ -82,7 +82,7 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 - 문자열/구조체 마샬링, 콜백
 - 두 번째 호스트(C#) — ROADMAP Phase 4
 
-> 다음에 무엇을 할지는 **`docs/STATUS.md` §3**이 정본이다(문서 정합 ✅ → fixture 제거 ✅ →
+> 다음에 무엇을 할지는 **`docs/STATUS.md` §9**가 정본이다(문서 정합 ✅ → fixture 제거 ✅ →
 > emit·진단 → 이후 슬라이스). STATUS **§6**의 "하지 말 것"(`packager/`·빈 `backend/`·
 > `host/delphi` 크레이트 생성 금지, D22 미개시)도 이 WBS에 그대로
 > 적용된다. **§3d는 존재하지 않는 섹션이었다**(2026-08-31 정정). 그리고 §6은 "D16/문자열/콜백/

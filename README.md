@@ -64,9 +64,10 @@ backend emits `no_std`, `extern "C"` Rust and builds it as a `cargo` cdylib.
 **The language today.** Four types: `f64`, `bool`, `i32` and `string`. The numeric ones come
 with arithmetic (`+`, `-`, `*`, `/`, and `%` on `i32`), comparisons, and an explicit `as`
 conversion between them; `i32` division is total, so `x / 0` is `0` rather than a trap.
-A `string` can be a parameter or a `-> string!` return; the operations on it are `==` and
-`!=`, which compare bytes. Returning one uses a caller-allocated buffer — the module never
-allocates. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
+A `string` can be a parameter or a `-> string!` return; it compares with `==` and `!=` on
+bytes, and concatenates with `+` — which only a `return` may hold, since the module has no
+allocator. `i32 as string` renders a number. Returning a string uses a caller-allocated
+buffer — the module never allocates. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
 `let` and `let mut`, with assignment. Operators include unary `-` and `!`, plus `&&` and
 `||`. There are four built-ins — `floor`, `ceil`, `round`, `trunc` — which match C's
 `<math.h>` exactly. A function can be fallible: `-> T!` with `error NAME = N` and
@@ -154,7 +155,12 @@ itself is never rebuilt.
 | [docs/SECURITY.md](docs/SECURITY.md) | Protection goals, stages, and the measured proxies |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → expansion |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Confirmed decisions (D01–D23) and rejected alternatives |
+| [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | What is still undecided, and what each answer would cost |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The intended pipeline and module boundaries |
+| [docs/COMPETITIVE.md](docs/COMPETITIVE.md) | Where this sits next to the alternatives |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | The terms this repository uses precisely |
 | [docs/slices/](docs/slices/README.md) | Per-feature SPECs — the unit of work — and their status |
+| [runtime/](runtime/README.md) · [hosts/c-host/](hosts/c-host/README.md) · [hosts/c-host-link/](hosts/c-host-link/README.md) · [hosts/delphi-host/](hosts/delphi-host/README.md) | The C ABI header, and the three host directories that consume it |
 
 ## Contributing
 

@@ -9,7 +9,7 @@ TDD 구현 → Grok 검증 → PR** 순서를 따른다(`CLAUDE.md` "개발 방�
 | 위치 | 무엇 | 왜 |
 |------|------|-----|
 | `docs/slices/SPEC-*.md` | **기능 슬라이스** SPEC (이 폴더) | 기능은 로드맵의 phase 경계를 따르지 않는다. 슬라이스는 표면 문법일 수도 ABI일 수도 있고, 대개 둘 다다 |
-| `docs/phaseN/SPEC.md` · `WBS.md` | **phase(캠페인)** 계획 — 그 phase의 목표·수용 기준·작업 분해 | `ROADMAP.md`의 phase는 제품 캠페인(수직 슬라이스 / struct·import / DX / 두 번째 호스트)이지 SDD 단위가 아니다 |
+| [`docs/phase1/SPEC.md`](../phase1/SPEC.md) · [`WBS.md`](../phase1/WBS.md) | **phase(캠페인)** 계획 — 그 phase의 목표·수용 기준·작업 분해 | `ROADMAP.md`의 phase는 제품 캠페인(수직 슬라이스 / struct·import / DX / 두 번째 호스트)이지 SDD 단위가 아니다 |
 
 `docs/lang/`이 아닌 이유: 다음 슬라이스들(D16 caller-allocates·context handle, 문자열·구조체
 마샬링, 콜백)은 **언어가 아니라 ABI·메모리** 작업이다. `docs/lang/`은 즉시 `docs/abi/`를 함께

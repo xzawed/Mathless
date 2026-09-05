@@ -63,8 +63,9 @@ Windows x64에 툴체인을 고정한 상태입니다.
 **현재 언어.** 타입은 `f64`, `bool`, `i32`, `string` 네 가지입니다. 수치 타입에는 산술(`+`, `-`,
 `*`, `/`, 그리고 `i32`의 `%`)과 비교, 그리고 명시적 `as` 변환이 있습니다. `i32`의 나눗셈은
 전역(total)이라 `x / 0`은 트랩이 아니라 `0`입니다. `string`은 **파라미터**나 **`-> string!` 반환**에
-쓸 수 있고 연산은 `==`·`!=`(바이트 비교)뿐입니다. 반환은 **호스트가 준 버퍼**에 씁니다 — 모듈은
-할당하지 않습니다. 제어 흐름은 `if`, `while`, `return`이며 `else`는 아직 없습니다. 지역 변수는
+쓸 수 있고, 연산은 `==`·`!=`(바이트 비교)와 **연결 `+`** 입니다 — 연결 결과는 모듈에 할당자가 없어
+`return` 자리에만 놓을 수 있습니다. `i32 as string`으로 숫자를 렌더링합니다. 반환은 **호스트가 준
+버퍼**에 씁니다 — 모듈은 할당하지 않습니다. 제어 흐름은 `if`, `while`, `return`이며 `else`는 아직 없습니다. 지역 변수는
 `let`과 `let mut`이고 대입을 지원합니다. 연산자로는 단항 `-`와 `!`, 그리고 `&&`와 `||`가 있습니다.
 내장 함수는 `floor`·`ceil`·`round`·`trunc` 넷이고 C의 `<math.h>`와 정확히 같습니다. 함수는 실패
 가능하게 선언할 수 있습니다. `-> T!`에 `error NAME = N`과 `fail NAME`을 쓰면 정수 status와
@@ -146,7 +147,12 @@ C 호스트가 `discount.dll`을 로드해 `mlx_discount(100.0, true)`를 호출
 | [docs/SECURITY.md](docs/SECURITY.md) | 보호 목표와 단계, 측정된 프록시 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | MVP → 확장 |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | 확정 결정(D01–D23)과 기각된 대안 |
+| [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | 아직 정하지 않은 것과, 각 답의 대가 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 의도한 파이프라인과 모듈 경계 |
+| [docs/COMPETITIVE.md](docs/COMPETITIVE.md) | 대안들 옆에서 이 프로젝트의 자리 |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | 이 저장소가 정확하게 쓰는 용어들 |
 | [docs/slices/](docs/slices/README.md) | 기능 슬라이스 SPEC — 작업의 단위 — 과 그 상태 |
+| [runtime/](runtime/README.md) · [hosts/c-host/](hosts/c-host/README.md) · [hosts/c-host-link/](hosts/c-host-link/README.md) · [hosts/delphi-host/](hosts/delphi-host/README.md) | C ABI 헤더와, 그것을 쓰는 세 호스트 디렉터리 |
 
 ## 기여
 

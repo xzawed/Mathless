@@ -886,3 +886,52 @@ fn the_readmes_admit_the_staging_directory_a_killed_build_leaves() {
         );
     }
 }
+
+/// The slice index has to be a table, and it has to list every SPEC.
+///
+/// `CLAUDE.md` calls `docs/slices/README.md` the canonical list of closed slices. It was not
+/// one table: five stray blank lines split it, and Markdown needs a header row per block, so
+/// nine of the twenty-one rows — the whole recent half, from 문자열 입력 onward — rendered on
+/// GitHub as literal `| pipe | text |` paragraphs. The canonical index was unreadable at
+/// exactly the point a reader looks for the newest work.
+///
+/// Two invariants, because the fragmentation is invisible in a diff and the drift is invisible
+/// in the rendering:
+///   - no blank line may sit BETWEEN two table rows (that is what splits a table);
+///   - every `SPEC-*.md` must be linked from the index.
+#[test]
+fn the_slice_index_is_one_table_and_lists_every_spec() {
+    let index = read("docs/slices/README.md");
+    let lines: Vec<&str> = index.lines().collect();
+    for (i, w) in lines.windows(3).enumerate() {
+        assert!(
+            !(w[0].starts_with('|') && w[1].trim().is_empty() && w[2].starts_with('|')),
+            "docs/slices/README.md:{} is a blank line between two table rows, which splits the \
+             table — every row after it renders as literal pipe text, because a Markdown table \
+             block needs its own header row",
+            i + 2
+        );
+    }
+
+    let dir = repo_root().join("docs").join("slices");
+    let mut specs: Vec<String> = std::fs::read_dir(&dir)
+        .expect("read docs/slices")
+        .filter_map(|e| {
+            let n = e.ok()?.file_name().to_string_lossy().into_owned();
+            (n.starts_with("SPEC-") && n.ends_with(".md")).then_some(n)
+        })
+        .collect();
+    specs.sort();
+    assert!(
+        specs.len() >= 20,
+        "expected the whole family, got {specs:?}"
+    );
+    for s in &specs {
+        assert!(
+            index.contains(&format!("({s})")),
+            "docs/slices/README.md does not link {s}. The index is what CLAUDE.md calls the \
+             canonical list of closed slices, so a SPEC missing from it is a slice nobody can \
+             find"
+        );
+    }
+}

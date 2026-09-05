@@ -499,3 +499,76 @@ fn a_non_ascii_identifier_is_rejected_in_the_frontend() {
     compile_to_ir("export fn f(_x: f64) -> f64 { let y2 = _x  return y2 }")
         .expect("plain ASCII identifiers, including `_` and digits, must still compile");
 }
+
+/// Four edge cases the code audit measured, all of which the frontend accepted or misreported.
+///
+/// The first is the one that matters: a NUL inside a string literal is ASCII, so the
+/// non-ASCII guard misses it, and codegen lowers the literal to `b"…\0"` — a C string that
+/// ENDS at the embedded NUL. Measured: `s == "a\0b"` emitted `b"a<NUL>b\0"`, so the module
+/// compares one byte where the user wrote three. A silent wrong answer at the ABI.
+#[test]
+fn a_control_character_in_a_string_literal_is_rejected() {
+    for (what, src) in [
+        (
+            "NUL, which truncates the C string",
+            "export fn f(s: string) -> bool { return s == \"a\u{0}b\" }",
+        ),
+        (
+            "BEL",
+            "export fn f(s: string) -> bool { return s == \"a\u{7}b\" }",
+        ),
+    ] {
+        let shown = compile_to_ir(src)
+            .map(|_| String::from("<it compiled>"))
+            .unwrap_or_else(|e| e.to_string());
+        assert!(
+            shown.to_lowercase().contains("control"),
+            "a control character ({what}) must be rejected in a string literal: {shown}"
+        );
+    }
+    // Ordinary literals keep working — this must not become "letters and digits only".
+    compile_to_ir("export fn f(s: string) -> bool { return s == \"KR-01 (x)\" }")
+        .expect("printable ASCII must still be accepted in a literal");
+}
+
+/// Error names are emitted as constants into the Delphi unit, where Pascal is
+/// case-INSENSITIVE — so two names differing only in case are one identifier declared twice.
+///
+/// Measured before this check: `error E_Neg = 1` + `error E_NEG = 2` compiled and emitted
+///   ML_M_ERR_E_Neg = 1;
+///   ML_M_ERR_E_NEG = 2;
+/// into the same `.pas`. Function names (typeck) and parameter names both already dedup
+/// case-insensitively, with the comment "(Delphi binding)"; error names land in the same unit
+/// and were the one kind that did not.
+#[test]
+fn error_names_are_unique_case_insensitively_like_every_other_emitted_name() {
+    let shown = compile_to_ir(
+        "error E_Neg = 1\nerror E_NEG = 2\n\
+         export fn f(x: f64) -> f64! { if x < 0.0 { fail E_Neg }  return x }\n",
+    )
+    .map(|_| String::from("<it compiled>"))
+    .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("case-insensitively"),
+        "two error names differing only in case become one Pascal identifier declared twice: \
+         {shown}"
+    );
+}
+
+/// A byte-order mark and a non-breaking space are invisible, so quoting them helps nobody.
+#[test]
+fn invisible_characters_are_handled_or_named() {
+    // A BOM is what a Windows editor writes by default. It is not an error in the source.
+    compile_to_ir("\u{feff}export fn f(x: f64) -> f64 { return x }")
+        .expect("a leading UTF-8 BOM must be skipped, not reported as a stray character");
+
+    // A non-breaking space IS an error, but the message has to say WHICH character, because
+    // the user's editor shows a space and the old message quoted one too.
+    let shown = compile_to_ir("export fn f(x: f64)\u{a0}-> f64 { return x }")
+        .map(|_| String::new())
+        .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("U+00A0"),
+        "an invisible character must be named by codepoint, not quoted: {shown}"
+    );
+}

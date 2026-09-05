@@ -671,34 +671,55 @@ fn emit_strout_helper(module: &IrModule, out: &mut String) {
 /// exact span right-to-left (SPEC §5.2).
 fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     let pad = "    ".repeat(indent);
+    // Each piece is bound ONCE, before either pass, and both passes use the binding.
+    //
+    // It was emitted twice — inlined into the `ml_slen`/`ml_ilen` line and again into the
+    // `ml_wstr`/`ml_wint` line. Measured on
+    //   `export fn label(…) -> string! { return "eq=" + score(a == b) as string }`
+    // the generated Rust called `ml_fn_score(…)` in both passes, so a helper ran twice per
+    // invocation. Today's language has no side effects, so that was cost and not a wrong
+    // answer — but it is also the mechanism by which the two passes could disagree, and pass 1
+    // is what sized the host's buffer. `ml_wint` already refuses to recount for exactly that
+    // reason (it asks `ml_ilen`); this gives the string pieces the same guarantee.
+    for (i, p) in pieces.iter().enumerate() {
+        let e = match &p.kind {
+            IrExprKind::Cast { operand, .. } => emit_expr(operand),
+            _ => emit_expr(p),
+        };
+        let _ = writeln!(out, "{pad}let __p{i} = {e};");
+    }
     // Pass 1 — count. One byte for the NUL is always needed, so `__n` starts at 1 and an
     // empty result is 1, never 0. That keeps `*needed == 0` impossible, exactly as #92.
     let _ = writeln!(out, "{pad}let mut __n: i32 = 1;");
-    for p in pieces {
+    for (i, p) in pieces.iter().enumerate() {
         match &p.kind {
-            IrExprKind::Cast { operand, .. } => {
-                let _ = writeln!(out, "{pad}__n += ml_ilen({});", emit_expr(operand));
+            IrExprKind::Cast { .. } => {
+                let _ = writeln!(out, "{pad}__n += ml_ilen(__p{i});");
             }
             _ => {
-                let _ = writeln!(out, "{pad}__n += ml_slen({});", emit_expr(p));
+                let _ = writeln!(out, "{pad}__n += ml_slen(__p{i});");
             }
         }
     }
     let _ = writeln!(out, "{pad}unsafe {{ *ml_needed = __n; }}");
     let _ = writeln!(out, "{pad}if ml_cap < __n {{ return -1; }}");
     // Pass 2 — append. `__o` is the running offset; every helper returns the next one.
+    //
+    // `ml_cap` is handed to `ml_wstr` as a hard stop. Binding the pieces above makes the two
+    // passes read the same POINTER, but not necessarily the same BYTES: nothing in the C ABI
+    // tells a host its output buffer may not overlap a string it passes in, and `ml_wstr`
+    // copies until it finds a NUL in the source. Under that aliasing it would feed on its own
+    // output and run past the end of the host's buffer. The bound turns a memory-safety
+    // failure in the HOST's process into a bounded, wrong-looking string — and costs a
+    // conforming host nothing, because `ml_cap >= __n` was already checked above.
     let _ = writeln!(out, "{pad}let mut __o: i32 = 0;");
-    for p in pieces {
+    for (i, p) in pieces.iter().enumerate() {
         match &p.kind {
-            IrExprKind::Cast { operand, .. } => {
-                let _ = writeln!(
-                    out,
-                    "{pad}__o = ml_wint(ml_buf, __o, {});",
-                    emit_expr(operand)
-                );
+            IrExprKind::Cast { .. } => {
+                let _ = writeln!(out, "{pad}__o = ml_wint(ml_buf, __o, __p{i});");
             }
             _ => {
-                let _ = writeln!(out, "{pad}__o = ml_wstr(ml_buf, __o, {});", emit_expr(p));
+                let _ = writeln!(out, "{pad}__o = ml_wstr(ml_buf, __o, __p{i}, ml_cap);");
             }
         }
     }
@@ -777,9 +798,20 @@ fn emit_concat_helpers(module: &IrModule, out: &mut String) {
          \x20   while m >= 10 { m /= 10; n += 1; }\n\
          \x20   n\n\
          }\n\n\
-         fn ml_wstr(buf: *mut u8, off: i32, src: *const u8) -> i32 {\n\
+         fn ml_wstr(buf: *mut u8, off: i32, src: *const u8, cap: i32) -> i32 {\n\
+         \x20   // `cap` is a hard stop, not a length. It exists for the host that passes a\n\
+         \x20   // string ALIASING its own output buffer: nothing in the C ABI forbids that,\n\
+         \x20   // and without the bound this loop would copy its own output forward and run\n\
+         \x20   // off the end of the caller's memory. One byte is left for the NUL.\n\
+         \x20   //\n\
+         \x20   // It is REACHED on a conforming call, and returns the same offset the source\n\
+         \x20   // NUL would have: when the result exactly fills the buffer, `off + i` hits\n\
+         \x20   // `cap - 1` on the same iteration the NUL is read. So it never truncates a\n\
+         \x20   // legitimate result — it just gets there first (Grok verify; the exact-fill\n\
+         \x20   // retry is measured through a loaded module in the oracle's string_concat).\n\
          \x20   let mut i: i32 = 0;\n\
          \x20   loop {\n\
+         \x20       if off + i >= cap - 1 { return off + i; }\n\
          \x20       let b = unsafe { *src.add(i as usize) };\n\
          \x20       if b == 0 { return off + i; }\n\
          \x20       unsafe { *buf.add((off + i) as usize) = b; }\n\

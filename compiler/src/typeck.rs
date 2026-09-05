@@ -681,6 +681,10 @@ fn check_try_call(
                 arg.ty
             )));
         }
+        // The same guard an ordinary call applies to its arguments. A BUILT string (`a + b`,
+        // `n as string`) is bytes written straight into the host's buffer, so it has nowhere
+        // to live as an argument — and `try` was the one call form that never asked.
+        reject_built_string(&arg, fname, &format!("as argument {} to '{callee}'", i + 1))?;
         checked.push(arg);
     }
 
@@ -711,6 +715,21 @@ fn check_try_call(
                     "function '{fname}': local '{name}' starts with `{prefix}`, which the \
                      compiler generates into the same scope — {}",
                     crate::reserved::generated_prefix_reason(prefix)
+                )));
+            }
+            // And the rest of what a plain `let` owes. A try-let binds a name like any other
+            // binding form, so DP-L2 applies to it too — it was inserting straight into the
+            // scope map, which let `let v = try g(v)` silently shadow the parameter `v`.
+            if fallible && name == "out_value" {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local 'out_value' is reserved in a fallible function \
+                     (it names the D17 out-param) — rename it"
+                )));
+            }
+            if scope.contains_key(name) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': '{name}' is already in scope — no redeclaration or \
+                     shadowing"
                 )));
             }
             scope.insert(

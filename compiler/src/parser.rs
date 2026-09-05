@@ -66,19 +66,93 @@ pub fn parse(tokens: Vec<Spanned>) -> Result<Module, ParseError> {
     Parser::new(tokens).parse_module()
 }
 
-/// How deep expressions and blocks may nest.
+/// The depth of the deepest path through a function body, counted **iteratively**.
+///
+/// Iterative because a recursive depth check is exactly the thing being guarded against: it
+/// would overflow on the input it exists to refuse, which is a guard that dies rather than
+/// fires. The worklist holds `(node, depth_so_far)` pairs and never recurses.
+///
+/// A block's statements are siblings, so a body of a thousand statements is depth 1; nesting
+/// is what counts. Parentheses contribute nothing — `(((x)))` parses to `x` — which is one
+/// half of why [`MAX_NESTING`] alone was the wrong measure.
+fn tree_depth(body: &[Stmt]) -> u32 {
+    // `Stmt` and `Expr` are walked by one loop over an enum of the two, so a new statement
+    // form has to say how deep it goes rather than being silently treated as a leaf.
+    enum Node<'a> {
+        S(&'a Stmt),
+        E(&'a Expr),
+    }
+    let mut max = 0u32;
+    let mut work: Vec<(Node<'_>, u32)> = body.iter().map(|s| (Node::S(s), 1)).collect();
+    while let Some((n, d)) = work.pop() {
+        max = max.max(d);
+        match n {
+            Node::S(s) => match s {
+                Stmt::If { cond, body } | Stmt::While { cond, body } => {
+                    work.push((Node::E(cond), d + 1));
+                    work.extend(body.iter().map(|s| (Node::S(s), d + 1)));
+                }
+                Stmt::Return(e) | Stmt::Let { value: e, .. } | Stmt::Assign { value: e, .. } => {
+                    work.push((Node::E(e), d + 1))
+                }
+                Stmt::TryCall { args, .. } => work.extend(args.iter().map(|a| (Node::E(a), d + 1))),
+                Stmt::Fail(_) => {}
+            },
+            Node::E(e) => match e {
+                Expr::Unary { operand, .. } | Expr::Cast { operand, .. } => {
+                    work.push((Node::E(operand), d + 1))
+                }
+                Expr::Binary { lhs, rhs, .. } => {
+                    work.push((Node::E(lhs), d + 1));
+                    work.push((Node::E(rhs), d + 1));
+                }
+                Expr::Call { args, .. } => work.extend(args.iter().map(|a| (Node::E(a), d + 1))),
+                Expr::Number(_) | Expr::Str(_) | Expr::Int(_) | Expr::Bool(_) | Expr::Var(_) => {}
+            },
+        }
+    }
+    max
+}
+
+/// How many frames of recursive descent the PARSER may spend.
 ///
 /// Measured on the CLI before this limit existed (debug build): `return` with 110 nested
 /// parentheses compiled all the way to a `.dll`, 125 aborted the process with
 /// `thread 'main' has overflowed its stack` and exit 127 — no diagnostic, no position.
 /// 100 nested `if` blocks compiled; 150 aborted the same way.
 ///
-/// The limit is well under that cliff on purpose. The parser is not the only pass that walks
-/// the tree recursively — typecheck, codegen and even dropping the `Box` chain do — so a tree
-/// the parser accepts has to be safe for all of them. Depth 110 was measured safe end to end,
-/// which is the evidence for 64 being safe; 64 is also far above anything hand-written
-/// (`((a+b)*c)` is 3), so it does not trade a rare crash for a common false rejection.
+/// **This counts frames, not tree depth, and the two are different quantities.** The doc that
+/// stood here claimed it covered every pass — "a tree the parser accepts has to be safe for
+/// all of them" — and that was false, measured: `return x + x + … + x` with 160 terms spends
+/// ONE `enter()` (the precedence levels loop rather than recurse) and builds a left spine 159
+/// nodes deep, so it sailed past this limit and killed `typeck` with the exact pre-limit
+/// signature, exit 127 and no message.
+///
+/// It also over-counted in the other direction: `(((x)))` costs three frames here and builds
+/// **no** nodes at all, because a parenthesised expression is just the expression.
+///
+/// So there are two resources and they get two limits. This one protects the parser's own
+/// stack; [`MAX_TREE_DEPTH`] protects every pass that walks the tree the parser returns.
 const MAX_NESTING: u32 = 64;
+
+/// How deep the TREE may be — the quantity `typeck`, `codegen` and `Drop` each recurse over.
+///
+/// Measured on the CLI, bisected with `return x + x + … + x` whose AST is a left spine one
+/// node shorter than the term count:
+///
+/// | terms | AST depth | `mlc build` |
+/// |---|---|---|
+/// | 140 | 139 | exit 0 |
+/// | 160 | 159 | **exit 127**, no diagnostic |
+///
+/// Isolated per pass: the parser survives 500 terms, dropping the tree survives 500, and
+/// `compile_to_ir` dies at 200. The killer is the typechecker, and codegen walks the same
+/// shape right behind it.
+///
+/// 64 is under half the measured cliff and far above anything hand-written — the deepest
+/// expression in `examples/` is 4. It is checked ITERATIVELY (see `tree_depth`), because a
+/// recursive depth check would be the very thing it is guarding against.
+const MAX_TREE_DEPTH: u32 = 64;
 
 struct Parser {
     toks: Vec<Spanned>,
@@ -102,6 +176,29 @@ impl Parser {
     /// nested `if`s inside 30 parentheses costs 70 frames regardless of which construct spent
     /// them. Every caller pairs this with `self.depth -= 1` on the way out, including the
     /// error path, so a rejected parse does not leave the counter raised.
+    /// Build a binary node, and count the level it adds to the TREE.
+    ///
+    /// This is the accounting point the frame counter could not be. Every precedence level
+    /// below builds its chain in a **loop**, so the parser's own stack does not grow — but the
+    /// tree does, one level per iteration, and that is what `typeck`, `codegen` and `Drop`
+    /// recurse over. Measured before wraps were counted: `return x + x + … + x` with 160 terms
+    /// spent exactly one `enter()` and killed the typechecker at exit 127 with no message; at
+    /// 20 000 terms the process died **inside the parser, dropping the tree it had just
+    /// refused** — the refusal could not be delivered because delivering it meant freeing what
+    /// had already been built.
+    ///
+    /// So the level is charged when the node is created and released when the whole expression
+    /// is (see [`Parser::parse_expr`]), which keeps the tree bounded during construction and
+    /// not merely checked afterwards.
+    fn wrap(&mut self, op: BinOp, lhs: Expr, rhs: Expr) -> Result<Expr, ParseError> {
+        self.enter()?;
+        Ok(Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        })
+    }
+
     fn enter(&mut self) -> Result<(), ParseError> {
         if self.depth >= MAX_NESTING {
             return self.err(format!(
@@ -190,7 +287,23 @@ impl Parser {
             if *self.peek() == Token::Error {
                 errors.push(self.parse_error_decl()?);
             } else {
-                functions.push(self.parse_function()?);
+                let f = self.parse_function()?;
+                // Checked here, per function, because this is the last moment the parser can
+                // still say WHERE — the AST carries no spans, so a whole-module check could
+                // only report a position it invented. The cursor is at the function's closing
+                // brace, which is the honest answer to "which function".
+                let depth = tree_depth(&f.body);
+                if depth > MAX_TREE_DEPTH {
+                    return self.err(format!(
+                        "function '{}' builds an expression tree {depth} levels deep; the limit \
+                         is {MAX_TREE_DEPTH}. Every pass after this one walks that tree \
+                         recursively, so a deeper one exhausts the stack instead of producing a \
+                         message like this. A long chain like `a + b + c + …` nests once per \
+                         term — split it with `let`",
+                        f.name
+                    ));
+                }
+                functions.push(f);
             }
         }
         Ok(Module { functions, errors })
@@ -499,11 +612,17 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         // The one re-entry point for nested expressions: `(e)`, a call argument and a `try`
-        // argument all come back through here, and the precedence chain below it does not
-        // recurse into itself.
+        // argument all come back through here.
+        //
+        // It releases the WHOLE expression's budget, not one level. The precedence chain below
+        // does not recurse into itself — that much of the old comment was true — but it does
+        // build, and every node it builds charges `enter()` through `wrap` and keeps that
+        // charge for as long as the expression is under construction. Restoring the saved
+        // depth is what hands the budget back to the next sibling expression.
         self.enter()?;
+        let outer = self.depth - 1;
         let e = self.parse_or();
-        self.depth -= 1;
+        self.depth = outer;
         e
     }
 
@@ -513,11 +632,7 @@ impl Parser {
         while self.peek() == &Token::OrOr {
             self.pos += 1;
             let rhs = self.parse_and()?;
-            lhs = Expr::Binary {
-                op: BinOp::Or,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = self.wrap(BinOp::Or, lhs, rhs)?;
         }
         Ok(lhs)
     }
@@ -529,11 +644,7 @@ impl Parser {
         while self.peek() == &Token::AndAnd {
             self.pos += 1;
             let rhs = self.parse_compare()?;
-            lhs = Expr::Binary {
-                op: BinOp::And,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = self.wrap(BinOp::And, lhs, rhs)?;
         }
         Ok(lhs)
     }
@@ -552,11 +663,7 @@ impl Parser {
             };
             self.pos += 1;
             let rhs = self.parse_add()?;
-            lhs = Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = self.wrap(op, lhs, rhs)?;
         }
         Ok(lhs)
     }
@@ -571,11 +678,7 @@ impl Parser {
             };
             self.pos += 1;
             let rhs = self.parse_mul()?;
-            lhs = Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = self.wrap(op, lhs, rhs)?;
         }
         Ok(lhs)
     }
@@ -589,6 +692,9 @@ impl Parser {
             _ => return self.parse_primary(),
         };
         self.pos += 1;
+        // Charged like a binary wrap: `- - - - x` recurses here AND stacks one node per `-`,
+        // so it spends both resources. Measured before this: 2 000 of them exited 127.
+        self.enter()?;
         let operand = self.parse_unary()?;
         Ok(Expr::Unary {
             op,
@@ -606,6 +712,8 @@ impl Parser {
         while self.peek() == &Token::As {
             self.pos += 1;
             let to = self.parse_type()?;
+            // A cast chain is a loop like the binary levels, and stacks a node per `as`.
+            self.enter()?;
             e = Expr::Cast {
                 to,
                 operand: Box::new(e),
@@ -625,11 +733,7 @@ impl Parser {
             };
             self.pos += 1;
             let rhs = self.parse_cast()?;
-            lhs = Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = self.wrap(op, lhs, rhs)?;
         }
         Ok(lhs)
     }

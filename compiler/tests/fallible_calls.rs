@@ -375,3 +375,37 @@ fn a_try_let_cannot_shadow_a_name_already_in_scope() {
          of the D17 out-param: {shown}"
     );
 }
+
+/// `try` inside a `-> string!` export reaches the `RetAbi::StringOut` propagation arm, whose
+/// comment said it was "not reachable from source today".
+///
+/// It is reachable, and was when the comment was written: the string body already returns the
+/// status directly, so a propagated code needs no wrapping and the arm emits a bare
+/// `return __e`. Measured — this builds, exit 0, and writes all four artifacts:
+///
+/// ```text
+/// error E = 1
+/// fn code(n: i32) -> i32! { if n < 0 { fail E }  return n }
+/// export fn label(n: i32) -> string! { let c = try code(n)  return "n=" + c as string }
+/// ```
+///
+/// The arm was correct. Only the claim about it was wrong — and an unreachable arm is one
+/// nobody tests, which is how a wrong one survives.
+#[test]
+fn a_try_inside_a_string_returning_export_propagates_the_status_directly() {
+    let rust = compile_to_rust(
+        "error E = 1\n\
+         fn code(n: i32) -> i32! { if n < 0 { fail E }  return n }\n\
+         export fn label(n: i32) -> string! { let c = try code(n)  return \"n=\" + c as string }",
+    )
+    .expect("a try inside a string-returning export must compile");
+    assert!(
+        rust.contains("Err(__e) => return __e }"),
+        "a string body returns the status directly, so a propagated code is returned \
+         unwrapped — no Err(), no Ok():\n{rust}"
+    );
+    assert!(
+        !rust.contains("return Err(__e)"),
+        "the Fallible arm's shape must not be used for a string body:\n{rust}"
+    );
+}

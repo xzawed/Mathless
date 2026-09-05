@@ -39,8 +39,16 @@ pub struct Param {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Type {
-    /// `string` — a borrowed NUL-terminated byte sequence. **Parameter position only**
-    /// (SPEC-string-input section 2.5): a return or a local would ask where the bytes live.
+    /// `string` — a NUL-terminated byte sequence that the module never owns.
+    ///
+    /// Legal in a **parameter** (borrowed from the host, D16) and in a **`-> string!`
+    /// return**, where the bytes go into the host's own buffer under the Q12 protocol
+    /// (SPEC-string-return). The `!` is not optional there: a buffer too small is reported as
+    /// a status, so every such call has one.
+    ///
+    /// Still NOT a local and not an `out` — both would ask where the bytes live, and the
+    /// module has no allocator. This doc said "**Parameter position only**" until the return
+    /// slice landed and did not move with it.
     Str,
     F64,
     Bool,

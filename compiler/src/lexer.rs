@@ -481,6 +481,13 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
             {
                 "ranges are not in Mathless yet — `..` is not part of the language".to_string()
             }
+            // A dot followed by a digit is someone writing `.5`, not reaching for a field.
+            // Reporting it as field access asserted the opposite of the input — the `.` here
+            // IS meant to be part of a number literal, which is what the other arm's message
+            // says is the only thing it can be.
+            '.' if chars.get(i + 1).is_some_and(|n| n.is_ascii_digit()) => {
+                "a number must start with a digit — write `0.5`, not `.5`".to_string()
+            }
             '.' => "field access is not in Mathless yet — `.` is only part of a number literal"
                 .to_string(),
             '?' => {

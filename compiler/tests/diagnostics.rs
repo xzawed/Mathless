@@ -618,3 +618,32 @@ fn invisible_characters_are_handled_or_named() {
         "an invisible character must be named by codepoint, not quoted: {shown}"
     );
 }
+
+/// A message must not assert the opposite of the input.
+///
+/// `return .5` was reported as `field access is not in Mathless yet — `.` is only part of a
+/// number literal`, which says the dot can only be part of a number while refusing a dot that
+/// is trying to be exactly that. The user's mistake is that Mathless has no leading-dot float,
+/// and the message now says so — and says what to write instead.
+///
+/// The field-access message stays for the case it was written for: a dot that follows a name.
+#[test]
+fn a_leading_dot_number_is_not_reported_as_field_access() {
+    let shown = compile_to_ir("export fn f() -> f64 { return .5 }")
+        .map(|_| String::from("<it compiled>"))
+        .unwrap_or_else(|e| e.to_string());
+    assert!(
+        shown.contains("0.5"),
+        "the message must say what to write instead: {shown}"
+    );
+    assert!(
+        !shown.contains("field access"),
+        "and must not blame a feature the user was not reaching for: {shown}"
+    );
+
+    // Unchanged: a dot after a name really is field access.
+    let field = compile_to_ir("export fn f(c: f64) -> f64 { return c.tier }")
+        .map(|_| String::from("<it compiled>"))
+        .unwrap_or_else(|e| e.to_string());
+    assert!(field.contains("field access"), "{field}");
+}

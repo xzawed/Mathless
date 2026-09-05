@@ -1,25 +1,43 @@
 //! Recursive-descent parser for the Mathless MVP subset (W2).
 //!
-//! Grammar (informal):
+//! Grammar (informal). This block is the contract a reader checks the parser against, so it
+//! has to be the grammar the file parses — it had drifted on five productions: `type` still
+//! listed only `f64|bool` (i32 and string have both landed since), `module` did not mention
+//! `error`, `function` did not mention the `!` that makes it fallible, `stmt` did not mention
+//! any of the three `try` forms, and `primary` did not mention string literals.
+//!
 //! ```text
-//! module   := function*
-//! function := 'export'? 'fn' ident '(' params? ')' '->' type block
-//! params   := param (',' param)*
-//! param    := 'out'? ident ':' type
-//! type     := 'f64' | 'bool'
-//! block    := '{' stmt* '}'
-//! stmt     := 'if' expr block | 'while' expr block | 'return' expr | 'fail' ident
-//!           | 'let' 'mut'? ident '=' expr | ident '=' expr
-//! expr     := or
-//! or       := and ('||' and)*
-//! and      := compare ('&&' compare)*
-//! compare  := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
-//! add      := mul (('+'|'-') mul)*
-//! mul      := cast (('*'|'/'|'%') cast)*
-//! cast     := unary ('as' type)*
-//! unary    := ('-'|'!') unary | primary
-//! primary  := number | 'true' | 'false' | ident | ident '(' args? ')' | '(' expr ')'
+//! module    := (function | error_decl)*
+//! error_decl:= 'error' ident '=' int_literal            … 1..=i32::MAX (Q13)
+//! function  := 'export'? 'fn' ident '(' params? ')' '->' type '!'? block
+//!                                                      … '!' = fallible (D17)
+//! params    := param (',' param)*
+//! param     := 'out'? ident ':' type
+//! type      := 'f64' | 'bool' | 'i32' | 'string'
+//! block     := '{' stmt* '}'
+//! stmt      := 'if' expr block | 'while' expr block
+//!            | 'return' expr | 'return' try_call
+//!            | 'fail' ident
+//!            | 'let' 'mut'? ident '=' (expr | try_call)
+//!            | ident '=' (expr | try_call)
+//! try_call  := 'try' ident '(' args? ')'
+//! expr      := or
+//! or        := and ('||' and)*
+//! and       := compare ('&&' compare)*
+//! compare   := add (('<'|'>'|'<='|'>='|'=='|'!=') add)*
+//! add       := mul (('+'|'-') mul)*
+//! mul       := cast (('*'|'/'|'%') cast)*
+//! cast      := unary ('as' type)*
+//! unary     := ('-'|'!') unary | primary
+//! primary   := number | int_literal | string_literal | 'true' | 'false'
+//!            | ident | ident '(' args? ')' | '(' expr ')'
+//! args      := expr (',' expr)*
 //! ```
+//!
+//! Not in the grammar and enforced elsewhere, because they are not shape questions: the
+//! nesting limit ([`MAX_NESTING`]), and every rule about which of these forms is legal WHERE
+//! (`typeck`) — an `out` parameter is export-only, a `string` return demands `!`, a `try`
+//! caller must itself be fallible.
 
 use crate::ast::*;
 use crate::error::ParseError;
@@ -193,7 +211,13 @@ impl Parser {
         }
     }
 
-    /// `error NAME = N` — N must be a positive integer (Q13: 0 is OK, negatives reserved).
+    /// `error NAME = N` — N must be **strictly positive**, and the code enforces `i > 0`.
+    ///
+    /// This said "0 is OK", which read as a rule about N and is not one. D17/Q13 splits the
+    /// whole i32 status space: `0` **is** success, positive is a module-defined domain error,
+    /// negative is reserved for the runtime and the ABI. So `0` is a perfectly good *status* —
+    /// and for that exact reason it cannot also be a declared error. Measured: `error E = 0`
+    /// is refused with "error code must be a positive integer (1..=2147483647)".
     fn parse_error_decl(&mut self) -> Result<ErrorDecl, ParseError> {
         self.eat(&Token::Error, "'error'")?;
         let name = self.ident("error code name")?;

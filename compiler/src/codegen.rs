@@ -280,8 +280,14 @@ impl RetAbi {
         match self {
             RetAbi::Fallible => "return Err(__e)",
             // A string body already returns the status directly, so a propagated code needs
-            // no wrapping. Not reachable from source today — DP-W3 keeps `try` off `-> string!`
-            // exports — but correct if that opens.
+            // no wrapping.
+            //
+            // This said "not reachable from source today", and that was wrong when it was
+            // written: `export fn label(n: i32) -> string! { let c = try code(n)  … }`
+            // compiles and emits `Err(__e) => return __e` from right here (measured; pinned by
+            // `compiler/tests/fallible_calls.rs`). An arm believed unreachable is an arm nobody
+            // tests, which is how a wrong one would have survived — this one happens to be
+            // right.
             RetAbi::StringOut => "return __e",
             // Unreachable from source: typeck requires a `try` caller to be fallible. Kept
             // total so hand-built IR cannot fall through to something worse.

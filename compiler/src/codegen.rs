@@ -244,7 +244,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     // it forwards the arguments, then converts the body's Rust-native result into D17's
     // status + out-param or Q12's buffer triple.
     //
-    // DP-W2 puts it immediately after its body, so the two halves of one function read
+    // SPEC-export-wrappers DP-W2 puts it immediately after its body, so the two halves of one function read
     // together.
     let args: Vec<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
     let call = format!("ml_fn_{}({})", f.name, args.join(", "));
@@ -530,7 +530,7 @@ fn emit_expr(e: &IrExpr) -> String {
             "a built string is only lowered at `return` — typeck rejects every other position"
         ),
         // A static, NUL-terminated byte array: no allocation, and the NUL makes the module's
-        // view of the bytes identical to the C caller's (DP-S1).
+        // view of the bytes identical to the C caller's (SPEC-string-input DP-S1).
         IrExprKind::ConstStr(s) => format!("b\"{s}\\0\".as_ptr()"),
         IrExprKind::ConstF64(n) => format!("{n:?}f64"),
         IrExprKind::ConstI32(n) => format!("{n}i32"),
@@ -546,7 +546,7 @@ fn emit_expr(e: &IrExpr) -> String {
             // `ml_floor(ml_floor)` and died in rustc (#85).
             //
             // Function names no longer need the rule: since the wrapper refactor a user
-            // function is `ml_fn_<name>`, which cannot collide with `ml_floor` (DP-W4).
+            // function is `ml_fn_<name>`, which cannot collide with `ml_floor` (SPEC-export-wrappers DP-W4).
             if crate::typeck::Rounder::from_name(name).is_some() {
                 format!("ml_{name}({})", args.join(", "))
             } else {
@@ -670,7 +670,7 @@ fn emit_expr(e: &IrExpr) -> String {
                     return format!("({}).{method}({})", emit_expr(lhs), emit_expr(rhs));
                 }
             }
-            // A string is a `*const u8` (DP-S1). Rust's `==` on raw pointers compares the
+            // A string is a `*const u8` (SPEC-string-input DP-S1). Rust's `==` on raw pointers compares the
             // ADDRESSES, which would make `country == "KR"` false for a host string that
             // happens to hold exactly those bytes — the wrong answer, silently, with no
             // compile error. Route both directions through the byte-loop helper instead.
@@ -903,7 +903,7 @@ fn builds_strings(module: &IrModule) -> bool {
 ///   `ml_panic`'s `loop {}` and hangs the calling host thread (STATUS §5-4), so the goal is
 ///   code that cannot panic.
 /// - **Digits are ASCII `-` and `0`-`9` only** (DP-K9), which is the same byte sequence in
-///   every encoding this project has deliberately left undecided (DP-S2).
+///   every encoding this project has deliberately left undecided (SPEC-string-input DP-S2).
 fn emit_concat_helpers(module: &IrModule, out: &mut String) {
     if !builds_strings(module) {
         return;
@@ -1022,7 +1022,7 @@ fn compares_strings(module: &IrModule) -> bool {
 /// is one of the protection proxies acceptance C measures (D04/D05). A byte loop costs a few
 /// lines and keeps the boundary unchanged.
 ///
-/// Encoding is opaque (DP-S2). Equal bytes are equal strings; matching encodings between host
+/// Encoding is opaque (SPEC-string-input DP-S2). Equal bytes are equal strings; matching encodings between host
 /// and source is a host contract, stated in HOST_ABI.
 fn emit_string_helper(module: &IrModule, out: &mut String) {
     if !compares_strings(module) {

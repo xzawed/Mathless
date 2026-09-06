@@ -165,7 +165,7 @@ _Static_assert(_Generic(&mlx_ro, unary_f64_fn: 1, default: 0),
                "generated mlx_ro signature changed");
 _Static_assert(_Generic(&mlx_tr, unary_f64_fn: 1, default: 0),
                "generated mlx_tr signature changed");
-/* DP-S1: a string parameter must reach C as `const char*`. If the generator ever emitted a
+/* SPEC-string-input DP-S1: a string parameter must reach C as `const char*`. If the generator ever emitted a
    pointer+length pair, or a plain char*, these stop compiling - which is the point: the shape
    appears at every host call site, so it has to be caught at the boundary, not at runtime. */
 _Static_assert(_Generic(&mlx_vat_rate, vat_rate_fn: 1, default: 0),

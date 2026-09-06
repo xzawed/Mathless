@@ -349,52 +349,76 @@ fn rejects_a_module_name_that_delphi_reserves() {
     assert!(entries(&out).is_empty());
 }
 
-/// `mlc build` must not depend on the environment it happens to be run from.
+/// `mlc build` must not depend on the environment it happens to be run from — and the check
+/// must vary **more than one key**, because closing them one at a time is what left the class
+/// open twice.
 ///
-/// `build_cdylib` reconstructed cargo's output directory — `<crate>/target/release` — instead
-/// of controlling it. Cargo honours an ambient `CARGO_TARGET_DIR`, and `mlc` is very often run
-/// from inside a cargo build that has set one, so the artifacts landed somewhere else and the
-/// reconstruction failed. Measured:
+/// #164 found that `build_cdylib` reconstructed cargo's output directory instead of
+/// controlling it, and closed `CARGO_TARGET_DIR` by passing `--target-dir`. That named where
+/// cargo works; it did not fix the shape underneath. Measured after #164 shipped:
 ///
 /// ```text
-/// CARGO_TARGET_DIR=…/alt_target  mlc build ovf.mls
-/// mlc: codegen error: expected dll not found:
-///      C:\…\mlc-build-71108-1\ovf\target\release\ovf.dll
+/// CARGO_BUILD_TARGET=x86_64-pc-windows-msvc  mlc build examples/discount.mls
+/// mlc: codegen error: expected dll not found: …\discount\target\release\discount.dll
 /// ```
 ///
-/// A build that works or not depending on a variable the user never mentioned. `--target-dir`
-/// overrides it, which turns that path from a guess into the value cargo was given.
+/// byte-for-byte the failure #164's own comment describes, from a different variable — cargo
+/// inserts a `<triple>/` component when it is cross-compiling by request.
 ///
-/// The test spawns the real binary rather than calling the library, because the variable has
-/// to be set for the CHILD cargo — and because the env of this test process is shared with
-/// every other test in the binary.
+/// The artifact is now FOUND under the directory cargo was given rather than reconstructed
+/// from an assumed layout (`single_artifact`), so the list of variables that reshape it does
+/// not have to be known. This test is the standing evidence for that: a new key added here
+/// should pass without touching the compiler, and if one does not, the class is open again.
+///
+/// The child process is the real binary, because the variable has to reach the CHILD cargo,
+/// and because this test binary's environment is shared with every other test in it.
 #[cfg(windows)]
 #[test]
-fn a_build_ignores_an_ambient_cargo_target_dir() {
-    let dir = std::env::temp_dir().join(format!("mlc_ctd_{}", std::process::id()));
+fn a_build_ignores_whatever_cargo_variables_are_already_set() {
+    let dir = std::env::temp_dir().join(format!("mlc_amb_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp dir");
-    let src = dir.join("ctd.mls");
+    let src = dir.join("amb.mls");
     std::fs::write(&src, "export fn bump(x: i32) -> i32 { return x + 1 }\n").expect("write src");
-    let hostile = dir.join("someone_elses_target");
+    let hostile_dir = dir.join("someone_elses_target");
 
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_mlc"))
-        .args(["build".as_ref(), src.as_os_str()])
-        .arg("-o")
-        .arg(&dir)
-        .env("CARGO_TARGET_DIR", &hostile)
-        .output()
-        .expect("run mlc");
+    // Each row is a way an ambient cargo setting reshapes the build. They are not a list the
+    // compiler consults — they are a sample of an open set, which is the point: the fix has to
+    // work without knowing them.
+    let cases: Vec<(&str, String)> = vec![
+        ("CARGO_TARGET_DIR", hostile_dir.display().to_string()),
+        ("CARGO_BUILD_TARGET_DIR", hostile_dir.display().to_string()),
+        // The one #164 missed: adds a `<triple>/` level under the target dir.
+        ("CARGO_BUILD_TARGET", "x86_64-pc-windows-msvc".to_string()),
+        ("CARGO_PROFILE_RELEASE_DEBUG", "true".to_string()),
+        ("CARGO_INCREMENTAL", "1".to_string()),
+        ("RUSTFLAGS", "-C overflow-checks=on".to_string()),
+    ];
 
-    assert!(
-        out.status.success(),
-        "an ambient CARGO_TARGET_DIR must not change where mlc finds its own artifacts:\n{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    for ext in ["dll", "h", "pas", "lib"] {
-        let a = dir.join(format!("ctd.{ext}"));
-        assert!(a.exists(), "missing artifact {}", a.display());
+    for (key, value) in &cases {
+        let out = dir.join(format!("out_{key}"));
+        let r = std::process::Command::new(env!("CARGO_BIN_EXE_mlc"))
+            .args(["build".as_ref(), src.as_os_str()])
+            .arg("-o")
+            .arg(&out)
+            .env(key, value)
+            .output()
+            .expect("run mlc");
+        assert!(
+            r.status.success(),
+            "{key}={value} changed whether `mlc build` works. The artifact must be found under \
+             the directory cargo was given, not reconstructed from an assumed layout.\n{}\n{}",
+            String::from_utf8_lossy(&r.stdout),
+            String::from_utf8_lossy(&r.stderr)
+        );
+        for ext in ["dll", "h", "pas", "lib"] {
+            let a = out.join(format!("amb.{ext}"));
+            assert!(
+                a.exists(),
+                "{key}={value}: missing artifact {}",
+                a.display()
+            );
+        }
     }
 
     let _ = std::fs::remove_dir_all(&dir);

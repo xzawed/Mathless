@@ -32,6 +32,69 @@ impl std::fmt::Display for CodegenError {
 
 impl std::error::Error for CodegenError {}
 
+/// The file named `name` that cargo produced under `root`, found rather than reconstructed.
+///
+/// A bounded, breadth-first walk — it never recurses, and it caps at four levels so a
+/// pathological tree cannot turn the search into a hang.
+///
+/// **Shallowest wins, and exactly one at that depth.** Cargo puts the deliverable at
+/// `<target>/[<triple>/]release/<name>` and a second copy one level deeper in `deps/`
+/// (measured: the first strict "exactly one anywhere" version reported *"found 2 files named
+/// 'discount.dll'"* on an ordinary build). Taking the shallowest names the deliverable, and
+/// requiring exactly one *there* keeps ambiguity an error rather than a coin flip — `root` is
+/// a `target` directory inside a temp crate this call just created, so a tie would mean
+/// something is in it that this build did not put there.
+///
+/// This exists because the layout is not ours. `--target-dir` tells cargo where to work; it
+/// does not fix the shape underneath, and `CARGO_BUILD_TARGET` adds a `<triple>/` component
+/// (measured — see the call site). Enumerating the variables that reshape it would be a fourth
+/// hand-kept list in a repository that has watched three of them fail.
+fn single_artifact(root: &Path, name: &str) -> Result<PathBuf, CodegenError> {
+    const MAX_LEVELS: usize = 4;
+    let mut level = vec![root.to_path_buf()];
+    for _ in 0..MAX_LEVELS {
+        let mut hits: Vec<PathBuf> = Vec::new();
+        let mut next = Vec::new();
+        for dir in &level {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    next.push(p);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some(name) {
+                    hits.push(p);
+                }
+            }
+        }
+        match hits.len() {
+            0 => {}
+            1 => return Ok(hits.remove(0)),
+            _ => {
+                hits.sort();
+                return Err(CodegenError::new(format!(
+                    "cargo left {} files named '{name}' at the same depth under {}, and \
+                     choosing between them would be a guess: {:?}",
+                    hits.len(),
+                    root.display(),
+                    hits
+                )));
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        next.sort();
+        level = next;
+    }
+    Err(CodegenError::new(format!(
+        "cargo reported success but produced no '{name}' anywhere under {} (searched \
+         {MAX_LEVELS} levels)",
+        root.display()
+    )))
+}
+
 /// The `[profile.release]` written into every generated crate.
 ///
 /// A `pub const` rather than an inline literal so a test can read what is actually shipped
@@ -1197,14 +1260,20 @@ pub fn build_cdylib(
         )));
     }
 
-    let release = target_dir.join("release");
-    let dll = release.join(format!("{crate_name}.dll"));
-    if !dll.exists() {
-        return Err(CodegenError::new(format!(
-            "expected dll not found: {}",
-            dll.display()
-        )));
-    }
+    // FOUND, not reconstructed. `--target-dir` above says WHERE cargo works; it does not say
+    // what shape it builds underneath, and that shape is configurable by variables this
+    // compiler does not own. #164 replaced a guess about the root with a value cargo was told,
+    // and left the guess about the layout below it — measured, still broken afterwards:
+    //
+    //     CARGO_BUILD_TARGET=x86_64-pc-windows-msvc mlc build examples/discount.mls
+    //     mlc: codegen error: expected dll not found: …\discount\target\release\discount.dll
+    //
+    // because cargo puts a `<triple>/` component in when it is cross-compiling by request.
+    // Enumerating the variables that do this is the fourth hand-kept list in a repository that
+    // has watched three of them fail; the directory itself is the answer, and it is fresh —
+    // `target_dir` lives inside a temp crate this call just created, so nothing stale can be
+    // in it and "exactly one" is a real check rather than a hope.
+    let dll = single_artifact(&target_dir, &format!("{crate_name}.dll"))?;
 
     // The import library the linker produced alongside the DLL. Named from `crate_name`
     // rather than derived from `dll` — `Path::with_extension("dll.lib")` happens to work
@@ -1215,14 +1284,14 @@ pub fn build_cdylib(
     // name carries both extensions: it keeps the import library from colliding with the
     // `<crate>.lib` a staticlib would produce. The published artifact drops back to
     // `<module>.lib` in `emit` — cargo's name is a build detail, not a deliverable.
-    let import_lib = release.join(format!("{crate_name}.dll.lib"));
-    if !import_lib.exists() {
-        return Err(CodegenError::new(format!(
-            "the cdylib built but its import library is missing: {}. Without it a host can \
-             only bind through GetProcAddress/dlsym, never by linking the generated header",
-            import_lib.display()
-        )));
-    }
+    let import_lib =
+        single_artifact(&target_dir, &format!("{crate_name}.dll.lib")).map_err(|e| {
+            CodegenError::new(format!(
+                "the cdylib built but its import library is missing. Without it a host can only \
+             bind through GetProcAddress/dlsym, never by linking the generated header. {}",
+                e.message
+            ))
+        })?;
 
     Ok(CdylibArtifacts { dll, import_lib })
 }

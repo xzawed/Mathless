@@ -160,8 +160,12 @@ C 호스트가 `discount.dll`을 로드해 `mlx_discount(100.0, true)`를 호출
 `fmt`와 `clippy`, 테스트를 두 개의 잡에서 돌립니다.
 
 중요한 쪽은 `windows-latest`입니다. 수용 테스트가 실제로 실행되는 곳이기 때문입니다.
-`ubuntu-latest`는 플랫폼 독립 프런트엔드를 컴파일하는 보험입니다. 나머지는
-[CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다.
+`ubuntu-latest`는 플랫폼 독립 프런트엔드를 컴파일하는 보험입니다.
+
+**머신 준비** — 무엇을 설치하고, 다른 머신에서 어떤 측정값이 정당하게 달라지는지 — 는
+[CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다. 스위트에 필요한 것은 Rust와 MSVC Build Tools뿐이며,
+서드파티 Rust 의존성은 0개입니다. 작업 시작점은 [docs/STATUS.md](docs/STATUS.md) §9의
+"▶ 여기서 시작한다" 블록입니다.
 
 ## 라이선스
 

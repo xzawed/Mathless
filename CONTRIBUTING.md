@@ -2,6 +2,53 @@
 
 > English first, 한국어 아래. This project works **PR-first**: `main` is never committed to directly.
 
+## Setting up a machine (English)
+
+Everything below is measured on the machine that wrote it. Nothing here is optional folklore —
+each item is what a gate actually shells out to.
+
+**Install**
+
+| what | why | check |
+|---|---|---|
+| **Rust**, via `rustup` | `rust-toolchain.toml` pins **1.97.1** and rustup installs it on first `cargo` run. Bumping it means re-measuring the size proxies — the pin says so. | `rustc --version` |
+| **MSVC Build Tools**, "Desktop development with C++" | acceptance D compiles and runs two real C hosts. It supplies `cl`, `link`, `dumpbin`, and the `vswhere.exe` + `vcvars64.bat` the tests use to find them. | `cargo test -p ml_oracle --test c_host` prints `GATE_D_OK` |
+
+Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
+Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
+
+`dcc64` (Delphi) is **deliberately absent**, on every machine so far. The generated `.pas` has
+never been compiled by anything, D14's Delphi arm is BLOCKED, and the unit ships marked DRAFT.
+Installing it would not be "fixing the setup" — it would be closing a gate, which is a piece of
+work with a SPEC in front of it.
+
+**Then run what CI runs, and judge by the exit code** (the three commands are in step 8 below).
+
+### What legitimately differs on another machine — do not read these as breakage
+
+1. **The module byte-size pin will fail on a third machine, on purpose.**
+   `hosts/rust-oracle/tests/protection.rs` pins **9,728 B** on the development machine and
+   **9,216 B** on GitHub's `windows-latest`, chosen by `GITHUB_ACTIONS`. Anything else asserts
+   out. That is not a defect in the module: the toolchain pin covers **rustc**, not MSVC
+   `link.exe` or the Windows SDK, so a different SDK gives a different size. The failure
+   message says exactly this and what to do — re-measure, and update the constant **and the
+   four documents that publish it** (`README.md`, `README.ko.md`, `docs/SECURITY.md`,
+   `docs/STATUS.md`) in the same commit. `doc_claims.rs` checks those documents, so a partial
+   update stays red.
+2. **`host.c` and the other hand-written C must stay pure ASCII**, and the reason is
+   machine-dependent: MSVC reads them in the machine's ANSI code page, so a non-ASCII byte is
+   `C4819` → `C2220` under `/W4 /WX` — but only on a code page that cannot represent it. It was
+   found on a CP949 machine and would have compiled clean on CP1252. A text-only test guards it
+   now, and it runs on both CI jobs so no one has to have the right code page.
+3. **A crashed `mlc` leaves `%TEMP%\mlc-build-*` behind.** Normal runs clean up; a process that
+   aborts (a deliberate stack-overflow probe, for instance) cannot. Harmless, and
+   `docs/STATUS.md` §5-5 keeps it open rather than claiming it fixed.
+
+### Where to start work
+
+`docs/STATUS.md` §9, the **"▶ 여기서 시작한다"** block. It is the handoff: what is closed, what is
+deliberately left, and what not to reopen. Read it before the backlog tables, which age faster.
+
 ## Workflow (English)
 
 1. **Never commit to `main` directly.** Every change lands via a Pull Request.
@@ -72,6 +119,49 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 **"raises the cost of analysis and tampering"** (see `docs/SECURITY.md`, decision D05).
 
 ---
+
+## 머신 준비 (한국어)
+
+아래는 전부 이 문서를 쓴 머신에서 **실측한 것**이다. 관례가 아니라, 게이트가 실제로 호출하는 것들이다.
+
+**설치**
+
+| 무엇 | 왜 | 확인 |
+|---|---|---|
+| **Rust** (`rustup`) | `rust-toolchain.toml`이 **1.97.1**로 고정한다. 첫 `cargo` 실행 때 rustup이 받아 온다. 올리면 크기 프록시를 다시 재야 하고, 핀 주석이 그렇게 적어 두었다. | `rustc --version` |
+| **MSVC Build Tools** — "C++를 사용한 데스크톱 개발" | 수용 D가 실제 C 호스트 **둘**을 컴파일·실행한다. `cl`·`link`·`dumpbin`, 그리고 테스트가 그것들을 찾는 데 쓰는 `vswhere.exe`·`vcvars64.bat`을 준다. | `cargo test -p ml_oracle --test c_host`가 `GATE_D_OK`를 찍는다 |
+
+그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
+Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
+
+`dcc64`(Delphi)는 **의도적으로 없다**. 지금까지 어느 머신에도 없었고, 생성 `.pas`는 무엇에도 컴파일된
+적이 없으며, D14의 Delphi 쪽은 BLOCKED이고 유닛은 DRAFT로 나간다. 이것을 설치하는 것은 "환경을
+맞추는 일"이 아니라 **게이트를 닫는 작업**이며, 앞에 SPEC이 선다.
+
+**그다음 CI가 부르는 것을 그대로 부르고, 종료 코드로 판단한다**(명령 셋은 아래 8번에 있다).
+
+### 다른 머신에서 정당하게 달라지는 것 — 고장으로 읽지 말 것
+
+1. **모듈 바이트 크기 핀은 제3의 머신에서 반드시 실패한다. 의도된 것이다.**
+   `hosts/rust-oracle/tests/protection.rs`가 개발 머신 **9,728 B**, GitHub `windows-latest`
+   **9,216 B**로 고정하고 `GITHUB_ACTIONS`로 둘을 가른다. 다른 값은 assert에 걸린다. 모듈의 결함이
+   아니다 — 툴체인 핀은 **rustc**를 덮지 MSVC `link.exe`나 Windows SDK를 덮지 않으므로, SDK가
+   다르면 크기가 다르다. 실패 메시지가 정확히 이 말과 할 일을 적는다: 다시 재고, **상수와 그 값을
+   싣는 문서 넷**(`README.md`·`README.ko.md`·`docs/SECURITY.md`·`docs/STATUS.md`)을 **같은 커밋에서**
+   고친다. `doc_claims.rs`가 그 문서들을 검사하므로 반만 고치면 계속 빨갛다.
+2. **`host.c`를 비롯한 손으로 쓴 C는 순수 ASCII여야 하고, 그 이유가 머신 의존이다.** MSVC는 이
+   파일들을 머신의 ANSI 코드 페이지로 읽으므로, 비ASCII 바이트는 `/W4 /WX`에서 `C4819` → `C2220`이
+   된다 — **다만 그 코드 페이지가 표현하지 못할 때만.** CP949 머신에서 발견됐고 CP1252였다면 깨끗하게
+   컴파일됐을 것이다. 지금은 텍스트만 보는 테스트가 막고, 두 CI 잡 모두에서 돌므로 누구도 특정
+   코드 페이지를 가질 필요가 없다.
+3. **`mlc`가 크래시하면 `%TEMP%\mlc-build-*`가 남는다.** 정상 종료는 정리하지만 중단된 프로세스는
+   할 수 없다(예: 일부러 스택을 넘기는 프로브). 무해하며, `docs/STATUS.md` §5-5가 "고쳤다"가 아니라
+   **열어 둔 채로** 유지한다.
+
+### 어디서 시작하나
+
+`docs/STATUS.md` §9의 **"▶ 여기서 시작한다"** 블록. 그것이 인수인계다 — 무엇이 닫혔고, 무엇을
+의도적으로 남겼고, 무엇을 다시 열지 말아야 하는지. 백로그 표보다 먼저 읽는다(표가 더 빨리 낡는다).
 
 ## 워크플로 (한국어)
 

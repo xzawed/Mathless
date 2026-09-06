@@ -81,6 +81,19 @@ typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
 typedef int32_t (*full_name_fn)(const char *, const char *, char *, int32_t, int32_t *);
 typedef int32_t (*receipt_line_fn)(const char *, int32_t, int32_t, char *, int32_t, int32_t *);
 typedef int32_t (*int_to_str_fn)(int32_t, char *, int32_t, int32_t *);
+/* shapes.mls: the nine export shapes a wrong adapter reproduces without complaint. Their
+   header was included here from N1 onward and none of them was ever CALLED by a C host - the
+   values lived only behind hand-written transmutes in the Rust oracle, which is the emitter's
+   belief written a second time. These types bind each call below to the header's own
+   declaration, so the shape has an independent reader. */
+typedef int32_t (*is_big_fn)(int32_t, bool *);
+typedef int32_t (*bump_fn)(int32_t, int32_t *);
+typedef int32_t (*answer_fn)(int32_t *);
+typedef double (*pi_ish_fn)(void);
+typedef int32_t (*span_fn)(int32_t, int32_t *, int32_t *);
+typedef double (*split_fn)(double, double *, bool *);
+typedef int32_t (*grade_fn)(int32_t, int32_t *, int32_t *);
+typedef int32_t (*code_of_fn)(const char *, int32_t *);
 
 /* These are the teeth: each pointer type must be *identical* to the type of the function the
    generated header declares. `_Generic` selects on the declaration's own type and the whole
@@ -123,6 +136,27 @@ _Static_assert(_Generic(&mlx_deduction, unary_f64_fn: 1, default: 0),
    header's own declaration" - was not true. `mlx_deduction` carried the whole typedef, so a
    change to `mlx_fl`'s generated shape alone would have left this file compiling and calling
    through a prototype the module no longer has. Four asserts, and the claim is true again. */
+/* The nine shapes. Each pointer type is bound to the header's own declaration here, which is
+   the check the Rust oracle structurally cannot make: a transmute asserts nothing about the
+   artifact, it just reinterprets it. */
+_Static_assert(_Generic(&mlx_is_big, is_big_fn: 1, default: 0),
+               "generated mlx_is_big signature changed");
+_Static_assert(_Generic(&mlx_bump, bump_fn: 1, default: 0),
+               "generated mlx_bump signature changed");
+_Static_assert(_Generic(&mlx_answer, answer_fn: 1, default: 0),
+               "generated mlx_answer signature changed");
+_Static_assert(_Generic(&mlx_pi_ish, pi_ish_fn: 1, default: 0),
+               "generated mlx_pi_ish signature changed");
+_Static_assert(_Generic(&mlx_span, span_fn: 1, default: 0),
+               "generated mlx_span signature changed");
+_Static_assert(_Generic(&mlx_split, split_fn: 1, default: 0),
+               "generated mlx_split signature changed");
+_Static_assert(_Generic(&mlx_grade, grade_fn: 1, default: 0),
+               "generated mlx_grade signature changed");
+_Static_assert(_Generic(&mlx_code_of, code_of_fn: 1, default: 0),
+               "generated mlx_code_of signature changed");
+_Static_assert(_Generic(&mlx_tag, int_to_str_fn: 1, default: 0),
+               "generated mlx_tag signature changed");
 _Static_assert(_Generic(&mlx_fl, unary_f64_fn: 1, default: 0),
                "generated mlx_fl signature changed");
 _Static_assert(_Generic(&mlx_ce, unary_f64_fn: 1, default: 0),
@@ -716,6 +750,122 @@ int main(int argc, char **argv) {
         }
     }
     FreeLibrary(rc);
+
+    /* --- shapes.dll: the nine export shapes a wrong adapter gets wrong QUIETLY ---
+     *
+     * This file already said shapes.mls was "the one that matters most", and then only
+     * #included its header. All nine exports were called through hand-written
+     * `mem::transmute`s in the Rust oracle - the same belief that wrote the emitter,
+     * expressed twice - and by no independent reader at all.
+     *
+     * The C compiler is that reader: `_Static_assert(_Generic(...))` above binds each pointer
+     * type to the HEADER'S OWN declaration, so a shape change stops this file compiling
+     * instead of being reproduced in the checker. The values below then exercise the specific
+     * wrong adapter each shape exists to catch; the expectations are read off
+     * examples/shapes.mls, whose comments name the same traps. */
+    HMODULE sh = load(dir, "shapes.dll", expected_abi, ML_SHAPES_IFACE_HASH);
+    if (sh == NULL) {
+        return 1;
+    }
+    {
+        is_big_fn is_big = (is_big_fn)sym(sh, "mlx_is_big");
+        bump_fn bump = (bump_fn)sym(sh, "mlx_bump");
+        answer_fn answer = (answer_fn)sym(sh, "mlx_answer");
+        pi_ish_fn pi_ish = (pi_ish_fn)sym(sh, "mlx_pi_ish");
+        span_fn span = (span_fn)sym(sh, "mlx_span");
+        split_fn split = (split_fn)sym(sh, "mlx_split");
+        grade_fn grade = (grade_fn)sym(sh, "mlx_grade");
+        code_of_fn code_of = (code_of_fn)sym(sh, "mlx_code_of");
+        int_to_str_fn tag = (int_to_str_fn)sym(sh, "mlx_tag");
+
+        if (is_big && bump && answer && pi_ish && span && split && grade && code_of && tag) {
+            /* `-> bool!`: status and value are different C types, so this one cannot be
+               confused by the adapter - it is here because nothing else in the corpus has
+               a `bool*` out_value at all. */
+            bool big = false;
+            check(is_big(200, &big) == 0 && big, "is_big(200) is a true through out_value");
+            check(is_big(50, &big) == 0 && !big, "is_big(50) is false, not a failure");
+            check(is_big(-1, &big) == ML_SHAPES_ERR_E_NEG, "is_big(-1) reports E_NEG");
+
+            /* THE one (shapes.mls says so): for `-> i32!` the status and the value are both
+               int32_t, so `match body(n) { Ok(v) => v, Err(e) => e }` compiles, never writes
+               out_value, and reports every non-zero success as an error code. */
+            int32_t v = -99;
+            check(bump(10, &v) == 0 && v == 3, "bump(10): status 0, value 3 via out_value");
+            v = -99;
+            check(bump(7, &v) == 0 && v == 0, "bump(7): a success VALUE of 0 is still success");
+            v = -99;
+            check(bump(8, &v) == 0 && v == ML_SHAPES_ERR_E_NEG,
+                  "bump(8): the value equals an error code and the status is still 0");
+            v = -99;
+            check(bump(-1, &v) == ML_SHAPES_ERR_E_NEG, "bump(-1) reports E_NEG");
+
+            /* Zero parameters AND fallible: the declaration is `(int32_t*)`, not `(void)`. */
+            v = -99;
+            check(answer(&v) == 0 && v == 42, "answer() takes only its out_value");
+            /* Zero parameters and infallible: this one really is `(void)`. */
+            check(pi_ish() == 3.5, "pi_ish() is the (void) shape");
+
+            /* Two same-typed outs. rustc cannot catch a swap between them and neither can C -
+               only the VALUES can, which is why they are deliberately different. */
+            int32_t lo = -99, hi = -99;
+            check(span(5, &lo, &hi) == 5, "span returns its input");
+            check(lo == 4 && hi == 6, "span writes lo and hi the right way round");
+
+            /* Outs that are not i32, including a bool out. */
+            double whole = -99.0;
+            bool neg = true;
+            check(split(2.25, &whole, &neg) == 0.25, "split returns the fraction");
+            check(whole == 2.0 && !neg, "split writes an f64 out and a bool out");
+            check(split(-2.25, &whole, &neg) == 0.75 && whole == -3.0 && neg,
+                  "split floors toward negative infinity, as <math.h> does");
+
+            /* Fallible WITH a declared out of the same type as the return: the two trailing
+               int32_t* slots are exactly what a transposed adapter would swap. */
+            int32_t tier = -99;
+            v = -99;
+            check(grade(3, &tier, &v) == 0, "grade(3) succeeds");
+            check(tier == 1 && v == 30, "the declared out comes FIRST, out_value LAST (DP-O1)");
+            tier = -99;
+            v = -99;
+            check(grade(-1, &tier, &v) == ML_SHAPES_ERR_E_NEG, "grade(-1) reports E_NEG");
+
+            /* Fallible taking a string: status + `const char*`. */
+            v = -99;
+            check(code_of("KR", &v) == 0 && v == 82, "code_of(KR) is 82");
+            check(code_of("ODD", &v) == ML_SHAPES_ERR_E_ODD, "code_of(ODD) reports E_ODD");
+            v = -99;
+            check(code_of("ZZ", &v) == 0 && v == 0, "code_of(ZZ) is a zero VALUE, not a failure");
+
+            /* A Q12 string return whose other parameter is not a string. */
+            char b[16];
+            int32_t need = -1;
+            memset(b, 0, sizeof b);
+            check(tag(200, b, (int32_t)sizeof b, &need) == 0 && strcmp(b, "BIG") == 0,
+                  "tag(200) builds BIG into the caller's buffer");
+            memset(b, 0, sizeof b);
+            check(tag(5, b, (int32_t)sizeof b, &need) == 0 && strcmp(b, "SMALL") == 0,
+                  "tag(5) builds SMALL");
+            check(tag(-1, b, (int32_t)sizeof b, &need) == ML_SHAPES_ERR_E_NEG,
+                  "a domain failure beats the buffer protocol");
+            /* One byte short of "SMALL" plus its NUL: a failure that writes nothing. */
+            unsigned char small_canary[16];
+            memset(small_canary, 0xAA, sizeof small_canary);
+            need = -1;
+            check(tag(5, (char *)small_canary, 5, &need) == ML_ST_INSUFFICIENT_BUFFER,
+                  "one byte short is the reserved truncation status");
+            check(need == 6, "and needed is exact: SMALL plus the NUL");
+            int tag_untouched = 1;
+            for (size_t i = 0; i < sizeof small_canary; i++) {
+                if (small_canary[i] != 0xAA) {
+                    tag_untouched = 0;
+                    break;
+                }
+            }
+            check(tag_untouched, "a truncated tag writes not one byte");
+        }
+    }
+    FreeLibrary(sh);
 
     /* --- the gate must actually REFUSE (SPEC-iface-hash section 3-F) ---
      *

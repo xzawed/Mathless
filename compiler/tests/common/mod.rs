@@ -136,3 +136,91 @@ fn remove_with_retry(dir: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+/// Run a child to completion, or kill it and say so.
+///
+/// **This is the workspace's only instrument that can tell "slow" from "never returns".**
+/// Before it there was none: a `grep` for `Duration|timeout|try_wait|recv_timeout` across
+/// every test file returned one hit, and that one was a retry sleep. The consequence is not
+/// a missing test but a blind spot with a shape — every generated module ships
+/// `#[panic_handler] fn ml_panic(_) -> ! { loop {} }`, so the module's universal failure
+/// channel is an infinite loop in the CALLING HOST'S thread with the process still alive
+/// (`STATUS.md` §5-4). A test that reproduced one would hang CI instead of failing it, which
+/// is why two fixes in this repository settled for asserting emitted text and said so in
+/// their own comments (`compiler/tests/i32_type.rs`, `compiler/tests/string_concat.rs`).
+///
+/// Every acceptance gate spawns children through one helper, so putting the deadline there
+/// converts that whole class from "hangs the job" into "fails the test with a message".
+///
+/// The deadline is a LIVENESS assertion, not a performance one. It is set far above anything
+/// these gates take — the slowest, which builds 19 DLLs and runs a host over them, measured
+/// about 210 s end to end while each individual child is seconds — so it cannot fire on a
+/// slow machine and mean nothing. If it ever fires, something stopped making progress.
+///
+/// Output is drained on threads rather than after waiting, because a child that fills a pipe
+/// blocks forever and the deadline would then be measuring our own deadlock.
+///
+/// **What is and is not break-tested, stated rather than left to be discovered.** The helper
+/// itself is: `the_liveness_deadline_actually_kills_a_child_that_never_returns` runs a child
+/// that never returns and watches it get killed, and runs one that does and watches its
+/// output survive. The **wiring** is not — putting a bare `.output()` back into
+/// `run_in_msvc_env` was measured to fail no test, because nothing asserts which call the
+/// gates go through. Closing that would need either a source-text assertion (the weak shape
+/// this repository keeps moving away from) or a real hang in a gate, which is the thing being
+/// prevented. It is left open, and written down here instead of assumed.
+pub fn output_with_deadline(
+    mut cmd: std::process::Command,
+    deadline: std::time::Duration,
+    what: &str,
+) -> std::process::Output {
+    use std::io::Read as _;
+    use std::process::Stdio;
+
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| panic!("spawn {what}: {e}"));
+
+    let mut out_pipe = child.stdout.take().expect("piped stdout");
+    let mut err_pipe = child.stderr.take().expect("piped stderr");
+    let out_reader = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = out_pipe.read_to_end(&mut b);
+        b
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = err_pipe.read_to_end(&mut b);
+        b
+    });
+
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait().expect("try_wait") {
+            Some(s) => break s,
+            None if start.elapsed() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "{what} made no progress for {}s and was killed. This is the liveness \
+                     deadline, not a slow-machine timeout: nothing in these gates takes more \
+                     than a few seconds per child. A generated module that reaches its panic \
+                     handler spins in `loop {{}}` and hangs the calling host thread with the \
+                     process alive (STATUS §5-4) — that is what this looks like from outside.",
+                    deadline.as_secs()
+                );
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(25)),
+        }
+    };
+
+    std::process::Output {
+        status,
+        stdout: out_reader.join().unwrap_or_default(),
+        stderr: err_reader.join().unwrap_or_default(),
+    }
+}
+
+/// The liveness deadline for one child in an acceptance gate.
+pub const CHILD_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);

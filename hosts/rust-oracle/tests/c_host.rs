@@ -69,10 +69,13 @@ fn run_in_msvc_env(vcvars: &Path, workdir: &Path, body: &str) -> std::process::O
         ),
     )
     .expect("write run.bat");
-    Command::new("cmd")
-        .args(["/c".as_ref(), bat.as_os_str()])
-        .output()
-        .expect("spawn cmd")
+    // Under a deadline, not a bare `.output()`. This is the one choke point every acceptance
+    // gate's children pass through — `cl`, `dumpbin`, and the host binaries themselves — so
+    // one change here is what makes a hang FAIL instead of stopping the job. See
+    // `common::output_with_deadline` for why that class had no instrument at all before.
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/c".as_ref(), bat.as_os_str()]);
+    common::output_with_deadline(cmd, common::CHILD_DEADLINE, &format!("`{body}`"))
 }
 
 /// Export names from `dumpbin /exports`, parsed without depending on the header wording:
@@ -797,5 +800,44 @@ fn a_generated_header_compiles_after_the_platform_headers_a_host_includes() {
         "GATE_PLATFORM_HEADERS_OK: {} headers compiled after <windows.h> as C and C++, \
               with parameter names that are macros there: {built:?}",
         built.len()
+    );
+}
+
+/// The deadline has to be able to fire, or it is a comment.
+///
+/// `common::output_with_deadline` is the workspace's only instrument that can distinguish
+/// "slow" from "never returns", and every acceptance gate's children now go through it. A
+/// liveness guard nobody has watched fire is exactly the shape this repository refuses
+/// elsewhere ("실패할 수 없는 가드는 아무것도 증명하지 않는다"), so this runs a child that
+/// deliberately never returns and asserts the harness kills it.
+///
+/// It uses a one-second deadline rather than the real `CHILD_DEADLINE`, because the property
+/// under test is "the deadline is enforced", not "600 seconds elapse". The child is `cmd`'s
+/// own infinite loop — no toolchain, no module, nothing that could make the test flaky for a
+/// reason other than the one it is measuring.
+#[test]
+fn the_liveness_deadline_actually_kills_a_child_that_never_returns() {
+    let hung = std::panic::catch_unwind(|| {
+        let mut cmd = Command::new("cmd");
+        // `:a` / `goto a` is an unconditional loop; `>nul` keeps the pipe quiet so the
+        // reader threads have nothing to drain and the deadline is what ends it.
+        cmd.args(["/c", "for /l %i in (1,0,2) do @echo. >nul"]);
+        common::output_with_deadline(cmd, std::time::Duration::from_secs(1), "a deliberate hang")
+    });
+    assert!(
+        hung.is_err(),
+        "a child that never returns must be killed and reported, not waited on forever"
+    );
+
+    // ...and a child that DOES return still returns, with its output intact — the deadline
+    // must not be a blanket failure.
+    let mut ok = Command::new("cmd");
+    ok.args(["/c", "echo alive"]);
+    let out = common::output_with_deadline(ok, std::time::Duration::from_secs(30), "a quick child");
+    assert!(out.status.success(), "a normal child must still succeed");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("alive"),
+        "and its stdout must survive the reader threads: {:?}",
+        String::from_utf8_lossy(&out.stdout)
     );
 }

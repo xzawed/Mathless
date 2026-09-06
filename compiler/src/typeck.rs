@@ -166,7 +166,7 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 f.name
             )));
         }
-        // (DP-W4.) Two checks used to live here, and both have lost their reason.
+        // (SPEC-export-wrappers DP-W4.) Two checks used to live here, and both have lost their reason.
         //
         // An internal function's name used to be emitted RAW into the generated Rust, so it
         // needed the target's reserved words rejected (`fn match` would not parse) and the
@@ -1218,7 +1218,7 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             ty: IrType::F64,
             kind: IrExprKind::ConstF64(*n),
         }),
-        // The lexer already guaranteed ASCII and no escapes (DP-S4), so the bytes reaching
+        // The lexer already guaranteed ASCII and no escapes (SPEC-string-input DP-S4), so the bytes reaching
         // codegen are exactly what the author typed.
         Expr::Str(s) => Ok(IrExpr {
             ty: IrType::Str,

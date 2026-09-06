@@ -14,7 +14,7 @@ use crate::ir::{IrFunction, IrModule, IrStmt, IrType};
 
 fn c_type(t: IrType) -> &'static str {
     match t {
-        // DP-S1: NUL-terminated, borrowed for the call.
+        // SPEC-string-input DP-S1: NUL-terminated, borrowed for the call.
         IrType::Str => "const char*",
         IrType::F64 => "double",
         IrType::Bool => "bool",

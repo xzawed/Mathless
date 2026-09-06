@@ -619,38 +619,38 @@ fn check_outs_assigned<'a>(
             // reads no out-param (D17 DP-E3 + DP-O3), so an unassigned out on that path is
             // not a defect — it is the contract.
             //
-            // Its SUCCESS path continues, and if the destination IS an out parameter, that
-            // counts as assigning it. `t = try g(x)` must satisfy DP-O2 the same way `t = 1`
-            // does; without this arm it would not, and a correct program would be rejected.
-            IrStmt::TryCall {
-                dest: IrTryDest::AssignOut(name),
-                ..
-            } => {
-                if !assigned.contains(&name.as_str()) {
-                    assigned.push(name.as_str());
+            // Its SUCCESS path is what the destination decides, so this matches every
+            // destination rather than naming two and letting a `TryCall { .. }` arm swallow
+            // the rest. It used to do exactly that, and the hole was measurable: a new
+            // returning destination would be demanded by `IrStmt::is_terminator` and silently
+            // no-op HERE, which is DP-O2's own defect — an `out` never written while the host
+            // is told the call succeeded.
+            IrStmt::TryCall { dest, .. } => match dest {
+                // If the destination IS an out parameter, that counts as assigning it.
+                // `t = try g(x)` must satisfy DP-O2 the same way `t = 1` does; without this a
+                // correct program would be rejected.
+                IrTryDest::AssignOut(name) => {
+                    if !assigned.contains(&name.as_str()) {
+                        assigned.push(name.as_str());
+                    }
                 }
-            }
-            // `return try g(x)` returns on success, so it is a return path like any other and
-            // every out must already be assigned. Missing this arm would have let
-            // `export fn f(out t: i32) -> i32! { return try g(1) }` through with `t` never
-            // written — the host would read its own variable and believe the module wrote it,
-            // which is the exact defect DP-O2 exists to prevent.
-            IrStmt::TryCall {
-                dest: IrTryDest::Return,
-                ..
-            } => {
-                if let Some(missing) = outs.iter().find(|o| !assigned.contains(o)) {
-                    return Err(TypeError::new(format!(
-                        "function '{fname}': `out` parameter '{missing}' is not assigned on \
-                         every path that returns — assign it before this `return`, or the host \
-                         reads whatever was in its own variable"
-                    )));
+                // `return try g(x)` returns on success, so it is a return path like any other
+                // and every out must already be assigned. Without this,
+                // `export fn f(out t: i32) -> i32! { return try g(1) }` passes with `t` never
+                // written — the host reads its own variable and believes the module wrote it.
+                IrTryDest::Return => {
+                    if let Some(missing) = outs.iter().find(|o| !assigned.contains(o)) {
+                        return Err(TypeError::new(format!(
+                            "function '{fname}': `out` parameter '{missing}' is not assigned \
+                             on every path that returns — assign it before this `return`, or \
+                             the host reads whatever was in its own variable"
+                        )));
+                    }
                 }
-            }
-            IrStmt::TryCall { .. }
-            | IrStmt::Fail(_)
-            | IrStmt::Let { .. }
-            | IrStmt::Assign { .. } => {}
+                // Binding or assigning a local writes no out parameter and does not return.
+                IrTryDest::Let { .. } | IrTryDest::Assign(_) => {}
+            },
+            IrStmt::Fail(_) | IrStmt::Let { .. } | IrStmt::Assign { .. } => {}
         }
     }
     Ok(())
@@ -679,31 +679,23 @@ fn check_block(
     // reader hunting for a missing `return` that is right there in front of them.
     //
     // `return try g(x)` counts too. It is a terminator by `ir::block_always_returns`'s
-    // reckoning — that is why the all-paths check accepts it — and this scan matched only
-    // `Return` and `Fail`, so the two views of "ends the block" disagreed. Measured: a
-    // `return 999` after a `return try half(n)` compiled and shipped a `.dll`, while the same
-    // shape after a plain `return` was refused. The statement was dead either way; only the
-    // report went missing. The other three `try` destinations bind or assign and fall
-    // through, so they are deliberately not terminators here either.
-    let terminates = |s: &IrStmt| {
-        matches!(
-            s,
-            IrStmt::Return(_)
-                | IrStmt::Fail(_)
-                | IrStmt::TryCall {
-                    dest: IrTryDest::Return,
-                    ..
-                }
-        )
-    };
+    // reckoning — that is why the all-paths check accepts it — and this scan kept its OWN
+    // list that matched only `Return` and `Fail`, so the two views of "ends the block"
+    // disagreed. Measured: a `return 999` after a `return try half(n)` compiled and shipped a
+    // `.dll`, while the same shape after a plain `return` was refused. The statement was dead
+    // either way; only the report went missing.
+    //
+    // So there is no list here any more. `IrStmt::is_terminator` is the single answer both
+    // views ask, and it is an exhaustive `match` — the compiler now demands an arm for a new
+    // variant, which is the thing neither list did.
     let last = out.len().saturating_sub(1);
-    if let Some(i) = out[..last].iter().position(terminates) {
+    if let Some(i) = out[..last].iter().position(|s| s.is_terminator()) {
         // Exempt from the crate's `wildcard_enum_match_arm` deny: this picks the WORD in a
         // message, not what goes into an artifact. A new terminator falling through here is
-        // read by a person as a slightly wrong noun; the arm above it, `terminates`, is where
-        // a new terminator would actually matter — and note that a `matches!` positive list
-        // is invisible to the lint, which is this guard's known blind spot (it is what let
-        // #161 happen).
+        // read by a person as a slightly wrong noun. Where it would actually matter is
+        // `IrStmt::is_terminator`, one line above — and that is now an exhaustive `match`
+        // precisely because the `matches!` list it replaced was invisible to this lint, which
+        // is what let #161 happen.
         #[allow(clippy::wildcard_enum_match_arm)]
         let kw = match &out[i] {
             IrStmt::Fail(_) => "fail",
@@ -1163,17 +1155,49 @@ fn flatten_concat(e: IrExpr) -> IrExpr {
 /// A built string exists only while it is being written into the caller's buffer, so it may
 /// appear in exactly one place: the `return` of a `-> string!` function (DP-K3). Everywhere
 /// else it would need somewhere to live, and the module has no allocator.
+///
+/// **Exhaustive `match`, not a `matches!` list.** This is the worst place in the crate to
+/// answer a question by omission: a new string-producing kind that falls through reads as
+/// "borrowed", and a borrowed string is passed along as a pointer to bytes the module never
+/// wrote. The `wildcard_enum_match_arm` deny added in #170 does not see `matches!`, so the
+/// compiler is only made to ask by spelling the arms out.
 fn is_built_string(e: &IrExpr) -> bool {
-    e.ty == IrType::Str
-        && matches!(
-            e.kind,
-            IrExprKind::Concat(_)
-                | IrExprKind::Cast { .. }
-                | IrExprKind::Binary {
-                    op: IrBinOp::Add,
-                    ..
-                }
-        )
+    if e.ty != IrType::Str {
+        return false;
+    }
+    match &e.kind {
+        // Pieces appended into the caller's buffer, and the digits of `n as string` — both
+        // are bytes this module produces.
+        IrExprKind::Concat(_) | IrExprKind::Cast { .. } => true,
+        IrExprKind::Binary { op, .. } => match op {
+            // `a + b` on strings is concatenation before `flatten_concat` rewrites it.
+            IrBinOp::Add => true,
+            // The comparisons yield `bool`, so `e.ty == Str` already excludes them; the rest
+            // are numeric. None of them can produce string bytes.
+            IrBinOp::Sub
+            | IrBinOp::Mul
+            | IrBinOp::Div
+            | IrBinOp::Rem
+            | IrBinOp::Lt
+            | IrBinOp::Gt
+            | IrBinOp::Le
+            | IrBinOp::Ge
+            | IrBinOp::Eq
+            | IrBinOp::Ne
+            | IrBinOp::And
+            | IrBinOp::Or => false,
+        },
+        // A literal and a `string` parameter/local are bytes the module BORROWS — from its
+        // own image or from the host — so they outlive the call and need no buffer. A call
+        // returning `string!` is not an expression: it goes through `try` (SPEC-string-return).
+        IrExprKind::ConstStr(_)
+        | IrExprKind::Var(_)
+        | IrExprKind::Call { .. }
+        | IrExprKind::ConstF64(_)
+        | IrExprKind::ConstI32(_)
+        | IrExprKind::ConstBool(_)
+        | IrExprKind::Unary { .. } => false,
+    }
 }
 
 /// Refuse a built string outside `return`, naming the position so the message is actionable.

@@ -73,8 +73,33 @@ fn a_normal_return_path_must_assign_every_out() {
     .unwrap_err();
     let msg = format!("{err:?}").to_lowercase();
     assert!(msg.contains("out"), "{err:?}");
+    // Quoted, because a bare `contains('t')` is satisfied by the `t` in "not" — the guard
+    // would pass on a message that never names the parameter at all.
     assert!(
-        msg.contains('t'),
+        msg.contains("'t'"),
+        "the message should name the parameter: {err:?}"
+    );
+}
+
+#[test]
+fn a_return_try_path_must_assign_every_out_too() {
+    // DP-O2 again, through the OTHER way out of a function. `return try g(x)` returns on
+    // success, so the host reads the out-param on that path exactly as it would after a plain
+    // `return` — but the check used to name its return paths in a hand-kept list, and this
+    // shape is the one such a list forgets. Refusing it is claimed in a comment beside the
+    // code; nothing pinned the claim until here.
+    let err = compile_to_ir(
+        "error E = 1
+         fn g(x: i32) -> i32! { if x < 0 { fail E } return x }
+         export fn f(x: i32, out t: i32) -> i32! { return try g(x) }",
+    )
+    .unwrap_err();
+    let msg = format!("{err:?}").to_lowercase();
+    assert!(msg.contains("out"), "{err:?}");
+    // Quoted, because a bare `contains('t')` is satisfied by the `t` in "not" — the guard
+    // would pass on a message that never names the parameter at all.
+    assert!(
+        msg.contains("'t'"),
         "the message should name the parameter: {err:?}"
     );
 }

@@ -168,8 +168,12 @@ Every change arrives as a PR, and nothing is committed to `main` directly. Work 
 and CI runs `fmt`, `clippy` and the test suite on two jobs.
 
 `windows-latest` is the one that matters, because the acceptance tests actually execute there.
-`ubuntu-latest` compiles the platform-independent frontend as insurance. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the rest.
+`ubuntu-latest` compiles the platform-independent frontend as insurance.
+
+**Setting up a machine** — what to install, and which measurements legitimately differ on
+another one — is in [CONTRIBUTING.md](CONTRIBUTING.md). The suite needs Rust and the MSVC
+Build Tools and nothing else; third-party Rust dependencies are zero. Where to start work is
+the "▶ 여기서 시작한다" block in [docs/STATUS.md](docs/STATUS.md) §9.
 
 ## License
 

@@ -73,8 +73,10 @@ fn a_normal_return_path_must_assign_every_out() {
     .unwrap_err();
     let msg = format!("{err:?}").to_lowercase();
     assert!(msg.contains("out"), "{err:?}");
+    // Quoted, because a bare `contains('t')` is satisfied by the `t` in "not" — the guard
+    // would pass on a message that never names the parameter at all.
     assert!(
-        msg.contains('t'),
+        msg.contains("'t'"),
         "the message should name the parameter: {err:?}"
     );
 }
@@ -94,8 +96,10 @@ fn a_return_try_path_must_assign_every_out_too() {
     .unwrap_err();
     let msg = format!("{err:?}").to_lowercase();
     assert!(msg.contains("out"), "{err:?}");
+    // Quoted, because a bare `contains('t')` is satisfied by the `t` in "not" — the guard
+    // would pass on a message that never names the parameter at all.
     assert!(
-        msg.contains('t'),
+        msg.contains("'t'"),
         "the message should name the parameter: {err:?}"
     );
 }

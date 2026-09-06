@@ -110,6 +110,38 @@ pub enum IrStmt {
     },
 }
 
+impl IrStmt {
+    /// Does this statement leave the function, so that anything after it in the same block is
+    /// dead? The single answer to that question: [`block_always_returns`] asks it of a block's
+    /// last statement, and the typechecker's dead-code scan asks it of every earlier one.
+    ///
+    /// **Written as an exhaustive `match`, not a `matches!` list, on purpose.** A positive
+    /// `matches!` list is invisible to the crate's `wildcard_enum_match_arm` deny, so a new
+    /// variant falls into `false` without the compiler saying a word — that is exactly how
+    /// #161 shipped: `return try` terminated a block by one reckoning and not by the other,
+    /// because the two views were two lists. Adding a variant below is now a compile error
+    /// here, and one answer serves both callers so the lists cannot drift apart again.
+    pub fn is_terminator(&self) -> bool {
+        match self {
+            IrStmt::Return(_) | IrStmt::Fail(_) => true,
+            // `return try f(x)` leaves the function on BOTH arms — the value on success, the
+            // propagated status on failure — so it terminates a block exactly as a plain
+            // `return` does. The other destinations bind or assign and fall through.
+            IrStmt::TryCall { dest, .. } => match dest {
+                IrTryDest::Return => true,
+                IrTryDest::Let { .. } | IrTryDest::Assign(_) | IrTryDest::AssignOut(_) => false,
+            },
+            // `while` may run zero times and an `if` without an `else` can fall through, so
+            // neither ends a block however its body ends (SPEC-while DP-W2).
+            IrStmt::If { .. }
+            | IrStmt::While { .. }
+            | IrStmt::Let { .. }
+            | IrStmt::Assign { .. }
+            | IrStmt::AssignOut { .. } => false,
+        }
+    }
+}
+
 /// Where a [`IrStmt::TryCall`] puts the value it received.
 #[derive(Debug, PartialEq)]
 pub enum IrTryDest {
@@ -216,18 +248,89 @@ pub enum IrBinOp {
 /// plus divergence typing, and `while 1 == 1` would immediately fall outside whatever rule we
 /// wrote (SPEC-while DP-W2).
 pub fn block_always_returns(body: &[IrStmt]) -> bool {
-    matches!(
-        body.last(),
-        Some(
-            IrStmt::Return(_)
-                | IrStmt::Fail(_)
-                // `return try f(x)` leaves the function on BOTH arms — the value on success,
-                // the propagated status on failure — so it terminates a block exactly as a
-                // plain `return` does.
-                | IrStmt::TryCall {
-                    dest: IrTryDest::Return,
-                    ..
-                }
-        )
-    )
+    body.last().is_some_and(IrStmt::is_terminator)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expr() -> IrExpr {
+        IrExpr {
+            ty: IrType::I32,
+            kind: IrExprKind::ConstI32(0),
+        }
+    }
+
+    fn try_call(dest: IrTryDest) -> IrStmt {
+        IrStmt::TryCall {
+            dest,
+            callee: "g".into(),
+            args: vec![],
+            ty: IrType::I32,
+        }
+    }
+
+    /// One statement of every shape, and the answer each must give. The exhaustive `match` in
+    /// `is_terminator` makes the compiler demand an arm for a NEW variant; this pins what the
+    /// existing arms decide, so a flipped answer is caught here rather than in a `.dll`.
+    #[test]
+    fn every_statement_shape_gets_the_terminator_answer_it_should() {
+        let terminating = [
+            IrStmt::Return(expr()),
+            IrStmt::Fail(1),
+            try_call(IrTryDest::Return),
+        ];
+        for s in &terminating {
+            assert!(s.is_terminator(), "{s:?} ends the function");
+        }
+
+        let falls_through = [
+            IrStmt::If {
+                cond: expr(),
+                // Even with a body that returns: the `if` itself can be skipped.
+                body: vec![IrStmt::Return(expr())],
+            },
+            IrStmt::While {
+                cond: expr(),
+                body: vec![IrStmt::Return(expr())],
+            },
+            IrStmt::Let {
+                name: "x".into(),
+                value: expr(),
+                mutable: false,
+            },
+            IrStmt::Assign {
+                name: "x".into(),
+                value: expr(),
+            },
+            IrStmt::AssignOut {
+                name: "o".into(),
+                value: expr(),
+            },
+            try_call(IrTryDest::Let {
+                name: "x".into(),
+                mutable: false,
+            }),
+            try_call(IrTryDest::Assign("x".into())),
+            try_call(IrTryDest::AssignOut("o".into())),
+        ];
+        for s in &falls_through {
+            assert!(
+                !s.is_terminator(),
+                "{s:?} falls through to the next statement"
+            );
+        }
+    }
+
+    /// The shape #161 was made of: `return try` ends a block, and the two views of that
+    /// question have to agree. They are one function now, and this states the agreement.
+    #[test]
+    fn block_always_returns_agrees_with_the_statement_it_ends_on() {
+        assert!(block_always_returns(&[try_call(IrTryDest::Return)]));
+        assert!(!block_always_returns(&[try_call(IrTryDest::Assign(
+            "x".into()
+        ))]));
+        assert!(!block_always_returns(&[]));
+    }
 }

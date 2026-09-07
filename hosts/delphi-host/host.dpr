@@ -42,7 +42,8 @@ uses
   SysUtils,
   discount,
   safe_div,
-  carrier;
+  carrier,
+  shapes;
 
 var
   Failures: Integer = 0;
@@ -102,6 +103,9 @@ begin
   if not OneModule('carrier', carrier.ml_module_abi_version, carrier.ml_iface_hash,
                    ML_CARRIER_IFACE_HASH) then
     Result := False;
+  if not OneModule('shapes', shapes.ml_module_abi_version, shapes.ml_iface_hash,
+                   ML_SHAPES_IFACE_HASH) then
+    Result := False;
 end;
 
 var
@@ -114,6 +118,11 @@ var
   Tier: Integer;
   I: Integer;
   Canary: Boolean;
+  { A Boolean out-param that shares storage with four bytes we can inspect. `absolute` is
+    the Pascal way to ask what the module actually wrote. }
+  BoolBytes: array[0..3] of Byte;
+  BigOut: Boolean absolute BoolBytes;
+  ByteCanary: Boolean;
 begin
   if ParamCount < 1 then
   begin
@@ -176,6 +185,30 @@ begin
   Status := mlx_carrier_label(PAnsiChar('UPSN'), Tier, @Buf[0], SizeOf(Buf), Needed);
   Check(Status = 0, 'carrier_label(UPSN) succeeds');
   Check(Tier = 1, 'the declared out comes before the buffer triple');
+
+  { The unit's header says "Boolean is 1 byte to match the module ABI; do not use LongBool".
+    Nothing checked it, and it is not decoration: measured 2026-09-07 by declaring LongBool
+    instead, the module still writes exactly one byte, Pascal reads four, and a FALSE comes
+    back as TRUE. No crash. The module said false and the host believed true -- the silent
+    wrong answer this project exists to prevent.
+
+    Two checks, because they catch different things. The VALUE catches a wrong declaration
+    (LongBool passes the canary and fails here). The CANARY catches a module writing more
+    than a byte (which LongBool would not reveal). Neither alone is enough.
+
+    Only a Pascal host can ask this. The C header says `bool`, which C sizes for itself. }
+  FillChar(BoolBytes, SizeOf(BoolBytes), $AA);
+  Status := mlx_is_big(50, BigOut);
+  Check(Status = 0, 'is_big(50) succeeds');
+  Check(BigOut = False, 'a false bool out-param reads as false, not as three bytes of noise');
+  ByteCanary := True;
+  for I := 1 to 3 do
+    if BoolBytes[I] <> $AA then
+    begin
+      ByteCanary := False;
+      Break;
+    end;
+  Check(ByteCanary, 'the module wrote exactly one byte for a bool out-param');
 
   if Failures = 0 then
   begin

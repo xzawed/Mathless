@@ -272,6 +272,10 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
         ),
         (include_str!("../../../examples/safe_div.mls"), "safe_div"),
         (include_str!("../../../examples/carrier.mls"), "carrier"),
+        // `shapes` is here for the one-byte Boolean check: it is the only example with a
+        // `-> bool!` export, and a bool OUT-param is where a wrong Pascal declaration
+        // turns a module's false into a host's true.
+        (include_str!("../../../examples/shapes.mls"), "shapes"),
     ] {
         emit_artifacts(src, name, work.path()).unwrap_or_else(|e| panic!("emit {name}: {e}"));
     }

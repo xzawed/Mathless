@@ -1110,6 +1110,18 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 > ## ▶ 여기서 시작한다
 >
+> ### 2026-09-07 (7) 기준 — **Delphi가 실제로 통과했다 (§9-15)** — 한 번, 손으로
+>
+> 사용자가 IDE에서 Win64로 빌드했고, **`dcc64`가 생성 유닛을 컴파일했으며** 호스트가 실제 모듈을
+> 로드해 호출했다 — **14개 검사 전부 ok, `GATE_DELPHI_OK`**. FPC 산출물이 아님은 실행 파일의
+> `Embarcadero`·`System.SysUtils` 마커로 확인했다(FPC 마커 0개).
+>
+> **그러나 게이트는 아니다.** 가진 에디션이 명령줄 빌드를 거부하므로 `MATHLESS_GATE_DELPHI`는
+> 여전히 실행되지 않고 CI도 재현하지 못한다. `UnicodeString` → `PAnsiChar` 함정도 미측정이다.
+> 생성 `.pas`의 문구를 사실에 맞게 고쳤다(한 번 검증됨 + 반복되지 않음, 둘 다 명시).
+>
+> **`DECISIONS.md` D21은 건드리지 않았다** — 그 줄은 당시의 기록이다. 갱신 여부는 사용자 결정.
+>
 > ### 2026-09-07 (6) 기준 — **`host.dpr`가 처음 컴파일·실행됐다 (§9-14)**
 >
 > Free Pascal `-Mdelphi`로 스테이징된 호스트를 빌드해 **실제 모듈을 로드·호출**했다. 14개 검사
@@ -1308,7 +1320,7 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 | # | 무엇 | 조건 |
 |---|---|---|
-| **X1** | **Delphi 검증 — D14의 나머지 절반** | **`dcc64`는 이제 설치돼 있다(2026-09-07). 그런데도 열려 있고, 이유가 바뀌었다**: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. ⚠ `host.dpr`는 **한 번도 컴파일된 적 없는 DRAFT**다 |
+| **X1** | **Delphi 검증 — D14의 나머지 절반** | **실체는 2026-09-07에 측정됐다(§9-15): IDE에서 `dcc64`로 빌드한 Win64 호스트가 모듈을 로드·호출해 14개 검사 전부 통과(`GATE_DELPHI_OK`).** 그래도 X1은 **자동화가 없어** 열려 있다 — 가진 에디션이 명령줄 빌드를 거부한다: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. ⚠ `host.dpr`는 **한 번도 컴파일된 적 없는 DRAFT**다 |
 | **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **§9-14가 한 걸음 더 갔다** — FPC가 유닛을 컴파일할 뿐 아니라 `host.dpr`를 빌드해 **모듈을 로드·호출**한다(결함 하나를 잡았다). **X2가 원하는 것은 여전히 `dcc64`다.** **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨다** — Free Pascal `-Mdelphi -Sew`가 유닛 19개를 전부 컴파일한다(그리고 결함 하나를 잡았다). **X2가 원하는 `dcc64`는 그대로 없다**. 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
 | **X3** | **§4-5 · §4-9 후반 · §4-10** | **GitHub 웹 UI 전용.** 홈페이지 URL · Emails 체크박스 2개(*Keep my email addresses private* / *Block command line pushes…*) · Wiki 끄기·포크 PR 승인 정책 |
 
@@ -1365,6 +1377,40 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **착수 전 한 가지.** §7-1이 규칙 넷을 적어 두었다. 그중 셋은 이번 세션에 실제로 어겨서 배운 것이다 —
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
+
+### 9-15. **Delphi가 실제로 통과했다** (2026-09-07, E2) — 한 번, 손으로, 게이트 없이
+
+사용자가 Delphi IDE에서 `host.dpr`를 열고 Win64로 빌드했다. **`dcc64`가 생성 유닛을 컴파일했고,
+호스트가 실제 모듈을 로드해 C ABI 너머로 호출했다.**
+
+```
+host.exe machine = x64
+.dcu 생성        carrier.dcu · discount.dcu · safe_div.dcu   ← 생성 유닛을 dcc64가 컴파일했다
+실행             14개 검사 전부 ok → GATE_DELPHI_OK   (exit 0)
+```
+
+> **FPC 산출물이 아님을 먼저 증명했다.** 몇 분 전 같은 폴더에서 FPC가 `host.exe`를 만들었으므로,
+> 실행 파일 바이트를 뒤져 확인했다: `Embarcadero` · `Delphi` · `System.SysUtils` · `TObject`가 있고
+> **FPC 마커는 하나도 없다.** `.dproj`는 `Base_Win64`, ProjectVersion 20.4.
+
+**그래서 무엇이 증명됐나.** D14가 플래그십으로 지목한 Delphi 쪽에서 **처음으로**:
+생성 `.pas`가 유효한 Delphi이고(내가 §9-11에서 FPC 기준으로 바꾼 `UInt64($...)` 포함),
+1바이트 `Boolean`이 맞고(`mlx_discount(100, true) = 90`), out 파라미터·D17 status·실패 시 out 무기록·
+Q12 버퍼 프로토콜·절단이 성공이 아님·`needed` 정확성·선언 out 우선순위(DP-O1)가 전부 맞는다.
+로드 시점 게이트(모듈별 abi + 지문)도 Delphi에서 동작한다.
+
+**그리고 증명되지 않은 것.** 이것은 **손으로 한 번** 돌린 것이고 **게이트가 아니다.** 가진 에디션이
+명령줄 빌드를 거부하므로 `MATHLESS_GATE_DELPHI`는 여전히 실행되지 않고, CI도 이것을 재현하지 못한다.
+`UnicodeString` → `PAnsiChar` 함정도 그대로 미측정이다 — 호스트는 올바른 철자(`PAnsiChar` 리터럴)만
+쓰므로 틀린 경로를 밟지 않는다.
+
+**산출물의 문구를 고쳤다.** 생성 `.pas`가 *"NOT yet verified against a Delphi host"* 라고 배달되고
+있었는데 그것이 거짓이 됐다. 새 문구는 둘 다 말한다 — 한 번 검증됐다는 것과, **반복되지 않는다**는
+것. 그리고 C 헤더와 같은 어법으로 **생성기**를 credit한다(이 파일이 아니라). CLI 한 줄·README 두
+판본·골든 19곳·`emit.rs`의 계약이 함께 움직였다.
+
+> **`DECISIONS.md`의 D21은 건드리지 않았다.** 그 줄은 2026-08-28/29 시점의 기록이고 그때는 참이었다.
+> 이력을 다시 쓰지 않는다 — 바뀐 현재는 여기 STATUS가 담는다. **D21을 갱신할지는 사용자 결정이다.**
 
 ### 9-14. `host.dpr`가 처음으로 컴파일·실행됐다 (2026-09-07, E2) — **그리고 결함 하나가 나왔다**
 

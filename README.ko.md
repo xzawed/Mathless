@@ -90,9 +90,11 @@ export를 찾습니다. 그리고 두 번째 C 호스트는 **평범한 방식**
 (`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash`)만 export합니다. 이 개수는
 `dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지 않습니다.
 
-**Delphi는 검증되지 않았습니다.** 수용 D는 C 쪽만 닫았습니다. 빌드 머신에 `dcc64`가 없어서 생성된
-`.pas`는 아직 아무도 컴파일한 적이 없고, DRAFT 표기를 그대로 두었습니다. D14가 Delphi를 플래그십
-호스트로 두므로, 호스트 이야기의 절반은 아직 증명되지 않았습니다.
+**Delphi는 한 번 재 봤고, 게이트는 없습니다.** 2026-09-07에 `dcc64`로 빌드한 Delphi 64비트
+호스트가 생성 유닛을 컴파일해 C ABI 너머로 모듈을 호출했습니다 — 14개 검사, `GATE_DELPHI_OK`.
+**손으로 돌렸습니다**: 가지고 있는 에디션이 명령줄 빌드를 거부해서 `MATHLESS_GATE_DELPHI`는
+여전히 실행되지 않고, 그 실행을 반복하는 것도 없습니다. 수용 D는 C 쪽만 닫았고, D14의
+Delphi 절반은 게이트 없이 남습니다.
 
 현재 수치와 열린 결정, 다음 작업은 [docs/STATUS.md](docs/STATUS.md)에 있습니다.
 
@@ -110,7 +112,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 mlc build discount.mls -o out/
 #  out/discount.dll   네이티브 모듈 — export: mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C 헤더
-#  out/discount.pas   Delphi import unit (DRAFT: Delphi host-load not verified — D14 gate BLOCKED)
+#  out/discount.pas   Delphi import unit (Delphi: verified once by hand 2026-09-07, not gated)
 #  out/discount.lib   MSVC 임포트 라이브러리 (링크 타임 바인딩)
 ```
 

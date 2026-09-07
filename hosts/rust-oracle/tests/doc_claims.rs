@@ -618,8 +618,8 @@ fn the_readme_transcripts_carry_the_draft_note_the_cli_prints() {
         .expect("the Delphi unit's path is no longer printed by a println!");
     let block = &main_rs[from..at];
     let i = block
-        .find("(DRAFT: ")
-        .expect("the line `mlc` prints for the .pas no longer carries a (DRAFT: …) note");
+        .find("(Delphi: ")
+        .expect("the line `mlc` prints for the .pas no longer carries a (Delphi: …) note");
     let note: String = block[i..]
         .chars()
         .take_while(|c| *c != ')' && *c != '\n')

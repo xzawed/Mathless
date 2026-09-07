@@ -180,7 +180,7 @@ fn the_bindings_declare_a_pointer() {
     let ir = compile_to_ir("export fn f(a: f64, out t: i32) -> f64 { t = 1 return a }")
         .expect("compile");
     let h = emit_c_header(&ir, "m");
-    let pas = emit_delphi_unit(&ir, "Mlx_M", "m");
+    let pas = emit_delphi_unit(&ir, "m");
     assert!(h.contains("int32_t* /* t */"), "{h}");
     assert!(pas.contains("out t: Integer"), "{pas}");
 }
@@ -200,7 +200,7 @@ fn the_fallible_signature_pins_dp_o1_exactly() {
         h.contains("int32_t mlx_g(double /* a */, int32_t* /* t */, double* out_value);"),
         "{h}"
     );
-    let pas = emit_delphi_unit(&ir, "Mlx_M", "m");
+    let pas = emit_delphi_unit(&ir, "m");
     assert!(
         pas.contains("function mlx_g(a: Double; out t: Integer; out out_value: Double): Integer;"),
         "{pas}"

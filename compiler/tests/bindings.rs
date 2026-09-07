@@ -26,8 +26,11 @@ fn c_header_matches_module_abi() {
 
 #[test]
 fn delphi_unit_matches_module_abi() {
-    let u = emit_delphi_unit(&discount_ir(), "Mlx_Discount", "discount");
-    assert!(u.contains("unit Mlx_Discount;"), "{u}");
+    let u = emit_delphi_unit(&discount_ir(), "discount");
+    // The unit name IS the module name, because Object Pascal requires it to match the
+    // file `mlc build` writes. This used to assert `Mlx_Discount`, a name the tool has
+    // never emitted, which is how the golden came to freeze one too.
+    assert!(u.contains("unit discount;"), "{u}");
     assert!(u.contains("ML_MODULE = 'discount.dll';"), "{u}");
     assert!(
         u.contains("function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;"),

@@ -346,10 +346,7 @@ pub fn emit_artifacts(
         )?;
         let unit_path = stage.join(&names[2]);
         io(
-            std::fs::write(
-                &unit_path,
-                header::emit_delphi_unit(&ir, module_name, module_name),
-            ),
+            std::fs::write(&unit_path, header::emit_delphi_unit(&ir, module_name)),
             "writing",
             &unit_path,
         )?;

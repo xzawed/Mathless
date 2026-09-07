@@ -71,15 +71,17 @@ fn emit_artifacts_writes_the_four_consumable_files() {
     );
 
     // .pas text contract: matching unit name (Delphi requires file stem == unit), the cdecl
-    // external import, and the DRAFT note — which must STAY, because no `dcc64` has ever
-    // compiled this. Acceptance D closed the C arm only.
+    // external import, and the not-gated note — which must STAY. A Delphi host did compile and
+    // run these units once (9-14), and that is exactly why the wording has to keep saying it
+    // was by hand: the edition available refuses command-line builds, so nothing repeats it.
     let pas = std::fs::read_to_string(&arts.delphi_unit).unwrap();
     assert!(pas.contains("unit discount;"), "{pas}");
     assert!(pas.contains("function mlx_discount"), "{pas}");
     assert!(pas.contains("external ML_MODULE"), "{pas}");
     assert!(
-        pas.contains("D14 load gate BLOCKED"),
-        "the Delphi unit must stay honest — it is still unverified: {pas}"
+        pas.contains("BY HAND AND NOT GATED"),
+        "the Delphi unit must keep saying the verification was a one-off: a Delphi host did \r
+         build and run it (9-14), but nothing repeats that, and the unit is what a user reads: {pas}"
     );
     assert!(
         pas.is_ascii(),

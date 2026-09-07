@@ -200,3 +200,135 @@ fn every_generated_unit_is_valid_object_pascal() {
         fpc.display()
     );
 }
+
+/// Build and RUN `hosts/delphi-host/host.dpr` with Free Pascal, against real modules.
+///
+/// **This is not the Delphi gate and must never be read as one.** D14 names `dcc64`;
+/// `-Mdelphi` is a dialect emulation, and the Embarcadero-only hazard the generated units
+/// warn about — a `UnicodeString` passed where `PAnsiChar` is expected, which compiles and
+/// silently matches nothing — cannot be shown here at all. `delphi_host.rs` is the test that
+/// closes X1, and it still cannot run.
+///
+/// What this one adds is what nothing else could: an Object Pascal host that actually LOADS
+/// the modules and CALLS them. The `.pas` compile check above proves the text parses; this
+/// proves the declarations describe the module that ships. The two are different questions,
+/// and the second found a defect the first could not.
+///
+/// The defect, measured the first time the file was ever compiled (2026-09-07): every
+/// generated unit declares the same two reserved functions, so an UNQUALIFIED
+/// `ml_iface_hash` binds to whichever unit came last in the `uses` clause. The gate compared
+/// carrier's fingerprint against `ML_DISCOUNT_IFACE_HASH` and could never pass —
+/// `C8D1191E339AAF6E` against `05697A6FAFD68344`. `ml_module_abi_version` had the same bug
+/// and hid it, because every module answers 1. The C host cannot meet this: it resolves per
+/// module handle. It is a hazard of the import-unit binding, and it took a compiler to see.
+///
+/// **Its own variable, `MATHLESS_GATE_FPC_HOST`, and CI does not set it.** Unlike the units
+/// above, this host LOADS x64 modules, so it needs an fpc that can target x86_64.
+/// Chocolatey's package -- what the windows job installs -- fetches the i386-only installer;
+/// measured on CI: `GATE_FPC_OK ... target the driver's default (no x86_64 backend here)`.
+/// Requiring it there would paint the build red over a runner's packaging, so it requires
+/// nothing and skips loudly instead. It still RUNS wherever the backend exists, which is
+/// every full local run here (the official win32.and.win64 installer carries ppcrossx64,
+/// and that is the one winget installs).
+///
+/// Closing that gap means putting an x86_64-capable Free Pascal on the runner. That is not
+/// done, and this is where a person finds out why instead of guessing.
+#[test]
+fn the_staged_pascal_host_builds_and_calls_the_modules() {
+    let Some(fpc) = fpc() else {
+        if std::env::var("MATHLESS_GATE_FPC_HOST").as_deref() == Ok("require") {
+            panic!(
+                "MATHLESS_GATE_FPC_HOST=require but fpc was not found — the staged Pascal host \
+                 cannot be built by anything."
+            );
+        }
+        println!(
+            "GATE_FPC_HOST_SKIPPED: no fpc found. hosts/delphi-host/host.dpr is compiled by \
+             NOTHING in this run."
+        );
+        return;
+    };
+
+    let work = common::TempOut::new("gate_fpc_host");
+
+    // The three modules the staged host `uses`, emitted exactly as `mlc build` writes them:
+    // the units and the DLLs land in one directory, which is what the host's `external`
+    // clauses need at load time.
+    for (src, name) in [
+        (
+            include_str!("../../../examples/discount.mls") as &str,
+            "discount",
+        ),
+        (include_str!("../../../examples/safe_div.mls"), "safe_div"),
+        (include_str!("../../../examples/carrier.mls"), "carrier"),
+    ] {
+        emit_artifacts(src, name, work.path()).unwrap_or_else(|e| panic!("emit {name}: {e}"));
+    }
+
+    let host_dpr = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("delphi-host")
+        .join("host.dpr");
+    assert!(host_dpr.exists(), "missing {}", host_dpr.display());
+
+    let mut cmd = Command::new(&fpc);
+    cmd.arg("-Mdelphi")
+        .arg(format!("-FU{}", work.path().display()))
+        .arg(format!("-FE{}", work.path().display()))
+        .arg(&host_dpr)
+        .current_dir(work.path());
+    // Target x86_64 when the backend exists: unlike the units, this host LOADS x64 DLLs, so
+    // a 32-bit build cannot run at all. Without the backend there is nothing to measure.
+    let mut probe = Command::new(&fpc);
+    probe.arg("-Px86_64").arg("-iTP");
+    let probe_out = common::output_with_deadline(
+        probe,
+        std::time::Duration::from_secs(60),
+        "fpc -Px86_64 -iTP",
+    );
+    if !(probe_out.status.success()
+        && String::from_utf8_lossy(&probe_out.stdout).trim() == "x86_64")
+    {
+        if std::env::var("MATHLESS_GATE_FPC_HOST").as_deref() == Ok("require") {
+            panic!(
+                "MATHLESS_GATE_FPC_HOST=require but this fpc has no x86_64 backend — the staged \
+                 host loads x64 modules, so a 32-bit build could not run them. Install a \
+                 Free Pascal that carries ppcrossx64."
+            );
+        }
+        println!(
+            "GATE_FPC_HOST_SKIPPED: this fpc cannot target x86_64, and the staged host loads \
+             x64 modules. The units still compiled (see the test above); the host did not run."
+        );
+        return;
+    }
+    cmd.arg("-Px86_64");
+
+    let build = common::output_with_deadline(cmd, std::time::Duration::from_secs(180), "fpc host");
+    let build_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let exe = work.path().join("host.exe");
+    assert!(
+        exe.is_file(),
+        "fpc exited {} but produced no {} — an exit code is not proof that anything was \
+         built:\n{build_out}",
+        build.status,
+        exe.display()
+    );
+
+    let mut run = Command::new(&exe);
+    run.arg(mlc::ML_MODULE_ABI_VERSION.to_string())
+        .current_dir(work.path());
+    let out = common::output_with_deadline(run, std::time::Duration::from_secs(120), "host.exe");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The transcript IS the evidence, exactly as acceptance D's is.
+    println!("{stdout}");
+    assert!(
+        out.status.success() && stdout.contains("GATE_DELPHI_OK"),
+        "the staged Pascal host did not pass under Free Pascal:\n{stdout}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

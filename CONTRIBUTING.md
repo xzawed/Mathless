@@ -22,12 +22,16 @@ DRAFT. It proves only that the generated text is valid Object Pascal, the same k
 the C++ gate makes about the header. `MATHLESS_GATE_FPC=require` turns a missing compiler
 into a failure, and **CI sets it** — the windows job installs Free Pascal first, so the
 gate can never quietly stop running there. Locally it skips, loudly, when fpc is absent. Check: `cargo test -p ml_oracle --test fpc_units --
---nocapture` prints `GATE_FPC_OK`.
+--nocapture` prints `GATE_FPC_OK`. A second test in that file builds and RUNS
+`hosts/delphi-host/host.dpr` against real modules; it needs an fpc that can target
+x86_64 (the official win32.and.win64 installer, which winget installs — chocolatey's
+package is i386-only), so it has its own `MATHLESS_GATE_FPC_HOST` and CI does not set
+it. It is not the Delphi gate either.
 
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
 Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
 
-`dcc64` (Delphi) is **deliberately absent**, on every machine so far. The generated `.pas` has
+`dcc64` (Delphi) was absent on every machine until 2026-09-07, and where it exists now its edition **refuses command-line builds** — it prints "does not support command line compiling", writes nothing, and exits 0. D14's Delphi arm needs an edition whose `dcc64` compiles from a command line. The generated `.pas` has
 never been compiled by anything, D14's Delphi arm is BLOCKED, and the unit ships marked DRAFT.
 Installing it would not be "fixing the setup" — it would be closing a gate, which is a piece of
 work with a SPEC in front of it.
@@ -149,12 +153,16 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 헤더에 대해 하는 주장과 같은 종류다. `MATHLESS_GATE_FPC=require`가 부재를 실패로 바꾸고,
 **CI는 그것을 설정한다** — windows 잡이 Free Pascal을 먼저 설치하므로 거기서는 게이트가 조용히
 멈출 수 없다. 로컬에서는 fpc가 없으면 **시끄럽게** skip한다. 확인: `cargo test -p ml_oracle --test fpc_units -- --nocapture`가
-`GATE_FPC_OK`를 찍는다.
+`GATE_FPC_OK`를 찍는다. 같은 파일의 두 번째 테스트는 `hosts/delphi-host/host.dpr`를
+빌드해 **실제 모듈을 로드·호출**한다. 그것은 x86_64를 타깃할 수 있는 fpc가 필요하므로
+(공식 win32.and.win64 설치본 — winget이 그것을 깐다. chocolatey 패키지는 i386 전용)
+**별도 변수 `MATHLESS_GATE_FPC_HOST`** 를 쓰고 CI는 설정하지 않는다. 이것도 Delphi
+게이트가 아니다.
 
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
 Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
 
-`dcc64`(Delphi)는 **의도적으로 없다**. 지금까지 어느 머신에도 없었고, 생성 `.pas`는 무엇에도 컴파일된
+`dcc64`(Delphi)는 2026-09-07까지 어느 머신에도 없었고, 지금 있는 것은 에디션이 **명령줄 빌드를 거부한다**("does not support command line compiling"을 찍고 아무것도 만들지 않으면서 exit 0). D14의 Delphi 반쪽은 **명령줄 컴파일이 되는 에디션**을 필요로 한다. 그리고 생성 `.pas`는 무엇에도 컴파일된
 적이 없으며, D14의 Delphi 쪽은 BLOCKED이고 유닛은 DRAFT로 나간다. 이것을 설치하는 것은 "환경을
 맞추는 일"이 아니라 **게이트를 닫는 작업**이며, 앞에 SPEC이 선다.
 

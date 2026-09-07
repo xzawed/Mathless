@@ -7,7 +7,7 @@
 //! `build` packages the module into four files in `<out_dir>` (default: current dir):
 //!   <name>.dll   native C-ABI module
 //!   <name>.h     C header       (verified against a real MSVC C host — acceptance D)
-//!   <name>.pas   Delphi import unit (DRAFT — same)
+//!   <name>.pas   Delphi import unit (verified once by hand, not gated — see the unit header)
 //!   <name>.lib   MSVC import library, for a host that links instead of GetProcAddress
 //! where `<name>` is the input file's stem.
 
@@ -84,7 +84,7 @@ fn run(args: &[String]) -> Result<(), String> {
         arts.header.display()
     );
     println!(
-        "  {}  (DRAFT: Delphi host-load not verified — D14 gate BLOCKED)",
+        "  {}  (Delphi: verified once by hand 2026-09-07, not gated)",
         arts.delphi_unit.display()
     );
     println!(

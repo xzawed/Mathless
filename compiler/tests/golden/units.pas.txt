@@ -13,7 +13,7 @@ interface
 
 const
   ML_MODULE = 'add.dll';
-  ML_ADD_IFACE_HASH: UInt64 = $224A2953E2699E31;
+  ML_ADD_IFACE_HASH: UInt64 = UInt64($224A2953E2699E31);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -49,7 +49,7 @@ interface
 
 const
   ML_MODULE = 'carrier.dll';
-  ML_CARRIER_IFACE_HASH: UInt64 = $C8D1191E339AAF6E;
+  ML_CARRIER_IFACE_HASH: UInt64 = UInt64($C8D1191E339AAF6E);
   ML_CARRIER_ERR_E_UNKNOWN_SCAC = 1;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
     NUL included. Truncation is a FAILURE, not a short success - nothing is written,
@@ -78,7 +78,7 @@ interface
 
 const
   ML_MODULE = 'commission.dll';
-  ML_COMMISSION_IFACE_HASH: UInt64 = $8120E9C099B13F94;
+  ML_COMMISSION_IFACE_HASH: UInt64 = UInt64($8120E9C099B13F94);
   ML_COMMISSION_ERR_E_NEGATIVE = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
@@ -103,7 +103,7 @@ interface
 
 const
   ML_MODULE = 'count_bounded.dll';
-  ML_COUNT_BOUNDED_IFACE_HASH: UInt64 = $E83F762BFBFC9CA4;
+  ML_COUNT_BOUNDED_IFACE_HASH: UInt64 = UInt64($E83F762BFBFC9CA4);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -126,7 +126,7 @@ interface
 
 const
   ML_MODULE = 'deduction.dll';
-  ML_DEDUCTION_IFACE_HASH: UInt64 = $B2B1F335D1DC7105;
+  ML_DEDUCTION_IFACE_HASH: UInt64 = UInt64($B2B1F335D1DC7105);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -153,7 +153,7 @@ interface
 
 const
   ML_MODULE = 'discount.dll';
-  ML_DISCOUNT_IFACE_HASH: UInt64 = $05697A6FAFD68344;
+  ML_DISCOUNT_IFACE_HASH: UInt64 = UInt64($05697A6FAFD68344);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -176,7 +176,7 @@ interface
 
 const
   ML_MODULE = 'discount2.dll';
-  ML_DISCOUNT2_IFACE_HASH: UInt64 = $EE1B0032D821B816;
+  ML_DISCOUNT2_IFACE_HASH: UInt64 = UInt64($EE1B0032D821B816);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -199,7 +199,7 @@ interface
 
 const
   ML_MODULE = 'discount3.dll';
-  ML_DISCOUNT3_IFACE_HASH: UInt64 = $0532D4F36E005A3B;
+  ML_DISCOUNT3_IFACE_HASH: UInt64 = UInt64($0532D4F36E005A3B);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -222,7 +222,7 @@ interface
 
 const
   ML_MODULE = 'discount4.dll';
-  ML_DISCOUNT4_IFACE_HASH: UInt64 = $5C3F47E3EB635EF8;
+  ML_DISCOUNT4_IFACE_HASH: UInt64 = UInt64($5C3F47E3EB635EF8);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -245,7 +245,7 @@ interface
 
 const
   ML_MODULE = 'line_total.dll';
-  ML_LINE_TOTAL_IFACE_HASH: UInt64 = $2B4FBE9547EC2453;
+  ML_LINE_TOTAL_IFACE_HASH: UInt64 = UInt64($2B4FBE9547EC2453);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -268,7 +268,7 @@ interface
 
 const
   ML_MODULE = 'negate_if.dll';
-  ML_NEGATE_IF_IFACE_HASH: UInt64 = $F05D0C1F381CF156;
+  ML_NEGATE_IF_IFACE_HASH: UInt64 = UInt64($F05D0C1F381CF156);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -291,7 +291,7 @@ interface
 
 const
   ML_MODULE = 'pack.dll';
-  ML_PACK_IFACE_HASH: UInt64 = $DA0077B3A04515AB;
+  ML_PACK_IFACE_HASH: UInt64 = UInt64($DA0077B3A04515AB);
   ML_PACK_ERR_E_EMPTY_BOX = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
@@ -317,7 +317,7 @@ interface
 
 const
   ML_MODULE = 'quote.dll';
-  ML_QUOTE_IFACE_HASH: UInt64 = $159CAA5FE5CB3400;
+  ML_QUOTE_IFACE_HASH: UInt64 = UInt64($159CAA5FE5CB3400);
   ML_QUOTE_ERR_E_BAD_QTY = 1;
   ML_QUOTE_ERR_E_DIV0 = 2;
 
@@ -356,7 +356,7 @@ interface
 
 const
   ML_MODULE = 'receipt.dll';
-  ML_RECEIPT_IFACE_HASH: UInt64 = $12CC5B502BEA4895;
+  ML_RECEIPT_IFACE_HASH: UInt64 = UInt64($12CC5B502BEA4895);
   ML_RECEIPT_ERR_E_NO_ITEMS = 1;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
     NUL included. Truncation is a FAILURE, not a short success - nothing is written,
@@ -387,7 +387,7 @@ interface
 
 const
   ML_MODULE = 'refund.dll';
-  ML_REFUND_IFACE_HASH: UInt64 = $C22D9C0A1441EE54;
+  ML_REFUND_IFACE_HASH: UInt64 = UInt64($C22D9C0A1441EE54);
   ML_REFUND_ERR_E_NEG = 3;
   ML_REFUND_ERR_E_TOO_LATE = 4;
 
@@ -412,7 +412,7 @@ interface
 
 const
   ML_MODULE = 'safe_div.dll';
-  ML_SAFE_DIV_IFACE_HASH: UInt64 = $91118FB2AED9DEE5;
+  ML_SAFE_DIV_IFACE_HASH: UInt64 = UInt64($91118FB2AED9DEE5);
   ML_SAFE_DIV_ERR_DIV_BY_ZERO = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
@@ -449,7 +449,7 @@ interface
 
 const
   ML_MODULE = 'shapes.dll';
-  ML_SHAPES_IFACE_HASH: UInt64 = $EBBDE5676601568D;
+  ML_SHAPES_IFACE_HASH: UInt64 = UInt64($EBBDE5676601568D);
   ML_SHAPES_ERR_E_NEG = 1;
   ML_SHAPES_ERR_E_ODD = 2;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
@@ -486,7 +486,7 @@ interface
 
 const
   ML_MODULE = 'sum_to.dll';
-  ML_SUM_TO_IFACE_HASH: UInt64 = $D3FC526CA957505A;
+  ML_SUM_TO_IFACE_HASH: UInt64 = UInt64($D3FC526CA957505A);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
@@ -522,7 +522,7 @@ interface
 
 const
   ML_MODULE = 'vat.dll';
-  ML_VAT_IFACE_HASH: UInt64 = $7CE7BE3A0EEE106C;
+  ML_VAT_IFACE_HASH: UInt64 = UInt64($7CE7BE3A0EEE106C);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
 function ml_iface_hash: UInt64; cdecl; external ML_MODULE;

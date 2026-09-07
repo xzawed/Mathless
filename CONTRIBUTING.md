@@ -15,6 +15,14 @@ each item is what a gate actually shells out to.
 | **MSVC Build Tools**, "Desktop development with C++" | acceptance D compiles and runs two real C hosts. It supplies `cl`, `link`, `dumpbin`, and the `vswhere.exe` + `vcvars64.bat` the tests use to find them. | `cargo test -p ml_oracle --test c_host` prints `GATE_D_OK` |
 | **Windows SDK 10.0.20348 or newer** (the floor is Microsoft's fix version, not something measured here; what was measured is the pair below) | acceptance D compiles the generated header after `<windows.h>` with `/W4 /WX /std:c11`. On **10.0.19041** that combination fails inside Microsoft's own `winbase.h(9572)` with **C5105** ("macro expansion producing 'defined'"), which the conforming C11 preprocessor turns on; Microsoft fixed the header in 20348. Measured 2026-09-07: 19041 fails two tests, 26100 passes. A newer SDK usually arrives with the workload above — check it if those two are the only red ones. | `cl /W4 /WX /std:c11` on a file that only `#include <windows.h>` exits 0 |
 
+**Optional, and a skip-gate when absent:** **Free Pascal 3.2.2** (`winget install
+FreePascal.FreePascalCompiler`) compiles every generated `.pas` under `-Mdelphi -Sew`.
+It is **not** the Delphi gate — D14 needs `dcc64`, that arm stays open, and the unit stays
+DRAFT. It proves only that the generated text is valid Object Pascal, the same kind of claim
+the C++ gate makes about the header. `MATHLESS_GATE_FPC=require` turns a missing compiler
+into a failure; CI does not set it. Check: `cargo test -p ml_oracle --test fpc_units --
+--nocapture` prints `GATE_FPC_OK`.
+
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
 Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
 
@@ -132,6 +140,14 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 | **Rust** (`rustup`) | `rust-toolchain.toml`이 **1.97.1**로 고정한다. 첫 `cargo` 실행 때 rustup이 받아 온다. 올리면 크기 프록시를 다시 재야 하고, 핀 주석이 그렇게 적어 두었다. | `rustc --version` |
 | **MSVC Build Tools** — "C++를 사용한 데스크톱 개발" | 수용 D가 실제 C 호스트 **둘**을 컴파일·실행한다. `cl`·`link`·`dumpbin`, 그리고 테스트가 그것들을 찾는 데 쓰는 `vswhere.exe`·`vcvars64.bat`을 준다. | `cargo test -p ml_oracle --test c_host`가 `GATE_D_OK`를 찍는다 |
 | **Windows SDK 10.0.20348 이상** (바닥값은 MS가 고친 버전이지 여기서 재 것이 아니다 — 재 것은 아래 두 지점이다) | 수용 D는 생성 헤더를 `<windows.h>` **뒤에** 놓고 `/W4 /WX /std:c11`로 컴파일한다. **10.0.19041**에서는 그 조합이 마이크로소프트 자신의 `winbase.h(9572)`에서 **C5105**("macro expansion producing 'defined'")로 깨진다 — C11 적합 전처리기가 켜는 경고이고, MS가 20348에서 헤더를 고쳤다. 실측(2026-09-07): 19041은 테스트 2건 실패, 26100은 통과. 보통 위 워크로드와 함께 최신 SDK가 들어오니, **저 둘만 빨갛다면 여기를 보라.** | `#include <windows.h>` 한 줄짜리 파일이 `cl /W4 /WX /std:c11`에서 exit 0 |
+
+**선택 사항이고, 없으면 skip-게이트다:** **Free Pascal 3.2.2**
+(`winget install FreePascal.FreePascalCompiler`)가 생성 `.pas` 전부를 `-Mdelphi -Sew`로
+컴파일한다. **Delphi 게이트가 아니다** — D14는 `dcc64`가 필요하고, 그 반쪽은 열려 있으며, 유닛은
+그대로 DRAFT다. 증명하는 것은 **생성 텍스트가 유효한 Object Pascal인가**까지이며, C++ 게이트가
+헤더에 대해 하는 주장과 같은 종류다. `MATHLESS_GATE_FPC=require`가 부재를 실패로 바꾸며 CI는
+설정하지 않는다. 확인: `cargo test -p ml_oracle --test fpc_units -- --nocapture`가
+`GATE_FPC_OK`를 찍는다.
 
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
 Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).

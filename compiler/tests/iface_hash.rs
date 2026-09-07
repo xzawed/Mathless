@@ -213,13 +213,57 @@ fn codegen_and_header_agree_on_the_value() {
     let p = mlc::header::emit_delphi_unit(&ir, "Mlx_Discount", "discount");
     assert!(
         p.contains(&format!(
-            "ML_DISCOUNT_IFACE_HASH: UInt64 = ${expected:016X};"
+            "ML_DISCOUNT_IFACE_HASH: UInt64 = UInt64(${expected:016X});"
         )),
         "Delphi unit must pin the same value:\n{p}"
     );
     assert!(
         p.contains("function ml_iface_hash: UInt64; cdecl; external ML_MODULE;"),
         "Delphi unit must declare the export:\n{p}"
+    );
+}
+
+/// The Delphi constant must not depend on how the compiler types a hex literal.
+///
+/// Measured with Free Pascal 3.2.2 in `-Mdelphi` mode, the only Pascal compiler that has ever
+/// read these units: `H: UInt64 = $8120E9C099B13F94;` is accepted, holds the RIGHT value, and
+/// warns — "range check error while evaluating constants (-9142050230140584044 must be
+/// between 0 and 18446744073709551615)". The literal is typed as a signed Int64 first, and
+/// every fingerprint with the top bit set trips it: **11 of the 19 example modules**. Nothing
+/// is wrong with the value; a consumer building with warnings-as-errors simply cannot build.
+/// That is the same class as the C header's `/W4 /WX`, which this repo already holds itself to.
+///
+/// `UInt64($...)` compiles clean and carries the same value (measured, all three spellings
+/// print 9304693843568967572). This test pins the CAST rather than the whole line, so it fails
+/// for the reason it exists rather than on unrelated formatting.
+#[test]
+fn the_delphi_fingerprint_does_not_rely_on_literal_type_inference() {
+    // A module whose fingerprint has the top bit set is what triggers it. Rather than pick one
+    // and hope it keeps that property, search the corpus for one and say so if there is none.
+    let sources = [
+        "export fn f(x: f64) -> f64 { return x }",
+        "export fn g(a: i32, b: i32) -> i32 { return a + b }",
+        "export fn h(s: string) -> i32! { return 1 }",
+        "export fn k(x: i32, out t: i32) -> i32 { t = x return x }",
+    ];
+    let mut checked = 0;
+    for src in sources {
+        let ir = compile_to_ir(src).expect("compile");
+        let hash = iface::fingerprint(&ir);
+        if hash & (1u64 << 63) == 0 {
+            continue; // not a case that can trip it
+        }
+        checked += 1;
+        let p = mlc::header::emit_delphi_unit(&ir, "Mlx_M", "m");
+        assert!(
+            p.contains(&format!("UInt64(${hash:016X})")),
+            "a fingerprint with the top bit set must be cast, not left to the compiler to              type — Free Pascal reads the bare literal as a negative Int64 and warns:
+{p}"
+        );
+    }
+    assert!(
+        checked > 0,
+        "no source in this test produced a top-bit-set fingerprint, so it checked nothing"
     );
 }
 

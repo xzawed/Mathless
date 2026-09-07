@@ -69,3 +69,13 @@ jobs:
           # the FPC gate caught a real defect on its first run (11 of 19 units warned).
           MATHLESS_GATE_FPC: require
         run: cargo test --workspace --locked
+      - name: Say what the FPC gate measured
+        # cargo swallows a passing test's stdout, so `GATE_FPC_OK` never reaches the log
+        # above -- the same trap STATUS 5-5.7 records for guard warnings. This re-runs the
+        # one test with --nocapture so the log says WHICH fpc it used and WHICH target it
+        # compiled for. Chocolatey fetches the i386-only installer, so whether ppcrossx64 is
+        # present is a fact about the runner that nobody can read otherwise. Seconds, and
+        # everything is already built.
+        env:
+          MATHLESS_GATE_FPC: require
+        run: cargo test -p ml_oracle --test fpc_units --locked -- --nocapture

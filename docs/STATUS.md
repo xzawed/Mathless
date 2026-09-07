@@ -441,7 +441,9 @@ Q12가 지배하는 것은 **가변 길이**(문자열·배열·문자열을 품
 4. ✅ **닫힘 — LICENSE 저작권자 표기.** 사용자 결정(2026-09-02): **계정명 `xzawed`를 그대로 둔다.**
    `LICENSE-MIT`의 `Copyright (c) 2026 xzawed`가 정본이며, 저장소가 공개돼 있으므로 이 표기가
    그대로 대외 문구다. 법인·실명으로 바꾸려면 한 줄 PR이면 된다 — 지금은 바꾸지 않는다.
-5. **홈페이지 URL** — About 텍스트는 갱신됨, URL만 미설정(`gh repo view`로 확인).
+5. **홈페이지 URL** — 여전히 `null`이고, **그대로 둔다.** 가리킬 것이 없다: 이 프로젝트에는 문서
+   사이트가 없고, 저장소 URL을 저장소의 홈페이지로 적는 것은 순환이다. **웹 UI 전용도 아니었다** —
+   `gh repo edit --homepage <URL>`로 언제든 된다. 문서 사이트가 생기면 그때 한 줄이다.
 6. ✅ **닫힘 — README의 CI 뱃지.** private일 때 `badge.svg`가 **HTTP 404**였고, "공개하면 저절로
    풀린다"고 적어 뒀었다. 실제로 그랬다: 공개 직후 **HTTP 200**, `image/svg+xml` 2,263 B,
    내용 `CI - passing`(측정). 손댈 것 없다.
@@ -1331,7 +1333,7 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 |---|---|---|
 | **X1** | **Delphi 검증 — D14의 나머지 절반** | **실체는 2026-09-07에 측정됐다(§9-15): IDE에서 `dcc64`로 빌드한 Win64 호스트가 모듈을 로드·호출해 14개 검사 전부 통과(`GATE_DELPHI_OK`).** 그래도 X1은 **자동화가 없어** 열려 있다 — 가진 에디션이 명령줄 빌드를 거부한다: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. (§9-15가 그 한 줄을 실제로 못 돌린 이유를 적는다) |
 | **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **§9-14가 한 걸음 더 갔다** — FPC가 유닛을 컴파일할 뿐 아니라 `host.dpr`를 빌드해 **모듈을 로드·호출**한다(결함 하나를 잡았다). **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨고**, §9-15에서 **Delphi 자신이 유닛을 컴파일했다**(IDE, 한 번). **X2가 남긴 것은 자동화다** — 반복해서 도는 Delphi 하류 게이트는 아직 없다. 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
-| **X3** | **§4-5 · §4-9 후반 · §4-10** | **GitHub 웹 UI 전용.** 홈페이지 URL · Emails 체크박스 2개(*Keep my email addresses private* / *Block command line pushes…*) · Wiki 끄기·포크 PR 승인 정책 |
+| **X3** | **§4-9 후반 · §4-10 일부** | **여기서 할 수 있는 것은 했다(2026-09-07).** Wiki는 **껐다**(`gh repo edit --enable-wiki=false`, `has_wiki: false` 실측 — 위키 저장소는 만들어진 적조차 없어 잃은 내용이 없다). 홈페이지 URL은 **가리킬 것이 없어 두었다**(§4-5). **남은 것은 진짜 웹 UI 전용 둘뿐이다**: Emails 체크박스 2개(*Keep my email addresses private* / *Block command line pushes…*)와 포크 PR 승인 정책. **"넷 다 웹 UI 전용"이라고 적혀 있던 것은 틀렸다** — 둘은 `gh`로 됐다 |
 
 #### 재현하지 않은 채 남은 것 — 손대기 전에 재라
 

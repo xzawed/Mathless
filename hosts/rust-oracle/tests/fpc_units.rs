@@ -233,6 +233,17 @@ fn every_generated_unit_is_valid_object_pascal() {
 ///
 /// Closing that gap means putting an x86_64-capable Free Pascal on the runner. That is not
 /// done, and this is where a person finds out why instead of guessing.
+///
+/// **The split turns out to buy something nobody designed for.** The units test above runs
+/// in BOTH places and takes whatever target the local driver offers, so between them the
+/// generated `.pas` is compiled at two pointer widths on every push -- i386 on CI
+/// (chocolatey's package) and x86_64 here (winget's). Both lines are from real runs:
+///
+///     CI     GATE_FPC_OK: 19 ... target the driver's default (no x86_64 backend here)
+///     local  GATE_FPC_OK: 19 ... target x86_64
+///
+/// That is luck, not design. It is written down so a later change which makes both
+/// environments agree knows what it would be giving up.
 #[test]
 fn the_staged_pascal_host_builds_and_calls_the_modules() {
     let Some(fpc) = fpc() else {

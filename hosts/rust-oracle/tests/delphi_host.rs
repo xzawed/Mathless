@@ -65,6 +65,13 @@ fn dcc64() -> Option<PathBuf> {
 ///
 /// So the probe compiles three lines of Pascal and looks for the exe. `Err(reason)` means
 /// this toolchain cannot serve the gate, with a reason a person can act on.
+///
+/// **MSBuild is not a way around it, and that was measured rather than assumed.** Delphi
+/// ships MSBuild targets, so driving those instead is the obvious next idea. All four
+/// routes give the same line and the same empty output directory: `dcc64` directly,
+/// `dcc32` directly, and `msbuild` on a `.dproj` for Win64 and for Win32. The licence
+/// check lives in the compiler, not in the way it is invoked -- and MSBuild reports
+/// **exit 0** over it too, which is this same trap one layer up.
 fn dcc_can_compile(dcc: &Path) -> Result<(), String> {
     let probe = common::TempOut::new("dcc_probe");
     let src = probe.path().join("mlprobe.dpr");

@@ -349,11 +349,17 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
 
     // ---- the claim host.dpr makes about itself, which nothing was checking ----
     //
-    // Its header says the two official hosts differ in a way that matters: `hosts/c-host`
-    // resolves each symbol with LoadLibrary/GetProcAddress and can therefore DECLINE -- it
-    // prints LOAD_FAIL and returns 2. The generated `.pas` instead declares
-    // `external ML_MODULE`, bound when the PROGRAM loads, so a missing module kills the
-    // process before `begin`. That is why the fingerprint check in host.dpr is written as
+    // Its header says the two official hosts differ in a way that matters, and BOTH SIDES
+    // are measured (the first version of that paragraph described the C host from memory
+    // and was wrong about it). Park carrier.dll and run each:
+    //
+    //   hosts/c-host   78 lines of checks first, then `FAIL LoadLibraryA(...) -> error
+    //                  126`, counts a failure, carries on, exits 1
+    //   this host      0 bytes, exit 0xC0000135 (STATUS_DLL_NOT_FOUND)
+    //
+    // LoadLibrary makes a missing module DATA the C host can report. `external
+    // ML_MODULE` is bound when the PROGRAM loads, so this one cannot report anything --
+    // the loader refuses first. That is why host.dpr's fingerprint check is written as
     // "refuse to USE" rather than "refuse to load".
     //
     // It was a header comment with no guard. Measured now (2026-09-07): with one module

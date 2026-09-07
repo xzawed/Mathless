@@ -17,18 +17,23 @@
     - the load-time gate (abi version + interface fingerprint) works from Delphi too.
 
   HOW IT DIFFERS FROM THE C HOST, ON PURPOSE. `hosts/c-host` resolves every symbol
-  with LoadLibrary/GetProcAddress and can therefore DECLINE: it prints LOAD_FAIL and
-  returns 2. The generated `.pas` instead declares `external ML_MODULE`, bound when
-  the PROGRAM loads, so this host cannot decline to start -- the loader refuses first
-  and the process never reaches `begin`. That is why the fingerprint check below is
-  written as "refuse to USE" rather than "refuse to load".
+  with LoadLibrary/GetProcAddress, so a missing module is data it can report: it prints
+  `FAIL LoadLibraryA(<path>) -> error 126`, counts a failure and CARRIES ON. The
+  generated `.pas` instead declares `external ML_MODULE`, bound when the PROGRAM loads,
+  so this host cannot report anything -- the loader refuses first and the process never
+  reaches `begin`. That is why the fingerprint check below is written as "refuse to USE"
+  rather than "refuse to load".
 
-  MEASURED (2026-09-07), after this paragraph had stood as an unchecked assertion:
-  park one module and this host writes ZERO bytes and dies with 0xC0000135,
-  STATUS_DLL_NOT_FOUND. It is pinned now by
-  `the_staged_pascal_host_builds_and_calls_the_modules`, which renames a .dll away and
-  requires the output to be empty. No amount of C-host coverage reaches this axis,
-  because GetProcAddress binds nothing at load time.
+  BOTH SIDES MEASURED (2026-09-07), after this paragraph had stood unchecked -- and the
+  first version of it described the C host from memory and got it wrong. Park carrier.dll
+  and run each:
+
+    C host        78 lines of checks completed first, then FAIL LoadLibraryA ... 126, exit 1
+    this host     0 bytes of output, exit 0xC0000135 (STATUS_DLL_NOT_FOUND)
+
+  Pinned by `the_staged_pascal_host_builds_and_calls_the_modules`, which parks a .dll and
+  requires the output to be EMPTY. No amount of C-host coverage reaches this axis, because
+  GetProcAddress binds nothing at load time.
 
   BUILD (once dcc64 exists), from a directory holding the generated artifacts:
       dcc64 -U<artifact_dir> host.dpr
@@ -199,7 +204,7 @@ begin
     Only a Pascal host can ask this. The C header says `bool`, which C sizes for itself. }
   FillChar(BoolBytes, SizeOf(BoolBytes), $AA);
   Status := mlx_is_big(50, BigOut);
-  Check(Status = 0, 'is_big(50) succeeds');
+  Check(Status = 0, 'is_big(50) succeeds (precondition: on failure the out is untouched)');
   Check(BigOut = False, 'a false bool out-param reads as false, not as three bytes of noise');
   ByteCanary := True;
   for I := 1 to 3 do

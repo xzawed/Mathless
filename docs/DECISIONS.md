@@ -27,7 +27,7 @@
 | D18 | 모듈 포맷 = **표준 DLL/SO + 버전 export 심볼 + 모듈 전용 접두어**, 컨테이너는 P1 | 2026-08-28 | OS 로더 직접 사용. 선두 헤더는 PE/ELF 매직과 충돌해 로드 불가 |
 | D19 | 코드젠 = **잠정 rustc lowering** (비-Rust IR → `no_std`/`extern"C"`/`repr(C)` Rust → `cargo cdylib`) | 2026-08-28 | 설치된 유일 네이티브 툴, 스모크 E2 통과. Q6 **잠정** 해결(닫지 않음), C-emit 슬롯 유지 |
 | D20 | 컴파일러 구현 언어 = **Rust** | 2026-08-28 | 설치·검증됨, 컴파일러 작성·cdylib/FFI 유리 |
-| D21 | Phase 1 호스트 = **Rust kernel32 오라클(CI)** + D14 done-gate는 **C 쪽 완료**(2026-08-29), **Delphi 보류** | 2026-08-28 (2026-08-29 갱신) | 원래 "툴체인 없음"은 오진(MSVC는 설치돼 있었고 PATH에만 없었음). C 호스트로 수용 D 통과, `dcc64`는 실측 부재 — 상세는 아래 |
+| D21 | Phase 1 호스트 = **Rust kernel32 오라클(CI)** + D14 done-gate는 **C 쪽 완료**(2026-08-29) · **Delphi 쪽은 실측됐으나 게이트 없음**(2026-09-07) | 2026-08-28 (2026-08-29 · 2026-09-07 갱신) | 원래 "툴체인 없음"은 오진(MSVC는 설치돼 있었고 PATH에만 없었음). C 호스트로 수용 D 통과. Delphi는 IDE 빌드로 **한 번** 통과했고 자동화는 에디션이 막는다 — 상세는 아래 |
 | D22 | 1차 타깃 = **Windows x64** ("msvc"를 D18에 고정하지 않음) | 2026-08-28 | 현재 OS. export/CRT/unwind는 측정 |
 
 ## 확정 상세 (D14~D22)
@@ -80,7 +80,28 @@ Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/
   - **갱신(2026-08-29, 사용자 확인 후): done-gate의 C 쪽은 닫혔다.** MSVC `cl`(19.44)로 빌드한 C11 호스트가 산출 DLL을 `LoadLibrary`/`GetProcAddress`로 로드·호출해 스칼라·D17 에러 경로를 검증한다(수용 D, `hosts/c-host/host.c`, PR #43). 이 개발 머신과 GitHub `windows-latest` 러너 두 곳에서 통과.
   - **원래의 "툴체인 없음"은 오진이었다.** MSVC Build Tools 2022는 이미 설치돼 있었고 **PATH에만 없었다**(`vswhere`로 확인, `vcvars64.bat`으로 사용 가능). 판단이 `where cl` 한 번에 멈춰 있었다.
   - **Delphi는 여전히 미확보 — 이번엔 실측으로 확인했다.** `dcc64`/`fpc`가 PATH에 없고, 레지스트리의 `Embarcadero\Studio\15.0` 항목은 **제거된 설치의 잔재**이며(`BDS` 키 비어 있음, `C:\Program Files (x86)\Embarcadero` 부재), 디스크 탐색에도 Pascal 컴파일러가 없다. 따라서 생성 `.pas`는 **아무도 컴파일한 적이 없고** DRAFT를 유지한다.
-  - 결론: **D14의 공식 지원 쌍(Delphi+C) 중 C만 증명됐다.** 오라클 그린도, C 호스트 그린도 "Delphi에서 됐다"로 말하지 않는다.
+  - ~~결론: **D14의 공식 지원 쌍(Delphi+C) 중 C만 증명됐다.**~~ (2026-08-29 시점의 결론. 아래에서 갱신됐다.)
+  - **갱신(2026-09-07, 사용자 확인 후): Delphi 쪽도 실측됐다 — 단 한 번, 손으로, 게이트 없이.**
+    사용자가 Delphi IDE에서 `hosts/delphi-host/host.dpr`를 Win64로 빌드했다. **`dcc64`가 생성
+    `.pas`를 컴파일했고**(`discount.dcu`·`safe_div.dcu`·`carrier.dcu`), 호스트가 산출 DLL을 로드해
+    C ABI 너머로 호출했다 — **14개 검사 전부 통과, `GATE_DELPHI_OK`, exit 0.**
+    - **Delphi 산출물임을 먼저 증명했다.** 몇 분 전 같은 폴더에서 Free Pascal이 `host.exe`를
+      만들었으므로, 실행 파일 바이트에서 `Embarcadero`·`Delphi`·`System.SysUtils`를 확인하고
+      **FPC 마커가 하나도 없음**을 확인했다. `host.exe`는 x64, `.dproj`는 `Base_Win64`.
+    - **자동화는 여전히 없다.** 설치된 에디션이 **명령줄 빌드를 거부한다** — `dcc64`·`dcc32`·
+      `msbuild`(Win64/Win32) **네 경로 전부** *"does not support command line compiling"* 을 찍고
+      **아무것도 만들지 않으면서 exit 0** 이다(실측). 따라서 `MATHLESS_GATE_DELPHI`는 실행되지
+      않고 CI도 이것을 재현하지 못한다. **D14의 Delphi 절반은 증거가 있고 게이트가 없다.**
+    - **그래서 생성 `.pas`의 문구가 바뀌었다.** *"NOT yet verified against a Delphi host"* 가
+      거짓이 됐으므로, 이제 **한 번 검증됐다는 것과 반복되지 않는다는 것을 함께** 적고,
+      C 헤더와 같은 어법으로 **생성기**를 credit한다(그 파일이 아니라).
+    - **미측정으로 남는 것**: `UnicodeString` → `PAnsiChar` 조용한 오답. 호스트는 올바른 철자
+      (`PAnsiChar` 리터럴)만 쓰므로 틀린 경로를 밟지 않는다. Embarcadero 고유 성질이라 Free
+      Pascal로는 잴 수 없다.
+    - **Free Pascal이 그 사이를 메운다(§9-11·§9-14).** 생성 유닛 19개는 CI에서 `-Mdelphi -Sew`로
+      컴파일되고(`MATHLESS_GATE_FPC`), 스테이징 호스트는 x64 백엔드가 있는 곳에서 빌드·실행된다
+      (`MATHLESS_GATE_FPC_HOST`). **둘 다 Delphi 게이트가 아니다** — 방언 에뮬레이션이다.
+    - 근거: STATUS §9-12 ~ §9-15, PR #184.
 - **D22 타깃.** Windows x64 우선. **"msvc"를 D18에 못박지 않는다**(빌드 설정). export 집합·CRT/unwind는 측정.
 - **D23 산출물 라이선스(Q15 확정, 2026-09-02 사용자 승인).** `mlc`가 만든 것 — `.dll`·`.h`·`.pas`·`.lib`과
   중간 Rust — 은 **사용자의 것**이며, `LICENSE-APACHE`/`LICENSE-MIT`의 어떤 조건도 **산출물이라는

@@ -25,7 +25,7 @@
 - **C 데모 호스트 ✅**(MSVC `cl`, `hosts/c-host/host.c` — 수용 D 통과) · Delphi 데모 앱은 여전히 **BLOCKED**(`dcc64` 미확보)
 
 완료 조건: `discount(price, vip)` 같은 함수를 모듈에서 호출.
-→ 수용 A/B/C/**D 완료**(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시 · **실제 C 호스트 로드**). 수용 D의 Delphi 쪽은 `dcc64` 확보 전까지 미검증 — D14의 플래그십이므로 남은 절반이다. 세부는 `docs/phase1/WBS.md`, 현재 상태·잔여 작업은 `docs/STATUS.md`.
+→ 수용 A/B/C/**D 완료**(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시 · **실제 C 호스트 로드**). 수용 D는 **자동 게이트로서는 C 쪽만** 닫는다. Delphi 쪽은 2026-09-07에 **IDE 빌드로 한 번** 통과했고(14개 검사, `GATE_DELPHI_OK`), 가진 에디션이 명령줄 빌드를 거부해 **게이트가 되지 못한다** — D14의 플래그십이므로 남은 것은 그 자동화다. 세부는 `docs/phase1/WBS.md`, 현재 상태·잔여 작업은 `docs/STATUS.md`.
 
 ## Phase 2 — 상태와 계약
 

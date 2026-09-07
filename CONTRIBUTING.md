@@ -20,7 +20,8 @@ FreePascal.FreePascalCompiler`) compiles every generated `.pas` under `-Mdelphi 
 It is **not** the Delphi gate — D14 needs `dcc64`, that arm stays open, and the unit stays
 DRAFT. It proves only that the generated text is valid Object Pascal, the same kind of claim
 the C++ gate makes about the header. `MATHLESS_GATE_FPC=require` turns a missing compiler
-into a failure; CI does not set it. Check: `cargo test -p ml_oracle --test fpc_units --
+into a failure, and **CI sets it** — the windows job installs Free Pascal first, so the
+gate can never quietly stop running there. Locally it skips, loudly, when fpc is absent. Check: `cargo test -p ml_oracle --test fpc_units --
 --nocapture` prints `GATE_FPC_OK`.
 
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
@@ -145,8 +146,9 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 (`winget install FreePascal.FreePascalCompiler`)가 생성 `.pas` 전부를 `-Mdelphi -Sew`로
 컴파일한다. **Delphi 게이트가 아니다** — D14는 `dcc64`가 필요하고, 그 반쪽은 열려 있으며, 유닛은
 그대로 DRAFT다. 증명하는 것은 **생성 텍스트가 유효한 Object Pascal인가**까지이며, C++ 게이트가
-헤더에 대해 하는 주장과 같은 종류다. `MATHLESS_GATE_FPC=require`가 부재를 실패로 바꾸며 CI는
-설정하지 않는다. 확인: `cargo test -p ml_oracle --test fpc_units -- --nocapture`가
+헤더에 대해 하는 주장과 같은 종류다. `MATHLESS_GATE_FPC=require`가 부재를 실패로 바꾸고,
+**CI는 그것을 설정한다** — windows 잡이 Free Pascal을 먼저 설치하므로 거기서는 게이트가 조용히
+멈출 수 없다. 로컬에서는 fpc가 없으면 **시끄럽게** skip한다. 확인: `cargo test -p ml_oracle --test fpc_units -- --nocapture`가
 `GATE_FPC_OK`를 찍는다.
 
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티

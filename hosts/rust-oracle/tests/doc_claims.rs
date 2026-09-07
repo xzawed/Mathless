@@ -336,7 +336,7 @@ fn the_emitter_prefixes_error_constants_with_the_module() {
     .expect("the probe module must compile");
 
     let h = mlc::header::emit_c_header(&ir, "widget");
-    let pas = mlc::header::emit_delphi_unit(&ir, "widget", "widget");
+    let pas = mlc::header::emit_delphi_unit(&ir, "widget");
 
     for (binding, text, expected) in [
         ("the C header", &h, "#define ML_WIDGET_ERR_E_NEG 3"),

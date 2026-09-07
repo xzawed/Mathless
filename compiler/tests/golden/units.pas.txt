@@ -7,7 +7,7 @@
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_add;
+unit add;
 
 interface
 
@@ -43,7 +43,7 @@ end.
   UNVERIFIED (E1): no Delphi compiler has ever built this unit - see the DRAFT note
   above. This paragraph is from Embarcadero's documented behaviour, not a measurement.
   }
-unit Mlx_carrier;
+unit carrier;
 
 interface
 
@@ -72,7 +72,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_commission;
+unit commission;
 
 interface
 
@@ -97,7 +97,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_count_bounded;
+unit count_bounded;
 
 interface
 
@@ -120,7 +120,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_deduction;
+unit deduction;
 
 interface
 
@@ -147,7 +147,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_discount;
+unit discount;
 
 interface
 
@@ -170,7 +170,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_discount2;
+unit discount2;
 
 interface
 
@@ -193,7 +193,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_discount3;
+unit discount3;
 
 interface
 
@@ -216,7 +216,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_discount4;
+unit discount4;
 
 interface
 
@@ -239,7 +239,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_line_total;
+unit line_total;
 
 interface
 
@@ -262,7 +262,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_negate_if;
+unit negate_if;
 
 interface
 
@@ -285,7 +285,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_pack;
+unit pack;
 
 interface
 
@@ -311,7 +311,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_quote;
+unit quote;
 
 interface
 
@@ -350,7 +350,7 @@ end.
   UNVERIFIED (E1): no Delphi compiler has ever built this unit - see the DRAFT note
   above. This paragraph is from Embarcadero's documented behaviour, not a measurement.
   }
-unit Mlx_receipt;
+unit receipt;
 
 interface
 
@@ -381,7 +381,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_refund;
+unit refund;
 
 interface
 
@@ -406,7 +406,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_safe_div;
+unit safe_div;
 
 interface
 
@@ -443,7 +443,7 @@ end.
   UNVERIFIED (E1): no Delphi compiler has ever built this unit - see the DRAFT note
   above. This paragraph is from Embarcadero's documented behaviour, not a measurement.
   }
-unit Mlx_shapes;
+unit shapes;
 
 interface
 
@@ -480,7 +480,7 @@ end.
   DRAFT: NOT yet verified against a Delphi host (D14 load gate BLOCKED).
   Boolean is 1 byte to match the module ABI; do not use LongBool.
   }
-unit Mlx_sum_to;
+unit sum_to;
 
 interface
 
@@ -516,7 +516,7 @@ end.
   UNVERIFIED (E1): no Delphi compiler has ever built this unit - see the DRAFT note
   above. This paragraph is from Embarcadero's documented behaviour, not a measurement.
   }
-unit Mlx_vat;
+unit vat;
 
 interface
 

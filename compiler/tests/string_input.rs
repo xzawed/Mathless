@@ -173,7 +173,7 @@ fn the_bindings_say_const_char_and_pansichar() {
     let ir = compile_to_ir("export fn vat_rate(country: string) -> f64 { return 0.0 }")
         .expect("compile");
     let h = mlc::header::emit_c_header(&ir, "vat");
-    let pas = mlc::header::emit_delphi_unit(&ir, "Mlx_Vat", "vat");
+    let pas = mlc::header::emit_delphi_unit(&ir, "vat");
     assert!(h.contains("const char* /* country */"), "{h}");
     assert!(pas.contains("country: PAnsiChar"), "{pas}");
     assert!(

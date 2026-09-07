@@ -164,7 +164,7 @@ fn the_delphi_unit_uses_pbyte_and_ships_no_executable_code() {
     // DP-T3b: no `dcc64` exists here, so no Pascal statement may ship — a logic error in a
     // generated wrapper would be worse than a comment, because hosts would trust it.
     let ir = compile_to_ir(CARRIER).expect("compile");
-    let pas = mlc::header::emit_delphi_unit(&ir, "Mlx_Carrier", "carrier");
+    let pas = mlc::header::emit_delphi_unit(&ir, "carrier");
     assert!(pas.contains("ml_buf: PByte"), "{pas}");
     assert!(
         !pas.contains("out ml_buf"),
@@ -200,7 +200,7 @@ fn the_delphi_unit_uses_pbyte_and_ships_no_executable_code() {
 #[test]
 fn the_delphi_unit_declares_the_truncation_status_like_the_header_does() {
     let ir = compile_to_ir(CARRIER).expect("compile");
-    let pas = mlc::header::emit_delphi_unit(&ir, "Mlx_Carrier", "carrier");
+    let pas = mlc::header::emit_delphi_unit(&ir, "carrier");
     assert!(
         pas.contains("ML_ST_INSUFFICIENT_BUFFER = -1;"),
         "a Delphi host needs the name, not the number:\n{pas}"
@@ -218,7 +218,7 @@ fn the_delphi_unit_declares_the_truncation_status_like_the_header_does() {
     // ...and only for a module that can produce it. A module with no string return must not
     // carry a constant for a status none of its functions can return.
     let plain = compile_to_ir("export fn f(x: f64) -> f64 { return x }").expect("compile");
-    let plain_pas = mlc::header::emit_delphi_unit(&plain, "Mlx_M", "m");
+    let plain_pas = mlc::header::emit_delphi_unit(&plain, "m");
     assert!(
         !plain_pas.contains("ML_ST_INSUFFICIENT_BUFFER"),
         "an unrelated module must not carry it:\n{plain_pas}"

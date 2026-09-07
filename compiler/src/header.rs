@@ -392,9 +392,17 @@ fn join_c_params(parts: Vec<String>) -> String {
     }
 }
 
-/// Emit a Delphi import unit. `unit_name` is the Pascal unit name; `dll_name` the module
-/// name (without extension) used in the `external` clause.
-pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> String {
+/// Emit a Delphi import unit. `dll_name` is the module name without extension: it names the
+/// unit, names the file `mlc build` writes it to, and appears in every `external` clause.
+///
+/// **It used to take a separate `unit_name`, and nothing in production ever passed a
+/// different value.** Object Pascal requires the unit name to match the file name, so a
+/// second name could only ever be wrong -- and it was: four tests passed `Mlx_<name>`,
+/// including the golden that freezes the whole `.pas` corpus. The repository's only
+/// regression signal for those 535 lines was pinning a unit name `mlc build` has never
+/// written. Deleting the parameter is what makes that impossible rather than merely
+/// checked.
+pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
     let mut s = String::new();
 
     let _ = writeln!(
@@ -436,7 +444,7 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
         );
     }
     let _ = writeln!(s, "  }}");
-    let _ = writeln!(s, "unit {unit_name};");
+    let _ = writeln!(s, "unit {dll_name};");
     s.push('\n');
     let _ = writeln!(s, "interface");
     s.push('\n');

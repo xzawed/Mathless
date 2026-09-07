@@ -132,15 +132,23 @@ fn the_c_headers_are_frozen() {
 
 #[test]
 fn the_delphi_units_are_frozen() {
-    // Nothing covered the `.pas` corpus-wide before this. It is the binding for D14's
-    // flagship host and no compiler has ever read it, so freezing the text is the only
-    // regression signal available at all.
+    // The corpus-wide pin for the binding of D14's flagship host.
+    //
+    // It used to build each unit under a name of its own invention, `Mlx_<name>`, while
+    // `mlc build` writes `unit <name>` into `<name>.pas` -- so the repository's only
+    // regression signal for these 535 lines was freezing a unit name the tool has never
+    // emitted. Object Pascal requires the unit name to match the file name, so the invented
+    // one could only ever have been wrong. `emit_delphi_unit` no longer takes a name to
+    // invent; that is what keeps this honest, rather than an assertion added here.
+    //
+    // Freezing the text is no longer the ONLY signal either: since 9-11 Free Pascal compiles
+    // the real artifacts. This still catches what a compiler cannot -- a change in wording,
+    // ordering or a comment that a valid unit would carry just as happily.
     let mut all = String::from("// GOLDEN — the Delphi import unit for every examples/*.mls.\n");
     for (name, src) in examples() {
         let ir = compile_to_ir(&src).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let unit = format!("Mlx_{}", name);
         all.push_str(&banner(&name));
-        all.push_str(&mlc::header::emit_delphi_unit(&ir, &unit, &name));
+        all.push_str(&mlc::header::emit_delphi_unit(&ir, &name));
     }
     check_golden("units.pas.txt", &all);
 }

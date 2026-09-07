@@ -210,7 +210,7 @@ fn codegen_and_header_agree_on_the_value() {
         "header must declare the export:\n{h}"
     );
 
-    let p = mlc::header::emit_delphi_unit(&ir, "Mlx_Discount", "discount");
+    let p = mlc::header::emit_delphi_unit(&ir, "discount");
     assert!(
         p.contains(&format!(
             "ML_DISCOUNT_IFACE_HASH: UInt64 = UInt64(${expected:016X});"
@@ -254,7 +254,7 @@ fn the_delphi_fingerprint_does_not_rely_on_literal_type_inference() {
             continue; // not a case that can trip it
         }
         checked += 1;
-        let p = mlc::header::emit_delphi_unit(&ir, "Mlx_M", "m");
+        let p = mlc::header::emit_delphi_unit(&ir, "m");
         assert!(
             p.contains(&format!("UInt64(${hash:016X})")),
             "a fingerprint with the top bit set must be cast, not left to the compiler to              type — Free Pascal reads the bare literal as a negative Int64 and warns:

@@ -23,7 +23,7 @@
 [배포 모듈 .dll  (⏳ .so/ELF·.mll 컨테이너는 미구현)]
         │  C ABI
         ▼
-[호스트 앱: C ✅ 실측 / Delphi · C++ · C# P/Invoke ⏳ 미검증]
+[호스트 앱: C ✅ 게이트 / Delphi ✅ 1회 실측·게이트 없음 / C++ ✅ 헤더 컴파일만 / C# ⏳ 미검증]
 ```
 
 파일 확장자는 가칭이다. 확정 전.
@@ -122,6 +122,6 @@ MVP는 compiler 최소 + C ABI + Delphi 또는 C 호스트 하나면 충분하�
 | `hosts/rust-oracle/` | kernel32 로더 + PE export 리더 (테스트 오라클) | 있음 |
 | `examples/` | `.mls` 예제 | 있음 |
 | `backend/` · `packager/` | — | **미생성**(실측: 두 디렉터리 모두 없다) |
-| `host/delphi` | `hosts/delphi-host/` | **실재한다 — 그러나 아무것도 컴파일된 적 없다.** `host.dpr`와 skip-게이트 테스트가 있고 `dcc64`가 없어 대기 중이다(#111) |
+| `host/delphi` | `hosts/delphi-host/` | **실재하고, 2026-09-07에 처음 컴파일·실행됐다.** Delphi IDE(`dcc64`, Win64)가 한 번 — 14개 검사, `GATE_DELPHI_OK` — 그리고 Free Pascal이 게이트로 매번. **자동 Delphi 게이트는 없다**: 가진 에디션이 명령줄 빌드를 거부한다(STATUS §9-15) |
 | `hosts/c-host-link/` | — | **있음** — 헤더를 include하고 `.lib`을 링크하는 두 번째 소비 경로. `GetProcAddress`가 한 번도 나오지 않는다(#126) |
 | `host/c` | `hosts/c-host/` | **이름만 다르다 — 실재한다.** MSVC로 빌드하는 C11 호스트가 수용 D를 닫고 CI의 정본 잡이 이를 실행한다(`.github/workflows/ci.yml`). 이 표는 권장 경계를 기준으로 쓰였고, 실제 디렉터리는 `hosts/` 아래에 있다 |

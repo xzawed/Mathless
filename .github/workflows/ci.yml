@@ -52,10 +52,30 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Install Free Pascal
+        # The generated `.pas` is one of the four artifacts `mlc build` writes, and until
+        # this step existed NOTHING compiled it -- the golden file pinned 535 lines that no
+        # compiler of any kind had ever read. This is NOT the Delphi gate: D14 needs dcc64,
+        # which is a licensed product, and that arm stays open. It proves what the C++ gate
+        # proves about the header -- that the text is valid.
+        run: choco install freepascal -y --no-progress
       - name: Test (locked)
         # MATHLESS_GATE_D=require turns "no MSVC found" into a FAILURE instead of a skip, so
         # acceptance D (a real C host loading the module) can never silently stop running
         # here and leave a green tick behind. windows-latest ships the VC++ build tools.
         env:
           MATHLESS_GATE_D: require
+          # Same reason, for the same failure mode: a gate that skips can never go red, and
+          # the FPC gate caught a real defect on its first run (11 of 19 units warned).
+          MATHLESS_GATE_FPC: require
         run: cargo test --workspace --locked
+      - name: Say what the FPC gate measured
+        # cargo swallows a passing test's stdout, so `GATE_FPC_OK` never reaches the log
+        # above -- the same trap STATUS 5-5.7 records for guard warnings. This re-runs the
+        # one test with --nocapture so the log says WHICH fpc it used and WHICH target it
+        # compiled for. Chocolatey fetches the i386-only installer, so whether ppcrossx64 is
+        # present is a fact about the runner that nobody can read otherwise. Seconds, and
+        # everything is already built.
+        env:
+          MATHLESS_GATE_FPC: require
+        run: cargo test -p ml_oracle --test fpc_units --locked -- --nocapture

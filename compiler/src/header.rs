@@ -444,9 +444,16 @@ pub fn emit_delphi_unit(module: &IrModule, unit_name: &str, dll_name: &str) -> S
     let _ = writeln!(s, "  ML_MODULE = '{dll_name}.dll';");
     // Interface fingerprint of this unit — compare against ml_iface_hash after loading and
     // refuse the module when they differ (see the C header for the full note).
+    //
+    // The `UInt64(...)` cast is not decoration. A bare `$8120E9C099B13F94` is typed as a
+    // SIGNED Int64 first, so every fingerprint with the top bit set — measured: 11 of the 19
+    // example modules — makes Free Pascal 3.2.2 (`-Mdelphi`) warn "range check error while
+    // evaluating constants". The value it stores is still right (measured: all three
+    // spellings print 9304693843568967572); what breaks is a consumer building with
+    // warnings-as-errors, which is the standard this repo holds its own C header to.
     let _ = writeln!(
         s,
-        "  {}: UInt64 = ${:016X};",
+        "  {}: UInt64 = UInt64(${:016X});",
         iface_hash_macro(dll_name),
         crate::iface::fingerprint(module)
     );

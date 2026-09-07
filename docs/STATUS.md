@@ -1403,6 +1403,19 @@ X2가 적어 온 것: *골든이 535줄을 고정하는데 **컴파일하는 것
 > "로그가 기록한다"는 첫 판의 주장은 **로컬에서만 참이었다.** 그래서 windows 잡에 그 테스트
 > 하나만 `--nocapture`로 다시 도는 단계를 붙였다 — 이미 빌드돼 있어 몇 초이고, **choco 런너에
 > `ppcrossx64`가 있는지**는 그렇게 하지 않으면 아무도 읽을 수 없다.
+>
+> **그리고 답이 나왔다(2026-09-07 CI):**
+>
+> ```
+> GATE_FPC_OK: 19 generated units compiled with -Mdelphi -Sew,
+>              target the driver's default (no x86_64 backend here),
+>              using C:\tools\freepascal\bin\i386-win32\fpc.exe
+> ```
+>
+> 세 가지가 한 줄에 있다. **choco 패키지에는 `ppcrossx64`가 없다**(그래서 CI는 i386으로 잰다),
+> **탐색기가 choco 경로를 찾았다**(열거판이 놓치던 바로 그 경로), 그리고 **19개가 `-Sew`로
+> 컴파일된다.** 로컬은 winget 설치본이라 `x86_64`로 재므로, **두 타깃이 각각 한 번씩 돈다** —
+> 어느 쪽도 다른 쪽을 대신한다고 적지 않는다.
 
 **Delphi에 대해 이 절이 말하지 않는 것**: `dcc64`가 없으므로 `X1`은 **그대로 열려 있고**, 생성
 `.pas`의 DRAFT 표시도 그대로다. FPC의 `-Mdelphi`는 Delphi 방언을 흉내 낼 뿐이고, 유닛 주석이

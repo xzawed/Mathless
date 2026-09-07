@@ -1110,6 +1110,17 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 > ## ▶ 여기서 시작한다
 >
+> ### 2026-09-07 (6) 기준 — **`host.dpr`가 처음 컴파일·실행됐다 (§9-14)**
+>
+> Free Pascal `-Mdelphi`로 스테이징된 호스트를 빌드해 **실제 모듈을 로드·호출**했다. 14개 검사
+> 전부 통과(`GATE_DELPHI_OK`) — **컴파일해야만 보이는 결함 하나를 고친 뒤**다: 생성 유닛이 모두
+> `ml_iface_hash`를 선언하므로 한정 없는 이름이 **uses 절 마지막 유닛(carrier)** 에 묶였고,
+> 게이트가 carrier의 지문을 **discount의 상수**와 비교하고 있었다. C 호스트는 모듈 핸들마다
+> 해석하므로 이 함정을 만날 수 없다.
+>
+> ⚠ **여전히 Delphi 검증이 아니다.** `X1`은 열려 있고, `UnicodeString` → `PAnsiChar` 함정은
+> Embarcadero 고유라 FPC로 잴 수 없다. D14의 공식 쌍 중 증명된 것은 **C 하나** 그대로다.
+>
 > ### 2026-09-07 (5) 기준 — **Delphi가 설치됐고, X1은 다른 이유로 열려 있다 (§9-12)**
 >
 > `dcc64`가 생겼다. **그런데 이 `dcc64`는 명령줄 빌드를 거부하면서 exit 0을 낸다**(실측) —
@@ -1298,7 +1309,7 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 | # | 무엇 | 조건 |
 |---|---|---|
 | **X1** | **Delphi 검증 — D14의 나머지 절반** | **`dcc64`는 이제 설치돼 있다(2026-09-07). 그런데도 열려 있고, 이유가 바뀌었다**: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. ⚠ `host.dpr`는 **한 번도 컴파일된 적 없는 DRAFT**다 |
-| **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨다** — Free Pascal `-Mdelphi -Sew`가 유닛 19개를 전부 컴파일한다(그리고 결함 하나를 잡았다). **X2가 원하는 `dcc64`는 그대로 없다**. 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
+| **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **§9-14가 한 걸음 더 갔다** — FPC가 유닛을 컴파일할 뿐 아니라 `host.dpr`를 빌드해 **모듈을 로드·호출**한다(결함 하나를 잡았다). **X2가 원하는 것은 여전히 `dcc64`다.** **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨다** — Free Pascal `-Mdelphi -Sew`가 유닛 19개를 전부 컴파일한다(그리고 결함 하나를 잡았다). **X2가 원하는 `dcc64`는 그대로 없다**. 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
 | **X3** | **§4-5 · §4-9 후반 · §4-10** | **GitHub 웹 UI 전용.** 홈페이지 URL · Emails 체크박스 2개(*Keep my email addresses private* / *Block command line pushes…*) · Wiki 끄기·포크 PR 승인 정책 |
 
 #### 재현하지 않은 채 남은 것 — 손대기 전에 재라
@@ -1354,6 +1365,55 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **착수 전 한 가지.** §7-1이 규칙 넷을 적어 두었다. 그중 셋은 이번 세션에 실제로 어겨서 배운 것이다 —
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
+
+### 9-14. `host.dpr`가 처음으로 컴파일·실행됐다 (2026-09-07, E2) — **그리고 결함 하나가 나왔다**
+
+⚠ **이것은 Delphi 검증이 아니다.** D14는 `dcc64`를 지목하고 `X1`은 그대로 열려 있다. 여기서 쓴 것은
+**Free Pascal `-Mdelphi`**, 즉 방언 에뮬레이션이다. 생성 유닛이 경고하는 **`UnicodeString` →
+`PAnsiChar` 조용한 오답**은 Embarcadero 고유 성질이라 **여기서는 잴 수 없다.**
+
+**그런데도 값이 컸다.** §9-11의 유닛 컴파일은 *"텍스트가 파싱되는가"* 를 물었다. 이 절은 다른 질문을
+묻는다 — *"그 선언들이 실제로 출하되는 모듈을 서술하는가"*. 그리고 두 번째 질문이 첫 번째가 볼 수
+없는 것을 찾아냈다.
+
+**결함: 한정 없는 이름이 마지막 유닛에 묶인다.**
+
+생성 유닛은 **전부** `ml_module_abi_version`과 `ml_iface_hash`를 선언한다. `host.dpr`는
+`uses discount, safe_div, carrier`인데 게이트를 **한정 없이** 썼다:
+
+```
+한정 없는 ml_iface_hash   = C8D1191E339AAF6E   (carrier -- uses 절의 마지막)
+ML_DISCOUNT_IFACE_HASH    = 05697A6FAFD68344
+```
+
+**carrier의 지문을 discount의 상수와 비교하고 있었다** — 통과할 수 없는 코드다.
+`ml_module_abi_version`도 같은 버그였고, **모든 모듈이 1을 답하기 때문에 그것을 숨겼다.**
+
+**C 호스트는 이 결함을 만날 수 없다** — 모듈 핸들마다 심볼을 따로 해석하기 때문이다. 이것은
+**import-unit 결합 방식 고유의 함정**이고, 보려면 컴파일러가 필요했다. 파일이 **한 번도 컴파일된 적
+없었으므로** 아무도 볼 수 없었다.
+
+고친 뒤 결과(실측 전사, 수용 D와 같은 자격):
+
+```
+ok  discount.dll passed the abi + interface gate      ok  carrier_name(UPSN) succeeds
+ok  mlx_discount(100, true) = 90                      ok  carrier_name(UPSN) = "UPS Ground"
+ok  mlx_discount(100, false) = 100                    ok  one byte short is a failure
+ok  safe_div(10, 2) status = 0                        ok  needed is exact on the failure path
+ok  safe_div(10, 2) writes 5 through the out-param    ok  not one byte of the buffer was written
+ok  safe_div(1, 0) status = ML_..._ERR_DIV_BY_ZERO    ok  carrier_label(UPSN) succeeds
+ok  a failed call leaves the out-param untouched      ok  the declared out comes before the triple
+GATE_DELPHI_OK
+```
+
+**게이트로 만들었다** — `the_staged_pascal_host_builds_and_calls_the_modules`. 깨뜨림 확인:
+게이트를 원래 버그 모양으로 되돌리면 *"refuse: carrier fingerprint differs"* 로 빨개진다.
+x64 백엔드가 없으면 **시끄럽게 skip한다** — 이 호스트는 유닛과 달리 x64 DLL을 **로드**하므로 32비트
+빌드로는 애초에 돌지 않는다.
+
+> **그래서 오늘 증명된 것과 아닌 것**: C ABI 위에서 **실제로 로드하고 호출하는 Object Pascal
+> 호스트**가 처음 생겼다(스칼라·out 파라미터·Q12 버퍼 프로토콜·절단 의미·에러 코드까지). Delphi가
+> 그것을 똑같이 하는지는 **여전히 미검증**이고, D14의 공식 쌍 중 증명된 것은 **C 하나** 그대로다.
 
 ### 9-13. 골든이 `mlc build`가 내지 않는 유닛 이름을 고정하고 있었다 (2026-09-07, E2)
 

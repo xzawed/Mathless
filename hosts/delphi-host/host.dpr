@@ -1,11 +1,14 @@
 { Mathless Delphi host — the OTHER half of D14, staged and waiting for a compiler.
 
-  STATUS: THIS FILE HAS NEVER BEEN COMPILED. There is no `dcc64` on the development
-  machine (measured: absent from PATH, disk and registry), so every line below is a
-  DRAFT. It is written now so that the day a compiler arrives, verification is one
-  command away instead of one session away — that was the request that created it.
-  Do not cite it as evidence of anything until `MATHLESS_GATE_DELPHI=require` has
-  passed on a real machine.
+  STATUS: NEVER COMPILED BY DELPHI. Free Pascal 3.2.2 in -Mdelphi mode built and ran it
+  on 2026-09-07 and every check passed (GATE_DELPHI_OK), which is the first time any
+  compiler had read this file -- and that run found a real defect in it, see GateOk below.
+  It is NOT the Delphi verification: -Mdelphi is a dialect emulation, D14 names dcc64, and
+  the dcc64 on this machine is an edition that refuses command-line builds (measured:
+  dcc64, dcc32 and msbuild all print "does not support command line compiling", write
+  nothing, and exit 0). So the UnicodeString-vs-PAnsiChar hazard the generated units warn
+  about is still unmeasured -- it is an Embarcadero property that Free Pascal cannot show.
+  Do not cite this file as Delphi evidence until MATHLESS_GATE_DELPHI=require has passed.
 
   WHAT IT IS MEANT TO PROVE, once it compiles and runs:
     - the GENERATED `.pas` units are valid Object Pascal and their declarations are
@@ -51,20 +54,48 @@ end;
 
 { The load-time gate, in the shape SPEC-iface-hash section 2.6 requires of a host.
   Unlike the C host this runs AFTER the loader has already bound the imports, so it
-  gates USE rather than loading — see the header note. }
+  gates USE rather than loading -- see the header note.
+
+  EVERY name below is qualified, and that is not style. Each generated unit declares the
+  same two reserved functions, so an unqualified `ml_iface_hash` binds to whichever unit
+  came LAST in the uses clause. The first version of this file did exactly that: it
+  compared carrier's fingerprint against ML_DISCOUNT_IFACE_HASH, which can never match.
+  Measured the day this file was first compiled at all (2026-09-07):
+
+      unqualified ml_iface_hash = C8D1191E339AAF6E   (carrier, the last unit used)
+      ML_DISCOUNT_IFACE_HASH    = 05697A6FAFD68344
+
+  `ml_module_abi_version` had the same bug and hid it, because every module answers 1.
+  The C host cannot meet this at all: it resolves per module handle. It is a hazard of
+  the import-unit binding, so the gate now covers every module used, not one. }
 function GateOk(ExpectedAbi: LongWord): Boolean;
+
+  function OneModule(const Name: string; Abi: LongWord; Hash, Pinned: UInt64): Boolean;
+  begin
+    Result := True;
+    if Abi <> ExpectedAbi then
+    begin
+      Writeln('  refuse: ', Name, ' abi ', Abi, ', host built for ', ExpectedAbi);
+      Result := False;
+    end;
+    if Hash <> Pinned then
+    begin
+      Writeln('  refuse: ', Name, ' fingerprint differs from the one its unit pins');
+      Result := False;
+    end;
+  end;
+
 begin
   Result := True;
-  if ml_module_abi_version <> ExpectedAbi then
-  begin
-    Writeln('  refuse: module abi ', ml_module_abi_version, ', host built for ', ExpectedAbi);
+  if not OneModule('discount', discount.ml_module_abi_version, discount.ml_iface_hash,
+                   ML_DISCOUNT_IFACE_HASH) then
     Result := False;
-  end;
-  if ml_iface_hash <> ML_DISCOUNT_IFACE_HASH then
-  begin
-    Writeln('  refuse: interface fingerprint differs from the one this unit pins');
+  if not OneModule('safe_div', safe_div.ml_module_abi_version, safe_div.ml_iface_hash,
+                   ML_SAFE_DIV_IFACE_HASH) then
     Result := False;
-  end;
+  if not OneModule('carrier', carrier.ml_module_abi_version, carrier.ml_iface_hash,
+                   ML_CARRIER_IFACE_HASH) then
+    Result := False;
 end;
 
 var

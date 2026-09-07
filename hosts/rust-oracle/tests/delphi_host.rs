@@ -233,8 +233,9 @@ fn the_staged_host_exists_and_says_it_is_unverified() {
         .join("host.dpr");
     let text = std::fs::read_to_string(&host_dpr).expect("staged Delphi host");
     assert!(
-        text.contains("NEVER BEEN COMPILED"),
-        "the staged host must keep saying it is unverified: {}",
+        text.contains("NEVER COMPILED BY DELPHI"),
+        "the staged host must keep saying Delphi has not verified it -- Free Pascal \r
+         building it (9-14) is a different claim and must not be allowed to erase this one: {}",
         host_dpr.display()
     );
     assert!(

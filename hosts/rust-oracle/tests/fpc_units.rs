@@ -69,6 +69,27 @@ fn every_generated_unit_is_valid_object_pascal() {
         return;
     };
 
+    // Preflight: the units import an x64 module, so the gate compiles for x86_64. On a
+    // Windows install the driver is 32-bit and reaches x64 through `ppcrossx64`, which some
+    // packagings omit. Ask before compiling nineteen files, so a missing backend reads as
+    // itself rather than as nineteen mysterious failures.
+    let mut probe = Command::new(&fpc);
+    probe.arg("-Px86_64").arg("-iTP");
+    let probe_out = common::output_with_deadline(
+        probe,
+        std::time::Duration::from_secs(60),
+        "fpc -Px86_64 -iTP",
+    );
+    let target = String::from_utf8_lossy(&probe_out.stdout)
+        .trim()
+        .to_string();
+    assert_eq!(
+        target, "x86_64",
+        "this fpc cannot target x86_64 (reported {target:?}) — the x64 cross compiler \
+         (ppcrossx64) is missing from this installation, so the units cannot be compiled \
+         for the ABI they import"
+    );
+
     let work = common::TempOut::new("gate_fpc");
     let units_dir = work.path().join("units");
     std::fs::create_dir_all(&units_dir).expect("create unit output dir");

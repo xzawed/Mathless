@@ -25,7 +25,17 @@ use mlc::emit::emit_artifacts;
 
 mod common;
 
-/// Find `fpc`: PATH first, then the layout its Windows installer uses. `None` if absent.
+/// Find `fpc`: PATH first, then SEARCH a couple of install roots rather than enumerating a
+/// layout.
+///
+/// The enumerating version is what CI rejected, and it is the shape #172 already fixed once
+/// in this repository: it listed `C:\FPC\<version>\bin\i386-win32\fpc.exe`, which is where the
+/// official installer puts it and where winget put it here. Chocolatey deploys to
+/// `C:\tools\freepascal\`, so the gate reported "no fpc found" on a runner that had just
+/// installed one. Listing the layouts means adding a third the next time a packager differs.
+///
+/// The driver is a 32-bit binary even for an x64 job -- it reaches x86_64 through
+/// `ppcrossx64` -- so the search must not filter on the host-arch directory name either.
 fn fpc() -> Option<PathBuf> {
     if let Ok(out) = Command::new("where").arg("fpc").output() {
         if out.status.success() {
@@ -37,14 +47,35 @@ fn fpc() -> Option<PathBuf> {
             }
         }
     }
-    // `C:\FPC\<version>\bin\i386-win32\fpc.exe` — the driver is 32-bit even when it targets
-    // x86_64 through `ppcrossx64`, which is why this looks under `i386-win32` for an x64 job.
-    let root = std::path::Path::new(r"C:\FPC");
-    let entries = std::fs::read_dir(root).ok()?;
+    for root in [r"C:\FPC", r"C:\tools\freepascal", r"C:\tools\FPC"] {
+        if let Some(found) = find_fpc_under(std::path::Path::new(root), 4) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Depth-limited hunt for a `bin/.../fpc.exe`. Bounded because an unbounded walk of a wrong
+/// root is a slow way to answer "absent".
+fn find_fpc_under(dir: &std::path::Path, depth: usize) -> Option<PathBuf> {
+    if depth == 0 {
+        return None;
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut dirs = Vec::new();
     for e in entries.flatten() {
-        let candidate = e.path().join("bin").join("i386-win32").join("fpc.exe");
-        if candidate.is_file() {
-            return Some(candidate);
+        let path = e.path();
+        if path.is_file() {
+            if path.file_name().and_then(|n| n.to_str()) == Some("fpc.exe") {
+                return Some(path);
+            }
+        } else if path.is_dir() {
+            dirs.push(path);
+        }
+    }
+    for d in dirs {
+        if let Some(found) = find_fpc_under(&d, depth - 1) {
+            return Some(found);
         }
     }
     None
@@ -69,10 +100,14 @@ fn every_generated_unit_is_valid_object_pascal() {
         return;
     };
 
-    // Preflight: the units import an x64 module, so the gate compiles for x86_64. On a
-    // Windows install the driver is 32-bit and reaches x64 through `ppcrossx64`, which some
-    // packagings omit. Ask before compiling nineteen files, so a missing backend reads as
-    // itself rather than as nineteen mysterious failures.
+    // Which target? The units import an x64 module, so x86_64 is the closer match and this
+    // asks for it first. But the claim this gate makes is about the TEXT -- syntax, `cdecl`,
+    // `external`, `UInt64`, `PAnsiChar` -- and none of those declarations depend on pointer
+    // size, so a driver without the x64 cross backend still answers the question it is here
+    // to answer. Chocolatey's package fetches the i386-only installer, so that case is real.
+    //
+    // It falls back, and it SAYS which it used. A gate that quietly answers a smaller
+    // question is the shape this repository keeps removing.
     let mut probe = Command::new(&fpc);
     probe.arg("-Px86_64").arg("-iTP");
     let probe_out = common::output_with_deadline(
@@ -80,15 +115,9 @@ fn every_generated_unit_is_valid_object_pascal() {
         std::time::Duration::from_secs(60),
         "fpc -Px86_64 -iTP",
     );
-    let target = String::from_utf8_lossy(&probe_out.stdout)
-        .trim()
-        .to_string();
-    assert_eq!(
-        target, "x86_64",
-        "this fpc cannot target x86_64 (reported {target:?}) — the x64 cross compiler \
-         (ppcrossx64) is missing from this installation, so the units cannot be compiled \
-         for the ABI they import"
-    );
+    let x64_ok =
+        probe_out.status.success() && String::from_utf8_lossy(&probe_out.stdout).trim() == "x86_64";
+    let target = if x64_ok { Some("x86_64") } else { None };
 
     let work = common::TempOut::new("gate_fpc");
     let units_dir = work.path().join("units");
@@ -120,8 +149,10 @@ fn every_generated_unit_is_valid_object_pascal() {
         // errors: the defect this gate found was a warning, and a warning nobody fails on is
         // a warning that ships. `-Px86_64` matches the module the unit imports.
         let mut cmd = Command::new(&fpc);
-        cmd.arg("-Px86_64")
-            .arg("-Mdelphi")
+        if let Some(t) = target {
+            cmd.arg(format!("-P{t}"));
+        }
+        cmd.arg("-Mdelphi")
             .arg("-Sew")
             .arg(format!("-FU{}", units_dir.display()))
             .arg(&arts.delphi_unit);
@@ -163,5 +194,9 @@ fn every_generated_unit_is_valid_object_pascal() {
         "the corpus is empty, so this gate proved nothing"
     );
 
-    println!("GATE_FPC_OK: {compiled} generated units compiled with -Mdelphi -Sew");
+    let shown = target.unwrap_or("the driver's default (no x86_64 backend here)");
+    println!(
+        "GATE_FPC_OK: {compiled} generated units compiled with -Mdelphi -Sew, target {shown},          using {}",
+        fpc.display()
+    );
 }

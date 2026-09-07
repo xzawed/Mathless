@@ -342,4 +342,54 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
         "the staged Pascal host did not pass under Free Pascal:\n{stdout}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
+
+    // ---- the claim host.dpr makes about itself, which nothing was checking ----
+    //
+    // Its header says the two official hosts differ in a way that matters: `hosts/c-host`
+    // resolves each symbol with LoadLibrary/GetProcAddress and can therefore DECLINE -- it
+    // prints LOAD_FAIL and returns 2. The generated `.pas` instead declares
+    // `external ML_MODULE`, bound when the PROGRAM loads, so a missing module kills the
+    // process before `begin`. That is why the fingerprint check in host.dpr is written as
+    // "refuse to USE" rather than "refuse to load".
+    //
+    // It was a header comment with no guard. Measured now (2026-09-07): with one module
+    // renamed away the host produces ZERO bytes of output and dies with 0xC0000135,
+    // STATUS_DLL_NOT_FOUND. The emptiness is the load-bearing part -- it is what "never
+    // reaches begin" means -- so that is what is asserted. The status is printed as evidence
+    // rather than pinned: it is Windows', not ours, and a future one changing it would break
+    // this test for a reason that has nothing to do with the claim.
+    //
+    // This is an axis only the Pascal host can exercise. No amount of C-host coverage reaches
+    // it, because GetProcAddress binds nothing at load time.
+    let hidden = work.path().join("carrier.dll");
+    let parked = work.path().join("carrier.dll.parked");
+    std::fs::rename(&hidden, &parked).expect("park carrier.dll");
+
+    let mut missing = Command::new(&exe);
+    missing
+        .arg(mlc::ML_MODULE_ABI_VERSION.to_string())
+        .current_dir(work.path());
+    let dead = common::output_with_deadline(
+        missing,
+        std::time::Duration::from_secs(120),
+        "host.exe with a module removed",
+    );
+    std::fs::rename(&parked, &hidden).expect("restore carrier.dll");
+
+    let said = String::from_utf8_lossy(&dead.stdout);
+    assert!(
+        said.is_empty(),
+        "the host reached `begin` with a module missing, so the imports are NOT bound at load \
+         time and host.dpr's header is wrong about how it differs from the C host. It \
+         printed:\n{said}"
+    );
+    assert!(
+        !dead.status.success(),
+        "the host exited 0 with a module missing"
+    );
+    println!(
+        "GATE_FPC_HOST_LOADBIND_OK: a missing module killed the host before `begin` (no \
+         output, status {})",
+        dead.status
+    );
 }

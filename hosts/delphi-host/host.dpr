@@ -17,12 +17,18 @@
     - the load-time gate (abi version + interface fingerprint) works from Delphi too.
 
   HOW IT DIFFERS FROM THE C HOST, ON PURPOSE. `hosts/c-host` resolves every symbol
-  with LoadLibrary/GetProcAddress. The generated `.pas` instead declares
-  `external ML_MODULE`, which Delphi binds when the PROGRAM loads. So this host
-  cannot decline to start when a module is missing — the loader refuses first, and
-  the process never reaches `begin`. That is a real difference in the binding story
-  between the two official hosts, and it is the reason the fingerprint check below
-  is written as "refuse to USE" rather than "refuse to load".
+  with LoadLibrary/GetProcAddress and can therefore DECLINE: it prints LOAD_FAIL and
+  returns 2. The generated `.pas` instead declares `external ML_MODULE`, bound when
+  the PROGRAM loads, so this host cannot decline to start -- the loader refuses first
+  and the process never reaches `begin`. That is why the fingerprint check below is
+  written as "refuse to USE" rather than "refuse to load".
+
+  MEASURED (2026-09-07), after this paragraph had stood as an unchecked assertion:
+  park one module and this host writes ZERO bytes and dies with 0xC0000135,
+  STATUS_DLL_NOT_FOUND. It is pinned now by
+  `the_staged_pascal_host_builds_and_calls_the_modules`, which renames a .dll away and
+  requires the output to be empty. No amount of C-host coverage reaches this axis,
+  because GetProcAddress binds nothing at load time.
 
   BUILD (once dcc64 exists), from a directory holding the generated artifacts:
       dcc64 -U<artifact_dir> host.dpr

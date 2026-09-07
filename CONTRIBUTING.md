@@ -13,6 +13,7 @@ each item is what a gate actually shells out to.
 |---|---|---|
 | **Rust**, via `rustup` | `rust-toolchain.toml` pins **1.97.1** and rustup installs it on first `cargo` run. Bumping it means re-measuring the size proxies — the pin says so. | `rustc --version` |
 | **MSVC Build Tools**, "Desktop development with C++" | acceptance D compiles and runs two real C hosts. It supplies `cl`, `link`, `dumpbin`, and the `vswhere.exe` + `vcvars64.bat` the tests use to find them. | `cargo test -p ml_oracle --test c_host` prints `GATE_D_OK` |
+| **Windows SDK 10.0.20348 or newer** (the floor is Microsoft's fix version, not something measured here; what was measured is the pair below) | acceptance D compiles the generated header after `<windows.h>` with `/W4 /WX /std:c11`. On **10.0.19041** that combination fails inside Microsoft's own `winbase.h(9572)` with **C5105** ("macro expansion producing 'defined'"), which the conforming C11 preprocessor turns on; Microsoft fixed the header in 20348. Measured 2026-09-07: 19041 fails two tests, 26100 passes. A newer SDK usually arrives with the workload above — check it if those two are the only red ones. | `cl /W4 /WX /std:c11` on a file that only `#include <windows.h>` exits 0 |
 
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
 Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
@@ -130,6 +131,7 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 |---|---|---|
 | **Rust** (`rustup`) | `rust-toolchain.toml`이 **1.97.1**로 고정한다. 첫 `cargo` 실행 때 rustup이 받아 온다. 올리면 크기 프록시를 다시 재야 하고, 핀 주석이 그렇게 적어 두었다. | `rustc --version` |
 | **MSVC Build Tools** — "C++를 사용한 데스크톱 개발" | 수용 D가 실제 C 호스트 **둘**을 컴파일·실행한다. `cl`·`link`·`dumpbin`, 그리고 테스트가 그것들을 찾는 데 쓰는 `vswhere.exe`·`vcvars64.bat`을 준다. | `cargo test -p ml_oracle --test c_host`가 `GATE_D_OK`를 찍는다 |
+| **Windows SDK 10.0.20348 이상** (바닥값은 MS가 고친 버전이지 여기서 재 것이 아니다 — 재 것은 아래 두 지점이다) | 수용 D는 생성 헤더를 `<windows.h>` **뒤에** 놓고 `/W4 /WX /std:c11`로 컴파일한다. **10.0.19041**에서는 그 조합이 마이크로소프트 자신의 `winbase.h(9572)`에서 **C5105**("macro expansion producing 'defined'")로 깨진다 — C11 적합 전처리기가 켜는 경고이고, MS가 20348에서 헤더를 고쳤다. 실측(2026-09-07): 19041은 테스트 2건 실패, 26100은 통과. 보통 위 워크로드와 함께 최신 SDK가 들어오니, **저 둘만 빨갛다면 여기를 보라.** | `#include <windows.h>` 한 줄짜리 파일이 `cl /W4 /WX /std:c11`에서 exit 0 |
 
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
 Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).

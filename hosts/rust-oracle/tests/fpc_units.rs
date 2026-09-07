@@ -221,12 +221,24 @@ fn every_generated_unit_is_valid_object_pascal() {
 /// `C8D1191E339AAF6E` against `05697A6FAFD68344`. `ml_module_abi_version` had the same bug
 /// and hid it, because every module answers 1. The C host cannot meet this: it resolves per
 /// module handle. It is a hazard of the import-unit binding, and it took a compiler to see.
+///
+/// **Its own variable, `MATHLESS_GATE_FPC_HOST`, and CI does not set it.** Unlike the units
+/// above, this host LOADS x64 modules, so it needs an fpc that can target x86_64.
+/// Chocolatey's package -- what the windows job installs -- fetches the i386-only installer;
+/// measured on CI: `GATE_FPC_OK ... target the driver's default (no x86_64 backend here)`.
+/// Requiring it there would paint the build red over a runner's packaging, so it requires
+/// nothing and skips loudly instead. It still RUNS wherever the backend exists, which is
+/// every full local run here (the official win32.and.win64 installer carries ppcrossx64,
+/// and that is the one winget installs).
+///
+/// Closing that gap means putting an x86_64-capable Free Pascal on the runner. That is not
+/// done, and this is where a person finds out why instead of guessing.
 #[test]
 fn the_staged_pascal_host_builds_and_calls_the_modules() {
     let Some(fpc) = fpc() else {
-        if std::env::var("MATHLESS_GATE_FPC").as_deref() == Ok("require") {
+        if std::env::var("MATHLESS_GATE_FPC_HOST").as_deref() == Ok("require") {
             panic!(
-                "MATHLESS_GATE_FPC=require but fpc was not found — the staged Pascal host \
+                "MATHLESS_GATE_FPC_HOST=require but fpc was not found — the staged Pascal host \
                  cannot be built by anything."
             );
         }
@@ -277,9 +289,9 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
     if !(probe_out.status.success()
         && String::from_utf8_lossy(&probe_out.stdout).trim() == "x86_64")
     {
-        if std::env::var("MATHLESS_GATE_FPC").as_deref() == Ok("require") {
+        if std::env::var("MATHLESS_GATE_FPC_HOST").as_deref() == Ok("require") {
             panic!(
-                "MATHLESS_GATE_FPC=require but this fpc has no x86_64 backend — the staged \
+                "MATHLESS_GATE_FPC_HOST=require but this fpc has no x86_64 backend — the staged \
                  host loads x64 modules, so a 32-bit build could not run them. Install a \
                  Free Pascal that carries ppcrossx64."
             );

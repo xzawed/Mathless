@@ -27,7 +27,7 @@ gate can never quietly stop running there. Locally it skips, loudly, when fpc is
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
 Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
 
-`dcc64` (Delphi) is **deliberately absent**, on every machine so far. The generated `.pas` has
+`dcc64` (Delphi) was absent on every machine until 2026-09-07, and where it exists now its edition **refuses command-line builds** — it prints "does not support command line compiling", writes nothing, and exits 0. D14's Delphi arm needs an edition whose `dcc64` compiles from a command line. The generated `.pas` has
 never been compiled by anything, D14's Delphi arm is BLOCKED, and the unit ships marked DRAFT.
 Installing it would not be "fixing the setup" — it would be closing a gate, which is a piece of
 work with a SPEC in front of it.
@@ -154,7 +154,7 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
 Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
 
-`dcc64`(Delphi)는 **의도적으로 없다**. 지금까지 어느 머신에도 없었고, 생성 `.pas`는 무엇에도 컴파일된
+`dcc64`(Delphi)는 2026-09-07까지 어느 머신에도 없었고, 지금 있는 것은 에디션이 **명령줄 빌드를 거부한다**("does not support command line compiling"을 찍고 아무것도 만들지 않으면서 exit 0). D14의 Delphi 반쪽은 **명령줄 컴파일이 되는 에디션**을 필요로 한다. 그리고 생성 `.pas`는 무엇에도 컴파일된
 적이 없으며, D14의 Delphi 쪽은 BLOCKED이고 유닛은 DRAFT로 나간다. 이것을 설치하는 것은 "환경을
 맞추는 일"이 아니라 **게이트를 닫는 작업**이며, 앞에 SPEC이 선다.
 

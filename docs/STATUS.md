@@ -1110,6 +1110,16 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 > ## ▶ 여기서 시작한다
 >
+> ### 2026-09-07 (5) 기준 — **Delphi가 설치됐고, X1은 다른 이유로 열려 있다 (§9-12)**
+>
+> `dcc64`가 생겼다. **그런데 이 `dcc64`는 명령줄 빌드를 거부하면서 exit 0을 낸다**(실측) —
+> Community Edition이 막는 기능이다. 그래서 **X1이 기다리는 것은 설치가 아니라 에디션**이다.
+> 설치 전에는 알 수 없던 사실이므로, 이 설치는 조건을 정확하게 만든 측정이다.
+>
+> **그리고 그것이 게이트의 결함을 드러냈다**: 게이트가 종료 코드를 믿어, 참인 메시지로 엉뚱한
+> 것(`host.exe` NotFound)을 가리켰다. 전제를 **"파일이 있다"에서 "컴파일할 수 있다"로** 옮기고,
+> 거부 사유를 이름으로 부르게 했다. `host.dpr`는 **여전히 한 번도 컴파일된 적 없다.**
+>
 > ### 2026-09-07 (4) 기준 — **생성 `.pas`가 처음으로 컴파일됐다 (§9-11)**
 >
 > Delphi(`dcc64`)는 라이선스 제품이라 여기서 받을 수 없다. **Free Pascal 3.2.2**는 winget으로
@@ -1287,7 +1297,7 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 | # | 무엇 | 조건 |
 |---|---|---|
-| **X1** | **Delphi 검증 — D14의 나머지 절반** | `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. ⚠ `host.dpr`는 **한 번도 컴파일된 적 없는 DRAFT**다 |
+| **X1** | **Delphi 검증 — D14의 나머지 절반** | **`dcc64`는 이제 설치돼 있다(2026-09-07). 그런데도 열려 있고, 이유가 바뀌었다**: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. ⚠ `host.dpr`는 **한 번도 컴파일된 적 없는 DRAFT**다 |
 | **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨다** — Free Pascal `-Mdelphi -Sew`가 유닛 19개를 전부 컴파일한다(그리고 결함 하나를 잡았다). **X2가 원하는 `dcc64`는 그대로 없다**. 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
 | **X3** | **§4-5 · §4-9 후반 · §4-10** | **GitHub 웹 UI 전용.** 홈페이지 URL · Emails 체크박스 2개(*Keep my email addresses private* / *Block command line pushes…*) · Wiki 끄기·포크 PR 승인 정책 |
 
@@ -1344,6 +1354,47 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **착수 전 한 가지.** §7-1이 규칙 넷을 적어 두었다. 그중 셋은 이번 세션에 실제로 어겨서 배운 것이다 —
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
+
+### 9-12. Delphi가 설치됐고, X1은 **다른 이유로** 여전히 열려 있다 (2026-09-07, E2)
+
+`dcc64`가 이 머신에 생겼다 — `C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\dcc64.exe`.
+**그런데 X1은 닫히지 않았고, 닫히지 않은 이유가 바뀌었다.**
+
+```
+> dcc64 -E<dir> -N<dir> hello.dpr
+This version of the product does not support command line compiling.
+EXITCODE=0
+hello.exe: 없음
+```
+
+**명령줄 빌드는 Community Edition이 막는 기능이다.** 그러므로 X1이 기다리는 것은 이제
+**설치가 아니라 그것을 허용하는 에디션**이다. 이 사실은 설치 전에는 알 수 없었다 — 그래서
+설치는 헛수고가 아니라 **조건을 정확하게 만든 측정**이다.
+
+**그리고 설치가 게이트의 결함을 드러냈다.**
+
+게이트는 `compile.status.success()`를 믿고 있었다. exit 0이므로 그 단언은 **통과**했고, 두 문장
+뒤에서 `host.exe`를 실행하려다 `NotFound`로 죽었다 — **참인 메시지가 엉뚱한 것을 가리키는**,
+이 저장소가 반복해서 걷어내는 그 모양이다. 종료 코드는 증거가 아니다. **산출물이 증거다.**
+
+고친 것은 둘이다:
+
+1. **전제를 "파일이 있다"에서 "컴파일할 수 있다"로 옮겼다.** `dcc_can_compile`이 세 줄짜리
+   Pascal을 실제로 빌드해 보고 exe가 나오는지 본다. 못 하면 **컴파일러가 없을 때와 같은 취급** —
+   이 게이트에게 빌드 못 하는 `dcc64`는 없는 것과 정확히 같은 값이기 때문이다.
+2. **거부 사유를 이름으로 부른다.** 그 한 줄을 만나는 사람이 라이선스 문제라는 것을 즉시 알도록,
+   *"EDITION limit, not a defect here"* 라고 적는다.
+
+두 갈래 모두 실측했다:
+
+```
+require 없이   GATE_DELPHI_SKIPPED: ... EDITION limit ...   스위트 초록 (3 passed)
+require 걸고   FAILED: MATHLESS_GATE_DELPHI=require, and ... EDITION limit ...
+```
+
+> **`host.dpr`는 여전히 한 번도 컴파일된 적 없는 DRAFT다.** 생성 `.pas`도 Delphi가 본 적 없다
+> (Free Pascal은 §9-11에서 통과했지만 그것은 **다른 질문**이다). D14의 공식 쌍 중 증명된 것은
+> 여전히 **C 하나**다.
 
 ### 9-11. 생성 `.pas`가 처음으로 컴파일됐다 (2026-09-07, E2) — **결함 하나를 바로 잡아냈다**
 

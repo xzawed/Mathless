@@ -54,6 +54,53 @@ fn dcc64() -> Option<PathBuf> {
     None
 }
 
+/// Can this `dcc64` actually compile from a command line?
+///
+/// Finding the file is not the precondition; producing an artifact is. Measured on a real
+/// install (2026-09-07): a dcc64 whose licence forbids command-line builds prints
+/// "This version of the product does not support command line compiling", writes nothing,
+/// and **exits 0**. Treating the file as the precondition made the gate fail on a machine
+/// that simply cannot run it, and fail two statements later with `NotFound` on host.exe --
+/// a true message about the wrong thing.
+///
+/// So the probe compiles three lines of Pascal and looks for the exe. `Err(reason)` means
+/// this toolchain cannot serve the gate, with a reason a person can act on.
+fn dcc_can_compile(dcc: &Path) -> Result<(), String> {
+    let probe = common::TempOut::new("dcc_probe");
+    let src = probe.path().join("mlprobe.dpr");
+    std::fs::write(&src, "program mlprobe;\nbegin\nend.\n").expect("write probe source");
+
+    let mut cmd = Command::new(dcc);
+    cmd.arg(format!("-E{}", probe.path().display()))
+        .arg(format!("-N{}", probe.path().display()))
+        .arg(&src)
+        .current_dir(probe.path());
+    let out = common::output_with_deadline(cmd, std::time::Duration::from_secs(120), "dcc64 probe");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    if probe.path().join("mlprobe.exe").is_file() {
+        return Ok(());
+    }
+    if text.contains("does not support command line compiling") {
+        return Err(format!(
+            "this dcc64 refuses command-line builds -- an EDITION limit, not a defect here. \
+             Community Edition compiles only from the IDE; D14 needs an edition whose dcc64 \
+             builds from a command line. It exited {}: {}",
+            out.status,
+            text.trim()
+        ));
+    }
+    Err(format!(
+        "this dcc64 exited {} and produced no probe executable, so it cannot build the \
+         gate host either: {}",
+        out.status,
+        text.trim()
+    ))
+}
+
 #[test]
 fn a_real_delphi_host_loads_and_calls_the_module() {
     let Some(dcc) = dcc64() else {
@@ -72,6 +119,23 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         );
         return;
     };
+
+    // Found is not enough -- it has to be able to compile. See `dcc_can_compile`.
+    if let Err(reason) = dcc_can_compile(&dcc) {
+        if std::env::var("MATHLESS_GATE_DELPHI").as_deref() == Ok("require") {
+            panic!("MATHLESS_GATE_DELPHI=require, and {}", reason);
+        }
+        // Loud, and not a pass -- the same shape as a missing compiler, because for this
+        // gate a dcc64 that cannot build is exactly as useful as no dcc64 at all.
+        println!(
+            "GATE_DELPHI_SKIPPED: a dcc64 was found at {} but cannot serve the gate. {} \
+             The generated .pas is STILL unverified by Delphi and D14\u{27}s Delphi arm remains \
+             open.",
+            dcc.display(),
+            reason
+        );
+        return;
+    }
 
     let work = common::TempOut::new("gate_delphi");
 
@@ -103,14 +167,39 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         .current_dir(work.path())
         .output()
         .expect("run dcc64");
-    assert!(
-        compile.status.success(),
-        "dcc64 failed to build the Delphi host against the generated units:\n{}\n{}",
+    let compile_out = format!(
+        "{}{}",
         String::from_utf8_lossy(&compile.stdout),
         String::from_utf8_lossy(&compile.stderr)
     );
+    assert!(
+        compile.status.success(),
+        "dcc64 failed to build the Delphi host against the generated units:\n{compile_out}"
+    );
 
+    // The exit code is not the evidence. Measured on a real install (2026-09-07): a dcc64
+    // whose licence does not permit command-line builds prints one line, compiles NOTHING,
+    // and **exits 0**. Trusting the status made this gate report `NotFound` on host.exe two
+    // statements later -- a true message about the wrong thing, which is the shape this
+    // repository keeps removing. So the artifact is the assertion, and the one licence
+    // message anyone will actually hit is named rather than left to be decoded.
     let exe = work.path().join("host.exe");
+    assert!(
+        !compile_out.contains("does not support command line compiling"),
+        "this dcc64 refuses command-line builds -- an EDITION limit, not a defect in the \
+         module or the generated units. Community Edition builds only from the IDE, and \
+         D14 needs an edition whose dcc64 compiles from a command line. It exited {} and \
+         wrote no {}:\n{compile_out}",
+        compile.status,
+        exe.display()
+    );
+    assert!(
+        exe.is_file(),
+        "dcc64 exited {} but produced no {} -- an exit code cannot be taken as proof that \
+         anything was built:\n{compile_out}",
+        compile.status,
+        exe.display()
+    );
     let run = Command::new(&exe)
         .arg(mlc::ML_MODULE_ABI_VERSION.to_string())
         .current_dir(work.path())

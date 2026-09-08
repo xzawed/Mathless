@@ -24,8 +24,9 @@ against the **generated** headers, runs the resulting executable, and asserts on
 
 ## What it does NOT prove
 
-- **Anything about Delphi.** There is no `dcc64` here; the generated `.pas` has never been
-  compiled and keeps its DRAFT note. D14's official pair is Delphi + C, and only C is proven.
+- **Anything about Delphi.** A Delphi IDE build compiled and called the generated `.pas`
+  once (2026-09-07), but the edition here refuses command-line builds, so there is no
+  Delphi GATE. D14's official pair is Delphi + C, and only C is gated.
 - Any C compiler other than MSVC, and any target other than Windows x64 (D22).
 - That a *third-party* host rejects an ABI major-version mismatch. This host does reject —
   `gate()` refuses on a version or fingerprint mismatch before the first call, on every

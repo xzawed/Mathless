@@ -224,3 +224,51 @@ pub fn output_with_deadline(
 
 /// The liveness deadline for one child in an acceptance gate.
 pub const CHILD_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The modules `hosts/delphi-host/host.dpr` imports, read from its own `uses` clause.
+///
+/// Two tests build that host -- the Delphi gate and the Free Pascal one -- and each used to
+/// carry its own hand-written list of examples to emit. They drifted the moment a unit was
+/// added: `shapes` went into the host and into the FPC test, and the Delphi test kept
+/// emitting three. **Nothing caught it, because that gate cannot run on this machine** -- a
+/// gate that is blocked cannot tell you it is also broken.
+///
+/// So the list is derived from the host instead of repeated beside it. Adding a `uses` entry
+/// now emits that example in both tests, and naming one with no `examples/<name>.mls` fails
+/// loudly rather than at some later Pascal compile.
+pub fn delphi_host_units() -> Vec<String> {
+    // workspace_root, not CARGO_MANIFEST_DIR: this file exists twice, once per crate, and a
+    // relative path from the manifest would resolve to two different places. The identity
+    // test requires the copies to be byte-identical, so the path has to be too.
+    let dpr = workspace_root()
+        .join("hosts")
+        .join("delphi-host")
+        .join("host.dpr");
+    let text =
+        std::fs::read_to_string(&dpr).unwrap_or_else(|e| panic!("read {}: {e}", dpr.display()));
+
+    let after = text
+        .split_once(
+            "
+uses",
+        )
+        .unwrap_or_else(|| panic!("no `uses` clause in {}", dpr.display()))
+        .1;
+    let clause = after
+        .split_once(';')
+        .unwrap_or_else(|| panic!("unterminated `uses` clause in {}", dpr.display()))
+        .0;
+
+    let units: Vec<String> = clause
+        .split(',')
+        .map(|u| u.trim().to_string())
+        // SysUtils is the RTL, not one of ours.
+        .filter(|u| !u.is_empty() && u != "SysUtils")
+        .collect();
+    assert!(
+        !units.is_empty(),
+        "parsed no module units out of the `uses` clause in {}",
+        dpr.display()
+    );
+    units
+}

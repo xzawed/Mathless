@@ -146,16 +146,23 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
 
     let work = common::TempOut::new("gate_delphi");
 
-    // The same artifacts `mlc build` gives a user — the units this host `uses`.
-    for (src, name) in [
-        (
-            include_str!("../../../examples/discount.mls") as &str,
-            "discount",
-        ),
-        (include_str!("../../../examples/safe_div.mls"), "safe_div"),
-        (include_str!("../../../examples/carrier.mls"), "carrier"),
-    ] {
-        emit_artifacts(src, name, &work).unwrap_or_else(|e| panic!("emit {name}: {e}"));
+    // The units this host `uses`, read from the host rather than listed again here.
+    //
+    // This list WAS hand-written, and it went stale the day `shapes` was added to host.dpr:
+    // the FPC test emitted four units and this one still emitted three, so the day dcc64
+    // arrives this gate would have failed to find a unit -- for a reason that has nothing to
+    // do with Delphi. Nothing caught it, because **a gate that cannot run cannot tell you it
+    // is also broken.** Deriving the list is what stops that from happening again.
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples");
+    for unit in common::delphi_host_units() {
+        let src =
+            std::fs::read_to_string(examples.join(format!("{unit}.mls"))).unwrap_or_else(|e| {
+                panic!("host.dpr uses `{unit}`, but examples/{unit}.mls could not be read: {e}")
+            });
+        emit_artifacts(&src, &unit, &work).unwrap_or_else(|e| panic!("emit {unit}: {e}"));
     }
 
     let host_dpr = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -233,9 +240,10 @@ fn the_staged_host_exists_and_says_it_is_unverified() {
         .join("host.dpr");
     let text = std::fs::read_to_string(&host_dpr).expect("staged Delphi host");
     assert!(
-        text.contains("NEVER COMPILED BY DELPHI"),
-        "the staged host must keep saying Delphi has not verified it -- Free Pascal \r
-         building it (9-14) is a different claim and must not be allowed to erase this one: {}",
+        text.contains("NOT GATED"),
+        "the staged host must keep saying its Delphi verification does not repeat. A \
+         Delphi IDE build DID compile and run it (9-15), and a guard that still demanded \
+         \"NEVER COMPILED BY DELPHI\" was forcing the file to state something false: {}",
         host_dpr.display()
     );
     assert!(

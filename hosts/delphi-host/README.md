@@ -1,6 +1,13 @@
 # `hosts/delphi-host` — staged, unverified
 
-**Nothing in this directory has ever been compiled.** `dcc64` is not on this machine
+**This directory has been compiled and run — once, by hand.** A Delphi IDE build (Win64,
+`dcc64`) built `host.dpr` against the generated units and it passed every check
+(`GATE_DELPHI_OK`, 2026-09-07). There is still no Delphi GATE: the edition available refuses
+command-line builds, so `MATHLESS_GATE_DELPHI` cannot run. Free Pascal builds and runs this
+host on every full local test, which is a different compiler answering a smaller question.
+
+~~`dcc64` is not on this machine~~ (superseded; the sentence below is the 2026-09-02 record)
+`dcc64` is not on this machine
 (measured: absent from PATH and disk; the registry's `Embarcadero\Studio\15.0` key is the
 leftover of a removed install). `host.dpr` is a **draft**, written ahead of time so that the
 day a Delphi compiler arrives, verifying D14's other half is one command rather than one

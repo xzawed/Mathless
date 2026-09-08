@@ -4,7 +4,8 @@
 //! What this test asserts is E2: the files exist, the `.dll` is a real PE, and the
 //! `.h`/`.pas` match the text contract. It does NOT itself compile or load them. A real C
 //! host does that in `hosts/rust-oracle/tests/c_host.rs` (acceptance D); the `.pas` has
-//! never been compiled, because there is no `dcc64` here. Building the DLL needs `cargo`,
+//! not gated by Delphi -- an IDE build compiled and called one once (9-15), and the
+//! edition here refuses command-line builds. Building the DLL needs `cargo`,
 //! so the test is Windows-gated like the other acceptance tests.
 #![cfg(windows)]
 

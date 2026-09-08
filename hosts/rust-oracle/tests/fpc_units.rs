@@ -262,22 +262,19 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
 
     let work = common::TempOut::new("gate_fpc_host");
 
-    // The three modules the staged host `uses`, emitted exactly as `mlc build` writes them:
-    // the units and the DLLs land in one directory, which is what the host's `external`
-    // clauses need at load time.
-    for (src, name) in [
-        (
-            include_str!("../../../examples/discount.mls") as &str,
-            "discount",
-        ),
-        (include_str!("../../../examples/safe_div.mls"), "safe_div"),
-        (include_str!("../../../examples/carrier.mls"), "carrier"),
-        // `shapes` is here for the one-byte Boolean check: it is the only example with a
-        // `-> bool!` export, and a bool OUT-param is where a wrong Pascal declaration
-        // turns a module's false into a host's true.
-        (include_str!("../../../examples/shapes.mls"), "shapes"),
-    ] {
-        emit_artifacts(src, name, work.path()).unwrap_or_else(|e| panic!("emit {name}: {e}"));
+    // The units this host `uses`, read from the host itself rather than listed again
+    // here. Two tests build it and each used to keep its own list; they drifted the
+    // moment `shapes` was added (see `common::delphi_host_units`).
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples");
+    for unit in common::delphi_host_units() {
+        let src =
+            std::fs::read_to_string(examples.join(format!("{unit}.mls"))).unwrap_or_else(|e| {
+                panic!("host.dpr uses `{unit}`, but examples/{unit}.mls could not be read: {e}")
+            });
+        emit_artifacts(&src, &unit, work.path()).unwrap_or_else(|e| panic!("emit {unit}: {e}"));
     }
 
     let host_dpr = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

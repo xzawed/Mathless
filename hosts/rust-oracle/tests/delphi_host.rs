@@ -108,6 +108,56 @@ fn dcc_can_compile(dcc: &Path) -> Result<(), String> {
     ))
 }
 
+/// Which of the two build paths this run will use.
+enum Builder {
+    Dcc,
+    Bds(PathBuf),
+}
+
+/// `bds.exe`, the IDE launcher, next to a `dcc64` that refuses command-line builds.
+///
+/// **The IDE can build what the command-line compiler will not, and `-b` drives it.**
+/// Measured 2026-09-09 on the Community Edition here: `bds.exe -b host.dproj` produced a
+/// Win64 `host.exe` in 11-13 seconds, EXITED ON ITS OWN with code 0, and the host then
+/// printed GATE_DELPHI_OK. The binary carries `Embarcadero` and `System.SysUtils` markers,
+/// so it is dcc64's output reached a different way -- not Free Pascal's.
+///
+/// That correction matters more than the mechanism. STATUS said the Delphi arm needed a
+/// paid edition, and it said so from ONE generalisation: dcc64, dcc32 and msbuild are all
+/// blocked (measured, 9-12), therefore automation is impossible (never measured). The IDE's
+/// own build path was never tried.
+///
+/// What it still does NOT give is CI: this needs Delphi installed and an interactive desktop
+/// session, and the runner has neither.
+fn bds_exe(dcc: &Path) -> Option<PathBuf> {
+    // dcc64 lives in <Studio>\<ver>in; so does bds.exe.
+    let candidate = dcc.parent()?.join("bds.exe");
+    candidate.is_file().then_some(candidate)
+}
+
+/// Build `host.dproj` through the IDE. `Err` carries what a person can act on.
+fn build_with_bds(bds: &Path, dproj: &Path, exe: &Path) -> Result<String, String> {
+    let mut cmd = Command::new(bds);
+    cmd.arg("-b").arg(dproj);
+    let out = common::output_with_deadline(cmd, std::time::Duration::from_secs(300), "bds -b");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The artifact is the evidence, not the status -- the same rule this file already learned
+    // from a dcc64 that exits 0 and writes nothing.
+    if exe.is_file() {
+        return Ok(text);
+    }
+    Err(format!(
+        "bds.exe -b exited {} and produced no {}: {}",
+        out.status,
+        exe.display(),
+        text.trim()
+    ))
+}
+
 #[test]
 fn a_real_delphi_host_loads_and_calls_the_module() {
     let Some(dcc) = dcc64() else {
@@ -127,21 +177,39 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         return;
     };
 
-    // Found is not enough -- it has to be able to compile. See `dcc_can_compile`.
+    // Found is not enough -- it has to be able to BUILD. Two ways it can:
+    //
+    //   dcc64 <file>              fast, and what an unrestricted edition offers
+    //   bds.exe -b <project>      the IDE's own build, which Community Edition permits
+    //
+    // The second was missing until 2026-09-09, and its absence is why STATUS said this arm
+    // needed a paid edition. That came from one generalisation: dcc64, dcc32 and msbuild are
+    // all blocked (measured), therefore automation is impossible (never measured). Measured
+    // now: `bds.exe -b host.dproj` builds a Win64 host.exe in about 12 seconds, exits 0 on
+    // its own, and the host prints GATE_DELPHI_OK.
+    let mut builder = Builder::Dcc;
     if let Err(reason) = dcc_can_compile(&dcc) {
-        if std::env::var("MATHLESS_GATE_DELPHI").as_deref() == Ok("require") {
-            panic!("MATHLESS_GATE_DELPHI=require, and {}", reason);
+        match bds_exe(&dcc) {
+            Some(bds) => {
+                println!(
+                    "GATE_DELPHI_VIA_IDE: {reason}\n  falling back to {} -b, which this",
+                    bds.display()
+                );
+                builder = Builder::Bds(bds);
+            }
+            None => {
+                if std::env::var("MATHLESS_GATE_DELPHI").as_deref() == Ok("require") {
+                    panic!("MATHLESS_GATE_DELPHI=require, and {reason} There is no bds.exe beside",);
+                }
+                println!(
+                    "GATE_DELPHI_SKIPPED: a dcc64 was found at {} but cannot serve the gate, \
+                     and there is no bds.exe beside it to build through the IDE instead. {}",
+                    dcc.display(),
+                    reason
+                );
+                return;
+            }
         }
-        // Loud, and not a pass -- the same shape as a missing compiler, because for this
-        // gate a dcc64 that cannot build is exactly as useful as no dcc64 at all.
-        println!(
-            "GATE_DELPHI_SKIPPED: a dcc64 was found at {} but cannot serve the gate. {} \
-             The generated .pas is STILL unverified by Delphi and D14\u{27}s Delphi arm remains \
-             open.",
-            dcc.display(),
-            reason
-        );
-        return;
     }
 
     let work = common::TempOut::new("gate_delphi");
@@ -171,47 +239,49 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         .join("host.dpr");
     assert!(host_dpr.exists(), "missing {}", host_dpr.display());
 
-    // `-U<dir>` puts the generated units on the unit search path; `-E<dir>` sends the exe
-    // next to the DLLs, which the implicit imports need at load time.
-    let compile = Command::new(&dcc)
-        .arg(format!("-U{}", work.path().display()))
-        .arg(format!("-E{}", work.path().display()))
-        .arg(format!("-N{}", work.path().display()))
-        .arg(&host_dpr)
-        .current_dir(work.path())
-        .output()
-        .expect("run dcc64");
-    let compile_out = format!(
-        "{}{}",
-        String::from_utf8_lossy(&compile.stdout),
-        String::from_utf8_lossy(&compile.stderr)
-    );
-    assert!(
-        compile.status.success(),
-        "dcc64 failed to build the Delphi host against the generated units:\n{compile_out}"
-    );
-
-    // The exit code is not the evidence. Measured on a real install (2026-09-07): a dcc64
-    // whose licence does not permit command-line builds prints one line, compiles NOTHING,
-    // and **exits 0**. Trusting the status made this gate report `NotFound` on host.exe two
-    // statements later -- a true message about the wrong thing, which is the shape this
-    // repository keeps removing. So the artifact is the assertion, and the one licence
-    // message anyone will actually hit is named rather than left to be decoded.
+    // The artifact is the evidence, not the exit code. Measured 2026-09-07: a dcc64 whose
+    // licence forbids command-line builds prints one line, compiles NOTHING and exits 0.
+    // Trusting the status made this gate die two statements later on `NotFound` for
+    // host.exe -- a true message about the wrong thing.
     let exe = work.path().join("host.exe");
-    assert!(
-        !compile_out.contains("does not support command line compiling"),
-        "this dcc64 refuses command-line builds -- an EDITION limit, not a defect in the \
-         module or the generated units. Community Edition builds only from the IDE, and \
-         D14 needs an edition whose dcc64 compiles from a command line. It exited {} and \
-         wrote no {}:\n{compile_out}",
-        compile.status,
-        exe.display()
-    );
+
+    let compile_out = match &builder {
+        Builder::Dcc => {
+            // `-U<dir>` puts the generated units on the search path; `-E<dir>` sends the exe
+            // next to the DLLs, which the load-time imports need.
+            let mut cmd = Command::new(&dcc);
+            cmd.arg(format!("-U{}", work.path().display()))
+                .arg(format!("-E{}", work.path().display()))
+                .arg(format!("-N{}", work.path().display()))
+                .arg(&host_dpr)
+                .current_dir(work.path());
+            let out =
+                common::output_with_deadline(cmd, std::time::Duration::from_secs(300), "dcc64");
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            )
+        }
+        Builder::Bds(bds) => {
+            // The IDE builds a PROJECT, so host.dpr is copied beside the artifacts with its
+            // .dproj -- that file is the one Delphi itself generated for this host, and it
+            // carries no machine-specific path (checked before committing it).
+            let staged_dpr = work.path().join("host.dpr");
+            let staged_dproj = work.path().join("host.dproj");
+            std::fs::copy(&host_dpr, &staged_dpr).expect("stage host.dpr");
+            std::fs::copy(host_dpr.with_extension("dproj"), &staged_dproj)
+                .expect("stage host.dproj");
+            build_with_bds(bds, &staged_dproj, &exe).unwrap_or_else(|e| panic!("{e}"))
+        }
+    };
+    // The build path was chosen ABOVE by asking whether each one works, so reaching here
+    // with no executable means the chosen one failed for some other reason -- and the
+    // artifact, not a status, is what says so.
     assert!(
         exe.is_file(),
-        "dcc64 exited {} but produced no {} -- an exit code cannot be taken as proof that \
-         anything was built:\n{compile_out}",
-        compile.status,
+        "the build produced no {} -- no exit code is taken as proof that anything was \
+         built:\n{compile_out}",
         exe.display()
     );
     let run = Command::new(&exe)

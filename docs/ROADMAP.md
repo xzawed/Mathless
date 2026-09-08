@@ -22,7 +22,7 @@
 - 네이티브 출력 (IR → `no_std`/`extern "C"` Rust → `cargo` cdylib) ✅
 - C ABI 로더 (Rust kernel32 오라클) ✅
 - `mlc build` CLI → `.dll` + `.h`(C 헤더) + `.pas`(Delphi unit) + `.lib`(MSVC 임포트 라이브러리) **네 가지** 산출 ✅
-- **C 데모 호스트 ✅**(MSVC `cl`, `hosts/c-host/host.c` — 수용 D 통과) · Delphi 데모 앱은 **한 번 통과했고 게이트는 없다**(2026-09-07, IDE 빌드 — 에디션이 명령줄 빌드를 거부)
+- **C 데모 호스트 ✅**(MSVC `cl`, `hosts/c-host/host.c` — 수용 D 통과) · Delphi 데모 앱 **✅ 게이트**(2026-09-09, §9-20 — `bds.exe -b`로 IDE 빌드를 불러 `MATHLESS_GATE_DELPHI`가 통과한다. **CI는 아직 아니다**)
 
 완료 조건: `discount(price, vip)` 같은 함수를 모듈에서 호출.
 → 수용 A/B/C/**D 완료**(컴파일 · 오라클 로드·호출 · export/크기 보호 프록시 · **실제 C 호스트 로드**). 수용 D는 **자동 게이트로서는 C 쪽만** 닫는다. Delphi 쪽은 2026-09-07에 **IDE 빌드로 한 번** 통과했고(14개 검사, `GATE_DELPHI_OK`), 가진 에디션이 명령줄 빌드를 거부해 **게이트가 되지 못한다** — D14의 플래그십이므로 남은 것은 그 자동화다. 세부는 `docs/phase1/WBS.md`, 현재 상태·잔여 작업은 `docs/STATUS.md`.

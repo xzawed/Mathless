@@ -1121,6 +1121,17 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 > ## ▶ 여기서 시작한다
 >
+> ### 2026-09-09 기준 — **`MATHLESS_GATE_DELPHI`이 통과한다 (§9-20)**
+>
+> **X1의 로컬 자동화가 닫혔다.** `dcc64`가 명령줄 빌드를 거부하면 게이트가 옆의 `bds.exe -b`로
+> 넘어가 IDE 빌드를 부른다 — Community Edition에서 **된다**. 17개 검사, `GATE_DELPHI_OK`, 16.8초.
+> 네 게이트를 전부 required로 걸고 **448 pass / 0 fail**.
+>
+> ⚠ **CI는 아니다** — Delphi 설치와 대화형 데스크톱 세션이 필요하고 러너에 둘 다 없다.
+>
+> **이것을 연 것은 사용자의 질문이다.** 나는 네 경로(`dcc64`·`dcc32`·msbuild x2)를 재고 다섯
+> 번째(IDE의 `-b`)를 **재지 않은 채** "자동화 불가"라고 적었다(§9-20).
+>
 > ### 2026-09-07 (8) 기준 — **다음 순서가 정해졌다 (§9-16)**
 >
 > **▶ 다음은 (a) Pascal 호스트를 고유 축으로 키우는 것이다.** 개수가 아니라 축이다 —
@@ -1347,7 +1358,7 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 | # | 무엇 | 조건 |
 |---|---|---|
-| **X1** | **Delphi 검증 — D14의 나머지 절반** | **실체는 2026-09-07에 측정됐다(§9-15): IDE에서 `dcc64`로 빌드한 Win64 호스트가 모듈을 로드·호출해 14개 검사 전부 통과(`GATE_DELPHI_OK`).** 그래도 X1은 **자동화가 없어** 열려 있다 — 가진 에디션이 명령줄 빌드를 거부한다: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. (§9-15가 그 한 줄을 실제로 못 돌린 이유를 적는다) |
+| **X1** | **Delphi 검증 — D14의 나머지 절반** | **실체는 2026-09-07에 측정됐다(§9-15): IDE에서 `dcc64`로 빌드한 Win64 호스트가 모듈을 로드·호출해 14개 검사 전부 통과(`GATE_DELPHI_OK`).** **로컬 자동화도 2026-09-09에 닫혔다(§9-20)**: `dcc64`가 거부하면 게이트가 `bds.exe -b`로 IDE 빌드를 부르고, CE에서 통과한다(`MATHLESS_GATE_DELPHI=require` 초록). **남은 것은 CI뿐이다** — 러너에 Delphi도 대화형 세션도 없다. 그전 사유: 가진 에디션이 명령줄 빌드를 거부한다: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. (§9-15가 그 한 줄을 실제로 못 돌린 이유를 적는다) |
 | **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **§9-14가 한 걸음 더 갔다** — FPC가 유닛을 컴파일할 뿐 아니라 `host.dpr`를 빌드해 **모듈을 로드·호출**한다(결함 하나를 잡았다). **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨고**, §9-15에서 **Delphi 자신이 유닛을 컴파일했다**(IDE, 한 번). **X2가 남긴 것은 자동화다** — 반복해서 도는 Delphi 하류 게이트는 아직 없다. 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
 | **X3** | **§4-9 후반 · §4-10 일부** | **여기서 할 수 있는 것은 했다(2026-09-07).** Wiki는 **껐다**(`gh repo edit --enable-wiki=false`, `has_wiki: false` 실측 — 위키 저장소는 만들어진 적조차 없어 잃은 내용이 없다). 홈페이지 URL은 **가리킬 것이 없어 두었다**(§4-5). **남은 것은 진짜 웹 UI 전용 둘뿐이다**: Emails 체크박스 2개(*Keep my email addresses private* / *Block command line pushes…*)와 포크 PR 승인 정책. **"넷 다 웹 UI 전용"이라고 적혀 있던 것은 틀렸다** — 둘은 `gh`로 됐다 |
 
@@ -1404,6 +1415,45 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **착수 전 한 가지.** §7-1이 규칙 넷을 적어 두었다. 그중 셋은 이번 세션에 실제로 어겨서 배운 것이다 —
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
+
+### 9-20. **`MATHLESS_GATE_DELPHI`이 통과한다** (2026-09-09, E2) — 내가 안 재고 단정한 것
+
+사용자가 물었다: *"Delphi IDE를 Claude가 호출해서 구동하는 건 어려운가?"*
+**나는 그 질문을 스스로 하지 않았다** — 자동화에 유료 에디션이 필요하다고 이미 결론냈기 때문이다.
+**그 결론은 측정이 아니라 일반화였다.**
+
+내가 잰 것: `dcc64` · `dcc32` · `msbuild`(Win64/Win32) **넷 다 거부**(§9-12).
+내가 **재지 않고** 덧붙인 것: *"그러므로 자동화는 불가능하다."*
+**IDE 자신의 빌드 경로는 한 번도 시험하지 않았다.**
+
+```
+bds.exe -b host.dproj
+  → host.exe (Win64, Embarcadero/System.SysUtils 마커) 11~13초
+  → bds가 스스로 종료, exit code 0
+  → host.exe 1  →  17개 검사 전부 ok  →  GATE_DELPHI_OK
+```
+
+**Community Edition에서 된다.** 막혀 있는 것은 명령줄 **컴파일러**이지 IDE의 **빌드**가 아니고,
+`-b`가 그것을 부른다. 재현 확인(삭제 후 재빌드 13초), 산출물 실체 확인(x64 + Delphi 마커, FPC 마커 0).
+
+**게이트를 그렇게 배선했다.** `dcc_can_compile`이 거부를 만나면 이제 포기하지 않고 옆의 `bds.exe`로
+넘어간다(`GATE_DELPHI_VIA_IDE`). IDE는 **프로젝트**를 빌드하므로 `hosts/delphi-host/host.dproj`를
+저장소에 넣었다 — 어제 Delphi 자신이 만든 파일이고, 넣기 전에 **머신 고유 경로가 없음을 확인**했다.
+
+```
+MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host
+  → 3 passed, GATE_DELPHI_OK, 16.79초
+```
+
+**깨뜨림 확인**: 호스트의 검사 하나를 뒤집으면 게이트가 빨개진다.
+그리고 네 게이트를 **전부 required**로 걸고 전체 스위트가 **448 pass / 0 fail**이다.
+
+> **CI는 여전히 아니다.** 이것은 Delphi 설치와 **대화형 데스크톱 세션**을 요구하고 러너에는 둘 다
+> 없다. X1이 닫힌 것은 **로컬 자동화**이지 CI가 아니다.
+
+**교훈은 기술이 아니다.** 나는 네 경로를 재고 다섯 번째를 재지 않은 채 "불가능"이라고 적었고,
+그 문장이 여러 문서에 퍼졌다. **재지 않은 결론을 잰 것처럼 쓴 것**이며, 이 저장소가 §7-1에서
+스스로 금지한 모양이다. 사용자의 질문 하나가 그것을 열었다.
 
 ### 9-19. Delphi가 컴파일되자 거짓이 된 주장들 (2026-09-08, E2) — **하나는 가드가 지키고 있었다**
 

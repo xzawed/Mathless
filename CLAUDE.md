@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 파이프라인(모두 컴파일 타임, 런타임 해석 없음):
 
 ```
-표면 문법 .mls  →  parse/typecheck  →  내부 IR  →  네이티브 codegen  →  모듈 .dll  →  [C ABI]  →  호스트(C ✅ 게이트 / Delphi ✅ 1회 실측·게이트 없음 / C++ ✅ 헤더 컴파일만 / C# ⏳ 미검증)
+표면 문법 .mls  →  parse/typecheck  →  내부 IR  →  네이티브 codegen  →  모듈 .dll  →  [C ABI]  →  호스트(C ✅ CI 게이트 / Delphi ✅ 로컬 게이트 / C++ ✅ 헤더 컴파일만 / C# ⏳ 미검증)
 ```
 
 세 가지가 서로 맞물려 있어 하나만 봐선 안 된다:

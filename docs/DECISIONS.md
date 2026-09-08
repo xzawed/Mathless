@@ -88,7 +88,7 @@ Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/
     - **Delphi 산출물임을 먼저 증명했다.** 몇 분 전 같은 폴더에서 Free Pascal이 `host.exe`를
       만들었으므로, 실행 파일 바이트에서 `Embarcadero`·`Delphi`·`System.SysUtils`를 확인하고
       **FPC 마커가 하나도 없음**을 확인했다. `host.exe`는 x64, `.dproj`는 `Base_Win64`.
-    - **자동화는 여전히 없다.** 설치된 에디션이 **명령줄 빌드를 거부한다** — `dcc64`·`dcc32`·
+    - **자동화는 있다(2026-09-09 갱신, §9-20).** `MATHLESS_GATE_DELPHI=require`가 이 머신에서 통과한다 — `dcc64`가 거부하면 게이트가 `bds.exe -b`로 **IDE 빌드**를 부르고, Community Edition이 그것은 막지 않는다. **CI는 여전히 아니다**(러너에 Delphi도 대화형 세션도 없다). 아래는 그 이전 기록이다: 설치된 에디션이 **명령줄 빌드를 거부한다** — `dcc64`·`dcc32`·
       `msbuild`(Win64/Win32) **네 경로 전부** *"does not support command line compiling"* 을 찍고
       **아무것도 만들지 않으면서 exit 0** 이다(실측). 따라서 `MATHLESS_GATE_DELPHI`는 실행되지
       않고 CI도 이것을 재현하지 못한다. **D14의 Delphi 절반은 증거가 있고 게이트가 없다.**

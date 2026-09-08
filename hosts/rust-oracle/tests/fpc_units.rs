@@ -272,6 +272,10 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
         ),
         (include_str!("../../../examples/safe_div.mls"), "safe_div"),
         (include_str!("../../../examples/carrier.mls"), "carrier"),
+        // `shapes` is here for the one-byte Boolean check: it is the only example with a
+        // `-> bool!` export, and a bool OUT-param is where a wrong Pascal declaration
+        // turns a module's false into a host's true.
+        (include_str!("../../../examples/shapes.mls"), "shapes"),
     ] {
         emit_artifacts(src, name, work.path()).unwrap_or_else(|e| panic!("emit {name}: {e}"));
     }
@@ -341,5 +345,61 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
         out.status.success() && stdout.contains("GATE_DELPHI_OK"),
         "the staged Pascal host did not pass under Free Pascal:\n{stdout}\n{}",
         String::from_utf8_lossy(&out.stderr)
+    );
+
+    // ---- the claim host.dpr makes about itself, which nothing was checking ----
+    //
+    // Its header says the two official hosts differ in a way that matters, and BOTH SIDES
+    // are measured (the first version of that paragraph described the C host from memory
+    // and was wrong about it). Park carrier.dll and run each:
+    //
+    //   hosts/c-host   78 lines of checks first, then `FAIL LoadLibraryA(...) -> error
+    //                  126`, counts a failure, carries on, exits 1
+    //   this host      0 bytes, exit 0xC0000135 (STATUS_DLL_NOT_FOUND)
+    //
+    // LoadLibrary makes a missing module DATA the C host can report. `external
+    // ML_MODULE` is bound when the PROGRAM loads, so this one cannot report anything --
+    // the loader refuses first. That is why host.dpr's fingerprint check is written as
+    // "refuse to USE" rather than "refuse to load".
+    //
+    // It was a header comment with no guard. Measured now (2026-09-07): with one module
+    // renamed away the host produces ZERO bytes of output and dies with 0xC0000135,
+    // STATUS_DLL_NOT_FOUND. The emptiness is the load-bearing part -- it is what "never
+    // reaches begin" means -- so that is what is asserted. The status is printed as evidence
+    // rather than pinned: it is Windows', not ours, and a future one changing it would break
+    // this test for a reason that has nothing to do with the claim.
+    //
+    // This is an axis only the Pascal host can exercise. No amount of C-host coverage reaches
+    // it, because GetProcAddress binds nothing at load time.
+    let hidden = work.path().join("carrier.dll");
+    let parked = work.path().join("carrier.dll.parked");
+    std::fs::rename(&hidden, &parked).expect("park carrier.dll");
+
+    let mut missing = Command::new(&exe);
+    missing
+        .arg(mlc::ML_MODULE_ABI_VERSION.to_string())
+        .current_dir(work.path());
+    let dead = common::output_with_deadline(
+        missing,
+        std::time::Duration::from_secs(120),
+        "host.exe with a module removed",
+    );
+    std::fs::rename(&parked, &hidden).expect("restore carrier.dll");
+
+    let said = String::from_utf8_lossy(&dead.stdout);
+    assert!(
+        said.is_empty(),
+        "the host reached `begin` with a module missing, so the imports are NOT bound at load \
+         time and host.dpr's header is wrong about how it differs from the C host. It \
+         printed:\n{said}"
+    );
+    assert!(
+        !dead.status.success(),
+        "the host exited 0 with a module missing"
+    );
+    println!(
+        "GATE_FPC_HOST_LOADBIND_OK: a missing module killed the host before `begin` (no \
+         output, status {})",
+        dead.status
     );
 }

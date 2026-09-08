@@ -17,12 +17,23 @@
     - the load-time gate (abi version + interface fingerprint) works from Delphi too.
 
   HOW IT DIFFERS FROM THE C HOST, ON PURPOSE. `hosts/c-host` resolves every symbol
-  with LoadLibrary/GetProcAddress. The generated `.pas` instead declares
-  `external ML_MODULE`, which Delphi binds when the PROGRAM loads. So this host
-  cannot decline to start when a module is missing — the loader refuses first, and
-  the process never reaches `begin`. That is a real difference in the binding story
-  between the two official hosts, and it is the reason the fingerprint check below
-  is written as "refuse to USE" rather than "refuse to load".
+  with LoadLibrary/GetProcAddress, so a missing module is data it can report: it prints
+  `FAIL LoadLibraryA(<path>) -> error 126`, counts a failure and CARRIES ON. The
+  generated `.pas` instead declares `external ML_MODULE`, bound when the PROGRAM loads,
+  so this host cannot report anything -- the loader refuses first and the process never
+  reaches `begin`. That is why the fingerprint check below is written as "refuse to USE"
+  rather than "refuse to load".
+
+  BOTH SIDES MEASURED (2026-09-07), after this paragraph had stood unchecked -- and the
+  first version of it described the C host from memory and got it wrong. Park carrier.dll
+  and run each:
+
+    C host        78 lines of checks completed first, then FAIL LoadLibraryA ... 126, exit 1
+    this host     0 bytes of output, exit 0xC0000135 (STATUS_DLL_NOT_FOUND)
+
+  Pinned by `the_staged_pascal_host_builds_and_calls_the_modules`, which parks a .dll and
+  requires the output to be EMPTY. No amount of C-host coverage reaches this axis, because
+  GetProcAddress binds nothing at load time.
 
   BUILD (once dcc64 exists), from a directory holding the generated artifacts:
       dcc64 -U<artifact_dir> host.dpr
@@ -36,7 +47,8 @@ uses
   SysUtils,
   discount,
   safe_div,
-  carrier;
+  carrier,
+  shapes;
 
 var
   Failures: Integer = 0;
@@ -96,6 +108,9 @@ begin
   if not OneModule('carrier', carrier.ml_module_abi_version, carrier.ml_iface_hash,
                    ML_CARRIER_IFACE_HASH) then
     Result := False;
+  if not OneModule('shapes', shapes.ml_module_abi_version, shapes.ml_iface_hash,
+                   ML_SHAPES_IFACE_HASH) then
+    Result := False;
 end;
 
 var
@@ -108,6 +123,11 @@ var
   Tier: Integer;
   I: Integer;
   Canary: Boolean;
+  { A Boolean out-param that shares storage with four bytes we can inspect. `absolute` is
+    the Pascal way to ask what the module actually wrote. }
+  BoolBytes: array[0..3] of Byte;
+  BigOut: Boolean absolute BoolBytes;
+  ByteCanary: Boolean;
 begin
   if ParamCount < 1 then
   begin
@@ -170,6 +190,30 @@ begin
   Status := mlx_carrier_label(PAnsiChar('UPSN'), Tier, @Buf[0], SizeOf(Buf), Needed);
   Check(Status = 0, 'carrier_label(UPSN) succeeds');
   Check(Tier = 1, 'the declared out comes before the buffer triple');
+
+  { The unit's header says "Boolean is 1 byte to match the module ABI; do not use LongBool".
+    Nothing checked it, and it is not decoration: measured 2026-09-07 by declaring LongBool
+    instead, the module still writes exactly one byte, Pascal reads four, and a FALSE comes
+    back as TRUE. No crash. The module said false and the host believed true -- the silent
+    wrong answer this project exists to prevent.
+
+    Two checks, because they catch different things. The VALUE catches a wrong declaration
+    (LongBool passes the canary and fails here). The CANARY catches a module writing more
+    than a byte (which LongBool would not reveal). Neither alone is enough.
+
+    Only a Pascal host can ask this. The C header says `bool`, which C sizes for itself. }
+  FillChar(BoolBytes, SizeOf(BoolBytes), $AA);
+  Status := mlx_is_big(50, BigOut);
+  Check(Status = 0, 'is_big(50) succeeds (precondition: on failure the out is untouched)');
+  Check(BigOut = False, 'a false bool out-param reads as false, not as three bytes of noise');
+  ByteCanary := True;
+  for I := 1 to 3 do
+    if BoolBytes[I] <> $AA then
+    begin
+      ByteCanary := False;
+      Break;
+    end;
+  Check(ByteCanary, 'the module wrote exactly one byte for a bool out-param');
 
   if Failures = 0 then
   begin

@@ -58,7 +58,32 @@ jobs:
         # compiler of any kind had ever read. This is NOT the Delphi gate: D14 needs dcc64,
         # which is a licensed product, and that arm stays open. It proves what the C++ gate
         # proves about the header -- that the text is valid.
-        run: choco install freepascal -y --no-progress
+        #
+        # RETRIED, and the reason is a failure this step already caused: the chocolatey
+        # package downloads the installer from SourceForge at build time, and on 2026-09-08
+        # SourceForge did not answer -- two 33-second timeouts, reported by choco as "exited
+        # 404". A pull request went red for something that had nothing to do with its code.
+        #
+        # That is a dependency MATHLESS_GATE_D does not have: MSVC is already ON the runner,
+        # while this fetches over the network every run. The retry narrows the window; it
+        # does not remove the dependency, and the message below says so rather than leaving
+        # the next person to hunt through their own diff.
+        #
+        # It still FAILS if all attempts fail. A gate that quietly stops gating when a
+        # download flakes is worth nothing, which is the whole argument for requiring it.
+        shell: pwsh
+        run: |
+          $ok = $false
+          foreach ($attempt in 1..3) {
+            Write-Host "freepascal install, attempt $attempt of 3"
+            choco install freepascal -y --no-progress
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            if ($attempt -lt 3) { Start-Sleep -Seconds (20 * $attempt) }
+          }
+          if (-not $ok) {
+            Write-Host '::error::Free Pascal could not be installed after 3 attempts. The chocolatey package fetches its installer from SourceForge at build time, so this is most likely an availability failure of that host and NOT a defect in this change -- re-run the job before looking at the diff.'
+            exit 1
+          }
       - name: Test (locked)
         # MATHLESS_GATE_D=require turns "no MSVC found" into a FAILURE instead of a skip, so
         # acceptance D (a real C host loading the module) can never silently stop running

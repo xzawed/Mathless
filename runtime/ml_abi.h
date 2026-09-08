@@ -12,7 +12,9 @@
  *
  * STATUS: the C binding IS verified - a C11 host built with MSVC loads a module and calls
  * it (acceptance D, hosts/c-host). The DELPHI binding is still unverified: there is no
- * dcc64 here, so no generated .pas has ever been compiled. Treat the Delphi-facing details
+ * dcc64 that can build from a command line here. A generated .pas WAS compiled and called
+ * once by a Delphi IDE build (2026-09-07, STATUS 9-15), but nothing repeats it. Treat the
+ * Delphi-facing details
  * as unconfirmed (SPEC section 3-D).
  */
 #ifndef ML_ABI_H
@@ -90,7 +92,9 @@ uint64_t ml_iface_hash(void);
  *
  * One convention worth stating once: a `bool` parameter is a 1-byte boolean, matching the
  * module's `extern "C" fn(f64, bool)`. A Delphi host must use a 1-byte Boolean, not
- * LongBool. PROVISIONAL - no dcc64 here has ever compiled a generated unit. */
+ * LongBool. MEASURED (2026-09-07): declaring LongBool instead makes a module's false read
+ * as TRUE in the host, with the module still writing exactly one byte - no crash, wrong
+ * answer. Pinned by the Pascal host's bool canary. */
 
 #ifdef __cplusplus
 }

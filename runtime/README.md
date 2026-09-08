@@ -26,5 +26,6 @@ Thin C-ABI surface for Mathless modules (Phase 1). No VM, no interpreter (D02/D1
   `LICENSE-OUTPUT-EXCEPTION` §3 names it as *not* Compiler Output. The **C** binding is
   verified — a real MSVC-built host
   loads a module and calls it (acceptance D, `hosts/c-host`). The **Delphi** binding is
-  still unverified: no `dcc64` here, so no generated `.pas` has ever been compiled.
+  still ungated: a Delphi IDE build compiled and called a generated `.pas` once (2026-09-07,
+  STATUS §9-15), but the edition here refuses command-line builds so nothing repeats it.
   See `docs/phase1/SPEC.md` §3-D.

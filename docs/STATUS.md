@@ -1405,6 +1405,40 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
 
+### 9-19. Delphi가 컴파일되자 거짓이 된 주장들 (2026-09-08, E2) — **하나는 가드가 지키고 있었다**
+
+Grok이 다음 작업을 정의하면서 내가 못 본 부류를 이름 붙였다: **컴파일 이전 세계를 얼려 둔 가드.**
+§9-4의 전수 감사는 `host.dpr`의 주장을 검사할 수 **없었다** — 그때는 아무것도 그것을 컴파일하지
+못했으니까. 그 전제가 2026-09-07에 바뀌었고, 그래서 그 파일들만 다시 봤다.
+
+**세 부류가 나왔다.**
+
+**(1) 거짓을 가드가 강제하고 있었다.** `host.dpr`이 *"STATUS: NEVER COMPILED BY DELPHI"* 로
+시작하는데 §9-15에서 Delphi가 컴파일했다. 그리고 `delphi_host.rs`가 **그 문자열을 요구**했다 —
+파일이 사실을 말하지 못하게 가드가 막고 있었다. 둘 다 내가 썼고, Delphi 빌드 성공 뒤 생성 `.pas`·
+CLI·README·골든은 고치면서 **이 파일과 그 가드만 빼먹었다.** 가드는 이제 아직 참인 것(`NOT GATED`)을
+요구한다.
+
+**(2) 낡은 주장 다섯.** `runtime/ml_abi.h`(2곳) · `hosts/c-host/README.md` ·
+`hosts/delphi-host/README.md` · `runtime/README.md` · `compiler/tests/emit.rs` 주석이 여전히
+*"`dcc64`가 없어 생성 `.pas`는 컴파일된 적이 없다"* 라고 적었다.
+> 그중 하나는 특히 나빴다: `ml_abi.h`가 **LongBool 주의를 "PROVISIONAL"** 로 표시하고 있었는데,
+> **§9-17이 바로 그것을 측정했다.** 이제 측정값을 적는다 — `LongBool`로 선언하면 모듈의 false가
+> 호스트에서 true로 읽힌다.
+
+**(3) 돌 수 없는 게이트는 자기가 고장 난 것도 말해 주지 못한다.** `host.dpr`에 `shapes`를 더하면서
+`fpc_units.rs`의 목록은 고쳤고 **`delphi_host.rs`의 목록은 안 고쳤다.** 유닛 셋만 방출한다 —
+`dcc64`가 생기는 날 이 게이트는 **Delphi와 무관한 이유로** 실패했을 것이다. 아무도 못 잡은 이유는
+그 게이트가 **어디서도 돌지 않기 때문**이다.
+
+**손으로 쓴 목록 둘을 지우고 `host.dpr`의 `uses` 절에서 유도한다**(`common::delphi_host_units`).
+`uses`에 항목을 더하면 두 테스트가 함께 그 예제를 방출하고, `examples/<name>.mls`가 없으면
+**즉시 시끄럽게 실패한다**. 깨뜨림 확인: 없는 유닛을 `uses`에 넣자
+*"host.dpr uses `no_such_module`, but examples/no_such_module.mls could not be read"* 로 빨개졌다.
+
+> **헬퍼가 두 벌(크레이트마다 하나)이고 바이트 동일해야 하므로**, 경로는 `CARGO_MANIFEST_DIR`가
+> 아니라 `workspace_root()`로 잡는다 — 전자는 두 크레이트에서 서로 다른 곳을 가리킨다.
+
 ### 9-18. 필수 게이트를 외부 다운로드에 묶었다 (2026-09-08) — **내 설계 결함**
 
 PR #188의 CI가 빨개졌는데 **코드와 무관했다.**

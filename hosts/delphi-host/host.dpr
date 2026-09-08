@@ -1,6 +1,6 @@
 { Mathless Delphi host — the OTHER half of D14, staged and waiting for a compiler.
 
-  STATUS: NEVER COMPILED BY DELPHI. Free Pascal 3.2.2 in -Mdelphi mode built and ran it
+  STATUS: COMPILED AND RUN BY DELPHI ONCE, NOT GATED. Free Pascal 3.2.2 in -Mdelphi mode built and ran it
   on 2026-09-07 and every check passed (GATE_DELPHI_OK), which is the first time any
   compiler had read this file -- and that run found a real defect in it, see GateOk below.
   It is NOT the Delphi verification: -Mdelphi is a dialect emulation, D14 names dcc64, and

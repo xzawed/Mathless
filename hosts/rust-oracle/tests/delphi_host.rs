@@ -311,7 +311,15 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
     let said: Vec<&str> = compile_out
         .lines()
         .map(str::trim)
-        .filter(|l| l.contains("Warning]") || l.contains("Error]") || l.contains("Fatal"))
+        // Hints count. The claim about `PAnsiChar(Pointer(S))` is that the compiler says
+        // NOTHING, and a hint is the compiler saying something -- leaving them out of this
+        // filter would let a hint sit on that line while the gate reported silence.
+        .filter(|l| {
+            l.contains("Warning]")
+                || l.contains("Error]")
+                || l.contains("Hint]")
+                || l.contains("Fatal")
+        })
         .collect();
     println!("dcc64 said:");
     for line in &said {

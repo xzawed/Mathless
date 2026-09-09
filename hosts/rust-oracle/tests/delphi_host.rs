@@ -135,15 +135,33 @@ fn bds_exe(dcc: &Path) -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
+/// The IDE writes its compiler transcript to `<project>.err`, and writes **nothing** to stdout
+/// or stderr (measured 2026-09-10: both streams are 0 bytes on a successful `-b`). So this
+/// gate could see whether the build worked and not a word of what the compiler said about it
+/// — which is how "does Delphi warn about this cast?" stayed an open question with a Delphi
+/// sitting right here.
+///
+/// The file is UTF-8 with a BOM. That was measured too, after the first version of this
+/// function assumed UTF-16 — the IDE writes plenty of UTF-16 elsewhere — and quietly produced
+/// mojibake that matched none of the patterns the caller looks for. A decoder that "works"
+/// and finds nothing looks exactly like a compiler that said nothing.
+fn read_ide_transcript(err_file: &Path) -> String {
+    let Ok(bytes) = std::fs::read(err_file) else {
+        return String::new();
+    };
+    String::from_utf8_lossy(bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes)).into_owned()
+}
+
 /// Build `host.dproj` through the IDE. `Err` carries what a person can act on.
 fn build_with_bds(bds: &Path, dproj: &Path, exe: &Path) -> Result<String, String> {
     let mut cmd = Command::new(bds);
     cmd.arg("-b").arg(dproj);
     let out = common::output_with_deadline(cmd, std::time::Duration::from_secs(300), "bds -b");
     let text = format!(
-        "{}{}",
+        "{}{}{}",
         String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
+        String::from_utf8_lossy(&out.stderr),
+        read_ide_transcript(&dproj.with_extension("err")),
     );
     // The artifact is the evidence, not the status -- the same rule this file already learned
     // from a dcc64 that exits 0 and writes nothing.
@@ -238,6 +256,8 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         .join("delphi-host")
         .join("host.dpr");
     assert!(host_dpr.exists(), "missing {}", host_dpr.display());
+    // Read once, and used below to ask the compiler transcript about specific source lines.
+    let host_src = std::fs::read_to_string(&host_dpr).expect("read host.dpr");
 
     // The artifact is the evidence, not the exit code. Measured 2026-09-07: a dcc64 whose
     // licence forbids command-line builds prints one line, compiles NOTHING and exits 0.
@@ -284,6 +304,62 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
          built:\n{compile_out}",
         exe.display()
     );
+    // What the compiler SAID, not just whether it succeeded. The host deliberately writes
+    // all three spellings of `UnicodeString -> PAnsiChar` (HOST_ABI.md string rule 5), and
+    // this is where the other half of that measurement lives: the runtime checks show the
+    // bytes each spelling sends, and these lines show which ones dcc64 objects to.
+    let said: Vec<&str> = compile_out
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.contains("Warning]") || l.contains("Error]") || l.contains("Fatal"))
+        .collect();
+    println!("dcc64 said:");
+    for line in &said {
+        println!("  {line}");
+    }
+    // Which spelling draws a diagnostic and which does not is the WHOLE finding, so it is
+    // pinned by the source line rather than by a count -- edit host.dpr freely, this still
+    // asks the same question of whatever it now says.
+    let lines_with = |needle: &str| -> Vec<usize> {
+        host_src
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.contains(needle))
+            .map(|(i, _)| i + 1)
+            .collect()
+    };
+    // Markers, not the cast text: `PAnsiChar(S)` also appears in this file's prose and in
+    // the messages the checks print, and a line that merely TALKS about the cast draws no
+    // warning. The first version of this matched those and failed on a comment.
+    let flagged = lines_with("{ ML_W1044 }");
+    let silent = lines_with("{ ML_NO_DIAGNOSTIC }");
+    assert!(
+        !flagged.is_empty() && !silent.is_empty(),
+        "host.dpr must still write both spellings for this to measure anything"
+    );
+    for n in &flagged {
+        assert!(
+            said.iter()
+                .any(|l| l.contains(&format!("host.dpr({n})")) && l.contains("W1044")),
+            "dcc64 said nothing about `PAnsiChar(S)` at host.dpr({n}). Measured 2026-09-10: it \
+             answers W1044 (Suspicious typecast of string to PAnsiChar), and HOST_ABI.md's \
+             string rule 5 now cites that as the reason this spelling is wrong-but-not-silent. \
+             If a newer Delphi dropped the warning, the advice this project gives Delphi hosts \
+             changed and someone has to say so. It said:\n{}",
+            compile_out.trim()
+        );
+    }
+    for n in &silent {
+        assert!(
+            !said.iter().any(|l| l.contains(&format!("host.dpr({n})"))),
+            "dcc64 DID say something about `PAnsiChar(Pointer(S))` at host.dpr({n}). That \
+             spelling is the one this project calls silent -- wrong bytes, no diagnostic -- \
+             and the whole reason it is singled out. A warning here is good news and a \
+             documentation change, not a test failure to paper over. It said:\n{}",
+            compile_out.trim()
+        );
+    }
+
     let run = Command::new(&exe)
         .arg(mlc::ML_MODULE_ABI_VERSION.to_string())
         .current_dir(work.path())

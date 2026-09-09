@@ -53,46 +53,50 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Cache the Free Pascal installer
-        # ONE file, 51 MB, keyed on the version AND the hash it must have. The tree it
-        # installs is ~700 MB across thousands of small files, and restoring THAT on
+        # ONE file, 90 MB, keyed on the version AND the hash it must have. The tree it
+        # installs is ~730 MB across thousands of small files, and restoring THAT on
         # Windows is a second fat tail -- the stall was never the unpack, it was the
-        # download.
-        #
-        # `fpc-installer` is OURS. The first attempt at this cached choco's own
-        # `--cache-location`, and choco empties that: the run downloaded 50.99 MB and the
-        # post-job step then saved 2634 bytes. Green, and completely inert.
+        # download. `fpc-installer` is OURS; #191 recorded, at length, what happens when
+        # the cached directory belongs to a package manager instead.
         uses: actions/cache@v4
         with:
           path: fpc-installer
-          key: fpc-installer-3.2.2-i386-win32-sha7ec78b
-      - name: Install Free Pascal
+          key: fpc-installer-3.2.2-win32-and-win64-sha8c2553
+      - name: Install Free Pascal (win32 + win64)
         # The generated `.pas` is one of the four artifacts `mlc build` writes, and until
         # this step existed NOTHING compiled it -- the golden file pinned 535 lines that no
         # compiler of any kind had ever read. This is NOT the Delphi gate.
         #
-        # WHY THE CACHE. The chocolatey package fetches its installer from SourceForge, and
-        # that dependency has now been billed twice, measured:
+        # WHY NOT `choco install freepascal`. Because it cannot install this file. The
+        # package calls Install-ChocolateyPackage twice -- once for the i386-win32
+        # installer, once for this combined one -- into ONE cache path under one package
+        # name and version, declaring the SAME sha256 string for both. So the second call
+        # finds the first file, "verifies" it against a checksum copied from the first, and
+        # installs i386 again. The runner has never seen the combined installer, which is
+        # why CI's fpc had no x86_64 backend and MATHLESS_GATE_FPC_HOST could only skip
+        # there (docs/STATUS.md 9-21). The declared checksum64 is not this file's hash, so
+        # pre-seeding cannot work either: choco would reject the bytes.
+        #
+        # WHY THE CACHE. The chocolatey package fetched its installer from SourceForge, and
+        # that dependency was billed twice against a REQUIRED gate, measured:
         #
         #   2026-09-08   no answer, two 33s timeouts  -> a PR went red for nothing to do
         #                                                with its code
         #   2026-09-09   answered, but took 12 min    -> the job went from ~3.5 to 14m25s
         #
-        # Typical is ~1.3 min. So: usually cheap, occasionally 8x, occasionally fatal.
-        #
-        # So WE fetch the installer, WE check its hash, and we hand it to choco pre-placed
-        # on the path it downloads to. The retry belongs around our download, which is the
-        # thing that talks to SourceForge -- note the earlier retry only ever addressed the
-        # FAILURE tail, and the 12-minute run SUCCEEDED, so nothing retried.
+        # So we fetch it, we check its hash, and we install it ourselves.
         shell: pwsh
         run: |
           $keep = Join-Path $PWD "fpc-installer"
-          $exe  = Join-Path $keep "fpc-3.2.2.i386-win32.exe"
-          # Measured, not quoted: this machine fetched the file and hashed it, and the
-          # value agrees with what the chocolatey package declares for Url32.
-          # 53,470,080 bytes, starts MZ. Pinning it means a corrupted, swapped, or
-          # HTML-instead-of-installer download is refused rather than installed.
-          $sha  = "7EC78B1790ECAC7685F440B17F9E03865BC09846B7C068A9270C4D37704B5AC8"
-          $url  = "https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.exe/download"
+          $exe  = Join-Path $keep "fpc-3.2.2.win32.and.win64.exe"
+          # Measured here, not quoted from the package: 93,909,874 bytes, starts MZ. The
+          # chocolatey package declares 7ec78b... for this URL, which is the i386 file's
+          # hash -- so there was no trustworthy value to copy.
+          $sha  = "8C255390544B051388B577EB61C6191A04883264AFE0E3369B3600A56DAF7BDE"
+          $url  = "https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.win32.and.win64.exe/download"
+          # The official installer's own default, and where this project's dev machine has
+          # it, so CI and local converge. It is also the first root the gate searches.
+          $dir  = "C:\FPC\3.2.2"
           New-Item -ItemType Directory -Force -Path $keep | Out-Null
 
           function Test-Cached($path, $want) {
@@ -110,9 +114,8 @@ jobs:
             Write-Host "installer cache MISS -- fetching from SourceForge"
             # The UserAgent is load-bearing. SourceForge serves a BROWSER an HTML "your
             # download will start" page, and Invoke-WebRequest's default UA says Mozilla --
-            # so the call succeeds, writes 146,849 bytes of `<!doctype html>`, throws
-            # nothing, and only the hash notices. Measured both ways, 2026-09-09.
-            # ProgressPreference: IWR's progress bar is very expensive on a 51 MB file.
+            # so the call succeeds, writes ~146 KB of `<!doctype html>`, throws nothing, and
+            # only the hash notices. Measured both ways, 2026-09-09.
             $ProgressPreference = 'SilentlyContinue'
             foreach ($attempt in 1..3) {
               Write-Host "fetch attempt $attempt of 3"
@@ -122,11 +125,10 @@ jobs:
                 Write-Host "  threw: $($_.Exception.Message)"
               }
               if (Test-Cached $exe $sha) { break }
-              # Say what DID arrive. The first cut of this loop produced three silent,
-              # instant failures, and the log could not tell a dead host from an HTML page.
+              # Say what DID arrive. Silent instant failures is what the first cut of this
+              # loop produced, and the log could not tell a dead host from an HTML page.
               if (Test-Path $exe) {
-                $got = Get-Item $exe
-                Write-Host "  wrong file: $($got.Length) bytes, sha256 $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+                Write-Host "  wrong file: $((Get-Item $exe).Length) bytes, sha256 $((Get-FileHash $exe -Algorithm SHA256).Hash)"
                 Remove-Item $exe -Force
               } else {
                 Write-Host "  nothing written"
@@ -140,68 +142,46 @@ jobs:
             Write-Host "fetched $([int]((Get-Item $exe).Length/1MB)) MB, sha256 verified"
           }
 
-          # Pre-place it where choco actually looks. Two wrong guesses got measured out
-          # of the way first, and the log said where the bytes really went each time:
-          #
-          #   --cache-location/<pkg>/<ver>/     no. That holds the .nupkg and a
-          #                                     ChocolateyScratch copy of the package
-          #                                     files -- nuspec plus three tools scripts.
-          #   $env:TEMP we set ourselves        no. choco resets it for its child.
-          #   the invoking user's own TEMP      YES, measured 53,470,080 bytes at
-          #                                     C:/Users/runneradmin/AppData/Local/Temp/
-          #                                     freepascal/3.2.2/freepascalInstall.exe
-          #
-          # Which matches the code: Install-ChocolateyPackage builds
-          # `$env:TEMP/<package>/<version>/<package>Install.<ext>`
-          # (Install-ChocolateyPackage.ps1:372-382). It is the USER's TEMP, and this step
-          # runs as that user, so $env:TEMP here is that directory.
-          #
-          # The filename is measured too, not assumed: choco passes -GetOriginalFileName,
-          # so the name comes from a HEAD to SourceForge, and calling chocolatey's own
-          # `Get-WebFileName` against both package URLs returns `freepascalInstall.exe`
-          # for each -- the DefaultName fallback.
-          #
-          # The package calls Install-ChocolateyPackage TWICE -- Url32, then Url64 for the
-          # win32+win64 installer -- but both resolve to this ONE path and declare the SAME
-          # checksum string, so the second reuses the first file. That is the runner's
-          # existing behaviour, unchanged by seeding: CI gets an i386-only FPC either way.
-          # Recorded as a finding, not fixed here (docs/STATUS.md §9-21).
-          $seed = Join-Path $env:TEMP "freepascal/3.2.2"
-          New-Item -ItemType Directory -Force -Path $seed | Out-Null
-          Copy-Item $exe (Join-Path $seed "freepascalInstall.exe") -Force
-
-          # No `2>&1`: GitHub runs pwsh with $ErrorActionPreference='stop', and
-          # redirecting a native command's stderr can turn a harmless line into a
-          # terminating NativeCommandError. stderr goes straight to the log instead.
-          #
-          # The cost is that the `Download of ` check below sees stdout only. Measured:
-          # choco puts that line on stdout -- it tripped this guard three times while the
-          # seed path was still wrong. If it ever moved to stderr the guard would go quiet,
-          # which is why the check is written to fail rather than warn.
-          $out = & choco install freepascal -y --no-progress
-          $out | ForEach-Object { Write-Host $_ }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host '::error::choco install freepascal failed. The installer was already on disk and hash-verified, so this is an INSTALL failure, not a download one.'
+          # Inno Setup answer file. This is what the chocolatey package does too, minus its
+          # explicit component list -- `SetupType=full` is what brings the x86_64 cross
+          # compiler in, and naming components would be a list to forget to update.
+          $inf = Join-Path $env:RUNNER_TEMP "fpc-setup.inf"
+          @(
+            "[Setup]",
+            "Lang=default",
+            "Dir=$dir",
+            "Group=Free Pascal",
+            "NoIcons=1",
+            "SetupType=full",
+            "Tasks="
+          ) | Set-Content -Path $inf -Encoding ASCII
+          $proc = Start-Process -FilePath $exe -ArgumentList "/verysilent","/norestart","/LoadInf=`"$inf`"" -PassThru -Wait
+          if ($proc.ExitCode -ne 0) {
+            Write-Host "::error::the Free Pascal installer exited $($proc.ExitCode). The file was hash-verified before this ran, so this is an INSTALL failure, not a download one."
             exit 1
           }
 
-          # The whole point, asserted rather than assumed: if choco still reached out, the
-          # pre-seed missed its path and the cache buys nothing. Print the tree so the next
-          # run does not have to guess where it should have gone.
-          if ($out -match 'Download of ') {
-            Write-Host "seeded layout under ${seed}:"
-            Get-ChildItem $seed -Recurse -File | ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
-            # Where did it ACTUALLY land? Answering this in the same run is the difference
-            # between one more iteration and three -- it already spared two.
-            Write-Host "freepascalInstall.exe anywhere under the temp roots:"
-            foreach ($r in @($env:TEMP, $env:RUNNER_TEMP)) {
-              Get-ChildItem $r -Recurse -File -Filter "freepascalInstall.exe" -ErrorAction SilentlyContinue |
-                ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
-            }
-            Write-Host '::error::choco downloaded the installer anyway -- the seed is not on the path it uses, so this cache is inert. The listing above says where it went.'
+          # The point of this step, asserted rather than assumed. Installing an fpc that
+          # cannot target x86_64 would leave MATHLESS_GATE_FPC_HOST skipping exactly as it
+          # did under chocolatey -- green, and measuring nothing.
+          $bin = Join-Path $dir "bin\i386-win32"
+          $fpc = Join-Path $bin "fpc.exe"
+          if (-not (Test-Path $fpc)) {
+            Write-Host "::error::no fpc.exe at $fpc after a successful install"
+            Get-ChildItem $dir -Recurse -Depth 3 -Filter "fpc.exe" -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host "  found instead: $($_.FullName)" }
             exit 1
           }
-          Write-Host "choco used the pre-seeded installer -- no SourceForge fetch during install"
+          $target = (& $fpc -Px86_64 -iTP 2>$null | Select-Object -First 1)
+          if ($LASTEXITCODE -ne 0 -or "$target".Trim() -ne "x86_64") {
+            Write-Host "  fpc -Px86_64 -iTP said '$target' (exit $LASTEXITCODE), expected x86_64"
+            Write-Host "  compilers present:"
+            Get-ChildItem $bin -Filter "ppc*.exe" | ForEach-Object { Write-Host "    $($_.Name)" }
+            Write-Host '::error::this fpc has no x86_64 backend, so the Pascal host gate would skip. That is the entire reason this step installs the combined win32+win64 build.'
+            exit 1
+          }
+          Write-Host "fpc $(& $fpc -iV) at $fpc, x86_64 backend present"
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
       - name: Test (locked)
         # MATHLESS_GATE_D=require turns "no MSVC found" into a FAILURE instead of a skip, so
         # acceptance D (a real C host loading the module) can never silently stop running
@@ -216,9 +196,13 @@ jobs:
         # cargo swallows a passing test's stdout, so `GATE_FPC_OK` never reaches the log
         # above -- the same trap STATUS 5-5.7 records for guard warnings. This re-runs the
         # one test with --nocapture so the log says WHICH fpc it used and WHICH target it
-        # compiled for. Chocolatey fetches the i386-only installer, so whether ppcrossx64 is
-        # present is a fact about the runner that nobody can read otherwise. Seconds, and
-        # everything is already built.
+        # compiled for.
+        #
+        # It is also where the Pascal HOST gate reports itself, and that line is the point
+        # of installing the combined build: `GATE_FPC_HOST_SKIPPED` means the runner's fpc
+        # cannot target x86_64 and the host never ran, `GATE_FPC_HOST_LOADBIND_OK` means it
+        # built, loaded real x64 modules and called them. Under chocolatey this log said
+        # SKIPPED every time. Seconds, and everything is already built.
         env:
           MATHLESS_GATE_FPC: require
         run: cargo test -p ml_oracle --test fpc_units --locked -- --nocapture

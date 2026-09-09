@@ -112,17 +112,38 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
    대소문자를 구분하며 정규화하지 않는다(DP-S2). 호스트가 넘기는 바이트와 `.mls` 소스에 쓴
    리터럴의 바이트가 같은 인코딩이어야 한다. 소스 리터럴은 **ASCII만** 허용하므로, ASCII 범위에서는
    UTF-8·Latin-1·대부분의 코드 페이지가 일치한다.
-5. **⚠ Delphi 함정 (E1 — `dcc64`가 없어 미측정).** Delphi의 기본 `string`은 UTF-16
-   `UnicodeString`이다. **어떤 캐스트를 쓰느냐가 결과를 가른다:**
-   - `PAnsiChar(AnsiString(S))` — **맞다.** 단, `AnsiString`을 **지역 변수에 담아** 호출이 끝날 때까지
-     살려 둘 것. 캐스트 식 안의 임시값은 그 **문장**까지만 산다.
-   - `PAnsiChar(S)`(UnicodeString에 직접) — 암시적 캐스트 경고와 함께 **ANSI 코드 페이지로 변환**된다.
-     ASCII는 살아남지만 그 밖은 보장되지 않는다.
-   - `PAnsiChar(Pointer(S))` — **틀렸고 조용하다.** UTF-16 바이트를 그대로 재해석하므로 **아무 코드에도
-     맞지 않고 크래시도 나지 않는다.** 이 저장소가 네 번 만난 그 모양이다.
+5. **⚠ Delphi 함정 (E2 — 2026-09-10 실측, Delphi CE 37.0 Win64).** Delphi의 기본 `string`은
+   UTF-16 `UnicodeString`이다. **어떤 캐스트를 쓰느냐가 결과를 가른다.** `"UPSN"`을 이 ABI로
+   실제로 보내며 잰 것이다(`hosts/delphi-host/host.dpr`, `MATHLESS_GATE_DELPHI`):
 
-   생성 `.pas`에 같은 세 줄을 넣는다. **아무것도 측정되지 않았다** — Embarcadero 문서 기준(E1)이며,
-   Delphi가 붙는 날 가장 먼저 확인할 항목이다.
+   | 철자 | 모듈에 도착한 바이트 | 결과 | 컴파일러 |
+   |---|---|---|---|
+   | `PAnsiChar(AnsiString(S))` (지역 변수) | `55 50 53 4E 00` | **맞다** | 무언 |
+   | `PAnsiChar(S)` | `55 00 50 00 53 00 4E 00` | **틀렸다** | **W1044** Suspicious typecast of string to PAnsiChar |
+   | `PAnsiChar(Pointer(S))` | `55 00 50 00 53 00 4E 00` | **틀렸다** | **아무 말도 안 한다** |
+
+   - `PAnsiChar(AnsiString(S))` — 맞다. 단, `AnsiString`을 **지역 변수에 담아** 호출이 끝날 때까지
+     살려 둘 것. 캐스트 식 안의 임시값은 그 **문장**까지만 산다.
+   - `PAnsiChar(S)`(UnicodeString에 직접) — **변환되지 않는다.** 이 문서는 오래 "암시적 캐스트 경고와
+     함께 ANSI 코드 페이지로 변환되고 ASCII는 살아남는다"고 적었고, **그것은 틀렸다**(E1 추정이었다).
+     실측하면 `PAnsiChar(Pointer(S))`와 **바이트 단위로 같은 것**을 보낸다 — 하드 포인터 캐스트다.
+     모듈은 첫 NUL까지 읽으므로 **`"UPSN"`이 아니라 `"U"` 한 글자**를 본다. 다만 **조용하지는 않다**:
+     `dcc64`가 `W1044`를 낸다.
+   - `PAnsiChar(Pointer(S))` — **틀렸고 진짜로 조용하다.** 같은 UTF-16 바이트를 보내는데 컴파일러가
+     **아무 진단도 내지 않는다**(부재로 실측: 게이트가 그 줄에 어떤 메시지도 붙지 않음을 가드한다).
+     크래시도 없다. 이 저장소가 네 번 만난 그 모양이다.
+
+   > **평범한 `string`을 쓰면 두 번째 줄에 해당한다.** Delphi에서 `string`은 곧 `UnicodeString`이므로,
+   > 호스트가 가장 자연스럽게 쓰는 `PAnsiChar(MyString)`이 바로 틀린 철자다.
+   >
+   > **Free Pascal은 이것을 흉내 내지 못한다.** `-Mdelphi` 모드의 `string`은 `AnsiString`이라
+   > **같은 소스가 거기서는 맞고 여기서는 틀리다**(양쪽 실측: FPC status 0, Delphi status 1).
+   > `MATHLESS_GATE_FPC_HOST`가 `MATHLESS_GATE_DELPHI`를 대신할 수 없는 이유의 가장 선명한 사례다.
+   >
+   > 명시적으로 `S: UnicodeString`을 선언한 경우에는 **FPC도 같은 바이트를 보낸다**(실측). 즉 이
+   > 함정 자체는 Embarcadero 고유가 아니고, **`string`의 기본 뜻이 다른 것**이 고유하다.
+
+   생성 `.pas`에 같은 표가 들어간다.
 
 ### 가변 길이 데이터 — **문자열 반환은 구현·실측 완료**(Q12, 2026-08-31)
 

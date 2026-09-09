@@ -40,18 +40,22 @@ end.
 
   PAnsiChar is NOT Delphi's `string`, which is UTF-16 (UnicodeString). The module
   compares BYTES up to the NUL and never inspects the encoding (SPEC-string-input
-  DP-S2), so how you build the argument decides whether it can match at all:
-  - PAnsiChar(AnsiString(S)) - correct. Keep the AnsiString in a local for the
-    duration of the call; the temporary in a cast expression lives only for the
-    statement.
-  - PAnsiChar(S) on a UnicodeString - compiles with an implicit-cast warning and
-    converts through the ANSI code page. ASCII survives; anything else may not.
-  - PAnsiChar(Pointer(S)) - WRONG and silent. It reinterprets UTF-16 bytes, so the
-    comparison matches nothing and nothing crashes.
-  UNVERIFIED (E1): the unit compiles and runs under Delphi now (see above), but
-  these three CASES are not what that run exercised - it passes PAnsiChar
-  literals only. The three lines above are Embarcadero's documented behaviour,
-  not a measurement.
+  DP-S2), so how you build the argument decides whether it can match at all.
+  MEASURED on Delphi 37.0 Win64 through this ABI, sending "UPSN":
+  - PAnsiChar(AnsiString(S)) - CORRECT. Sends 55 50 53 4E 00. Keep the AnsiString
+    in a local for the duration of the call; the temporary in a cast expression
+    lives only for the statement.
+  - PAnsiChar(S) on a UnicodeString - WRONG. It does NOT convert. It sends the
+    UTF-16 bytes 55 00 50 00 53 00 4E 00, identical to the Pointer spelling below,
+    so the module reads to the first NUL and sees ONE character. The compiler does
+    object - W1044 Suspicious typecast of string to PAnsiChar - so it is wrong but
+    not silent.
+  - PAnsiChar(Pointer(S)) - WRONG and SILENT. The same UTF-16 bytes, and dcc64
+    says nothing about it at all. Nothing crashes.
+  Plain `string` IS UnicodeString in Delphi, so PAnsiChar(S) on one is the SECOND
+  line, not the first. Free Pascal in -Mdelphi mode does not emulate that - its
+  `string` is AnsiString, so identical source is correct there and wrong here.
+  Measured both ways, which is why an FPC run cannot stand in for a Delphi one.
   }
 unit carrier;
 
@@ -397,18 +401,22 @@ end.
 
   PAnsiChar is NOT Delphi's `string`, which is UTF-16 (UnicodeString). The module
   compares BYTES up to the NUL and never inspects the encoding (SPEC-string-input
-  DP-S2), so how you build the argument decides whether it can match at all:
-  - PAnsiChar(AnsiString(S)) - correct. Keep the AnsiString in a local for the
-    duration of the call; the temporary in a cast expression lives only for the
-    statement.
-  - PAnsiChar(S) on a UnicodeString - compiles with an implicit-cast warning and
-    converts through the ANSI code page. ASCII survives; anything else may not.
-  - PAnsiChar(Pointer(S)) - WRONG and silent. It reinterprets UTF-16 bytes, so the
-    comparison matches nothing and nothing crashes.
-  UNVERIFIED (E1): the unit compiles and runs under Delphi now (see above), but
-  these three CASES are not what that run exercised - it passes PAnsiChar
-  literals only. The three lines above are Embarcadero's documented behaviour,
-  not a measurement.
+  DP-S2), so how you build the argument decides whether it can match at all.
+  MEASURED on Delphi 37.0 Win64 through this ABI, sending "UPSN":
+  - PAnsiChar(AnsiString(S)) - CORRECT. Sends 55 50 53 4E 00. Keep the AnsiString
+    in a local for the duration of the call; the temporary in a cast expression
+    lives only for the statement.
+  - PAnsiChar(S) on a UnicodeString - WRONG. It does NOT convert. It sends the
+    UTF-16 bytes 55 00 50 00 53 00 4E 00, identical to the Pointer spelling below,
+    so the module reads to the first NUL and sees ONE character. The compiler does
+    object - W1044 Suspicious typecast of string to PAnsiChar - so it is wrong but
+    not silent.
+  - PAnsiChar(Pointer(S)) - WRONG and SILENT. The same UTF-16 bytes, and dcc64
+    says nothing about it at all. Nothing crashes.
+  Plain `string` IS UnicodeString in Delphi, so PAnsiChar(S) on one is the SECOND
+  line, not the first. Free Pascal in -Mdelphi mode does not emulate that - its
+  `string` is AnsiString, so identical source is correct there and wrong here.
+  Measured both ways, which is why an FPC run cannot stand in for a Delphi one.
   }
 unit receipt;
 
@@ -504,18 +512,22 @@ end.
 
   PAnsiChar is NOT Delphi's `string`, which is UTF-16 (UnicodeString). The module
   compares BYTES up to the NUL and never inspects the encoding (SPEC-string-input
-  DP-S2), so how you build the argument decides whether it can match at all:
-  - PAnsiChar(AnsiString(S)) - correct. Keep the AnsiString in a local for the
-    duration of the call; the temporary in a cast expression lives only for the
-    statement.
-  - PAnsiChar(S) on a UnicodeString - compiles with an implicit-cast warning and
-    converts through the ANSI code page. ASCII survives; anything else may not.
-  - PAnsiChar(Pointer(S)) - WRONG and silent. It reinterprets UTF-16 bytes, so the
-    comparison matches nothing and nothing crashes.
-  UNVERIFIED (E1): the unit compiles and runs under Delphi now (see above), but
-  these three CASES are not what that run exercised - it passes PAnsiChar
-  literals only. The three lines above are Embarcadero's documented behaviour,
-  not a measurement.
+  DP-S2), so how you build the argument decides whether it can match at all.
+  MEASURED on Delphi 37.0 Win64 through this ABI, sending "UPSN":
+  - PAnsiChar(AnsiString(S)) - CORRECT. Sends 55 50 53 4E 00. Keep the AnsiString
+    in a local for the duration of the call; the temporary in a cast expression
+    lives only for the statement.
+  - PAnsiChar(S) on a UnicodeString - WRONG. It does NOT convert. It sends the
+    UTF-16 bytes 55 00 50 00 53 00 4E 00, identical to the Pointer spelling below,
+    so the module reads to the first NUL and sees ONE character. The compiler does
+    object - W1044 Suspicious typecast of string to PAnsiChar - so it is wrong but
+    not silent.
+  - PAnsiChar(Pointer(S)) - WRONG and SILENT. The same UTF-16 bytes, and dcc64
+    says nothing about it at all. Nothing crashes.
+  Plain `string` IS UnicodeString in Delphi, so PAnsiChar(S) on one is the SECOND
+  line, not the first. Free Pascal in -Mdelphi mode does not emulate that - its
+  `string` is AnsiString, so identical source is correct there and wrong here.
+  Measured both ways, which is why an FPC run cannot stand in for a Delphi one.
   }
 unit shapes;
 
@@ -587,18 +599,22 @@ end.
 
   PAnsiChar is NOT Delphi's `string`, which is UTF-16 (UnicodeString). The module
   compares BYTES up to the NUL and never inspects the encoding (SPEC-string-input
-  DP-S2), so how you build the argument decides whether it can match at all:
-  - PAnsiChar(AnsiString(S)) - correct. Keep the AnsiString in a local for the
-    duration of the call; the temporary in a cast expression lives only for the
-    statement.
-  - PAnsiChar(S) on a UnicodeString - compiles with an implicit-cast warning and
-    converts through the ANSI code page. ASCII survives; anything else may not.
-  - PAnsiChar(Pointer(S)) - WRONG and silent. It reinterprets UTF-16 bytes, so the
-    comparison matches nothing and nothing crashes.
-  UNVERIFIED (E1): the unit compiles and runs under Delphi now (see above), but
-  these three CASES are not what that run exercised - it passes PAnsiChar
-  literals only. The three lines above are Embarcadero's documented behaviour,
-  not a measurement.
+  DP-S2), so how you build the argument decides whether it can match at all.
+  MEASURED on Delphi 37.0 Win64 through this ABI, sending "UPSN":
+  - PAnsiChar(AnsiString(S)) - CORRECT. Sends 55 50 53 4E 00. Keep the AnsiString
+    in a local for the duration of the call; the temporary in a cast expression
+    lives only for the statement.
+  - PAnsiChar(S) on a UnicodeString - WRONG. It does NOT convert. It sends the
+    UTF-16 bytes 55 00 50 00 53 00 4E 00, identical to the Pointer spelling below,
+    so the module reads to the first NUL and sees ONE character. The compiler does
+    object - W1044 Suspicious typecast of string to PAnsiChar - so it is wrong but
+    not silent.
+  - PAnsiChar(Pointer(S)) - WRONG and SILENT. The same UTF-16 bytes, and dcc64
+    says nothing about it at all. Nothing crashes.
+  Plain `string` IS UnicodeString in Delphi, so PAnsiChar(S) on one is the SECOND
+  line, not the first. Free Pascal in -Mdelphi mode does not emulate that - its
+  `string` is AnsiString, so identical source is correct there and wrong here.
+  Measured both ways, which is why an FPC run cannot stand in for a Delphi one.
   }
 unit vat;
 

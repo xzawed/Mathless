@@ -53,13 +53,18 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Cache the Free Pascal installer
-        # 51 MB, one file, keyed on the version. The tree it installs is ~700 MB across
-        # thousands of small files, and restoring THAT on Windows is a second fat tail --
-        # the stall was never the unpack, it was the download.
+        # ONE file, 51 MB, keyed on the version AND the hash it must have. The tree it
+        # installs is ~700 MB across thousands of small files, and restoring THAT on
+        # Windows is a second fat tail -- the stall was never the unpack, it was the
+        # download.
+        #
+        # `fpc-installer` is OURS. The first attempt at this cached choco's own
+        # `--cache-location`, and choco empties that: the run downloaded 50.99 MB and the
+        # post-job step then saved 2634 bytes. Green, and completely inert.
         uses: actions/cache@v4
         with:
-          path: fpc-download
-          key: fpc-installer-3.2.2-i386-win32
+          path: fpc-installer
+          key: fpc-installer-3.2.2-i386-win32-sha7ec78b
       - name: Install Free Pascal
         # The generated `.pas` is one of the four artifacts `mlc build` writes, and until
         # this step existed NOTHING compiled it -- the golden file pinned 535 lines that no
@@ -73,35 +78,96 @@ jobs:
         #   2026-09-09   answered, but took 12 min    -> the job went from ~3.5 to 14m25s
         #
         # Typical is ~1.3 min. So: usually cheap, occasionally 8x, occasionally fatal.
-        # `--cache-location` puts the download somewhere WE control, and the step above
-        # restores it, so a hit means choco has the file already and never calls out.
         #
-        # The retry below stays for the miss path -- and note it only ever addressed the
-        # FAILURE tail. The 12-minute run SUCCEEDED, so no retry fired; that tail needed
-        # the cache, not more attempts.
+        # So WE fetch the installer, WE check its hash, and we hand it to choco pre-placed
+        # in a scratch cache it is welcome to empty afterwards. The retry belongs around
+        # our download, which is the thing that talks to SourceForge -- note the earlier
+        # retry only ever addressed the FAILURE tail, and the 12-minute run SUCCEEDED, so
+        # nothing retried.
         shell: pwsh
         run: |
-          $dl = Join-Path $PWD "fpc-download"
-          New-Item -ItemType Directory -Force -Path $dl | Out-Null
-          $before = @(Get-ChildItem $dl -File -ErrorAction SilentlyContinue)
-          if ($before.Count -gt 0) {
-            Write-Host "installer cache HIT: $($before[0].Name), $([int]($before[0].Length/1MB)) MB"
+          $keep = Join-Path $PWD "fpc-installer"
+          $exe  = Join-Path $keep "fpc-3.2.2.i386-win32.exe"
+          # The sha256 the chocolatey package itself declares for Url32 (its
+          # tools/ChocolateyInstall.ps1). Pinning it here means a corrupted or swapped
+          # cache entry is refused rather than installed.
+          $sha  = "7EC78B1790ECAC7685F440B17F9E03865BC09846B7C068A9270C4D37704B5AC8"
+          $url  = "https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.exe/download"
+          New-Item -ItemType Directory -Force -Path $keep | Out-Null
+
+          function Test-Cached($path, $want) {
+            if (-not (Test-Path $path)) { return $false }
+            return (Get-FileHash $path -Algorithm SHA256).Hash -eq $want
+          }
+
+          if (Test-Cached $exe $sha) {
+            Write-Host "installer cache HIT: $([int]((Get-Item $exe).Length/1MB)) MB, sha256 verified"
           } else {
-            Write-Host "installer cache MISS -- this run downloads from SourceForge"
+            if (Test-Path $exe) {
+              Write-Host "::warning::cached installer failed its sha256 -- discarding it"
+              Remove-Item $exe -Force
+            }
+            Write-Host "installer cache MISS -- fetching from SourceForge"
+            foreach ($attempt in 1..3) {
+              Write-Host "fetch attempt $attempt of 3"
+              try {
+                Invoke-WebRequest -Uri $url -OutFile $exe -MaximumRedirection 10
+              } catch {
+                Write-Host "  failed: $($_.Exception.Message)"
+              }
+              if (Test-Cached $exe $sha) { break }
+              if (Test-Path $exe) { Remove-Item $exe -Force }
+              if ($attempt -lt 3) { Start-Sleep -Seconds (20 * $attempt) }
+            }
+            if (-not (Test-Cached $exe $sha)) {
+              Write-Host '::error::the Free Pascal installer could not be fetched from SourceForge (or arrived with the wrong sha256) after 3 attempts. This is an availability failure of that host, NOT a defect in the diff -- re-run the job.'
+              exit 1
+            }
+            Write-Host "fetched $([int]((Get-Item $exe).Length/1MB)) MB, sha256 verified"
           }
-          $ok = $false
-          foreach ($attempt in 1..3) {
-            Write-Host "freepascal install, attempt $attempt of 3"
-            choco install freepascal -y --no-progress --cache-location "$dl"
-            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
-            if ($attempt -lt 3) { Start-Sleep -Seconds (20 * $attempt) }
-          }
-          if (-not $ok) {
-            Write-Host '::error::Free Pascal could not be installed after 3 attempts. The chocolatey package fetches its installer from SourceForge when the cache misses, so this is most likely an availability failure of that host and NOT a defect in this change -- re-run the job before looking at the diff.'
+
+          # Pre-place it where choco looks:
+          # <cacheLocation>/<package>/<version>/<package>Install.exe. Under RUNNER_TEMP,
+          # because choco owns and clears this one.
+          #
+          # The package calls Install-ChocolateyPackage TWICE -- Url32, then Url64 for the
+          # win32+win64 installer -- but both calls resolve to this ONE path and declare
+          # the SAME checksum string, so the second reuses the first file. That is the
+          # runner's existing behaviour, unchanged by pre-seeding: CI gets an i386-only FPC
+          # either way. Recorded as a finding, not fixed here (docs/STATUS.md).
+          #
+          # Both names, deliberately. Install-ChocolateyPackage builds
+          # `<package>Install.<ext>` but then passes -GetOriginalFileName, so the real name
+          # is whatever a HEAD to SourceForge yields, falling back to that default. On this
+          # runner it falls back -- the log says "Download of freepascalInstall.exe" and
+          # that message prints the DESTINATION name -- but a Content-Disposition appearing
+          # later would silently move the target. Seeding both costs one copy.
+          $cache = Join-Path $env:RUNNER_TEMP "choco-cache"
+          $seed  = Join-Path $cache "freepascal/3.2.2"
+          New-Item -ItemType Directory -Force -Path $seed | Out-Null
+          Copy-Item $exe (Join-Path $seed "freepascalInstall.exe") -Force
+          Copy-Item $exe (Join-Path $seed "fpc-3.2.2.i386-win32.exe") -Force
+
+          # No `2>&1`: GitHub runs pwsh with $ErrorActionPreference='stop', and
+          # redirecting a native command's stderr can turn a harmless line into a
+          # terminating NativeCommandError. stderr goes straight to the log instead.
+          $out = & choco install freepascal -y --no-progress --cache-location "$cache"
+          $out | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '::error::choco install freepascal failed. The installer was already on disk and hash-verified, so this is an INSTALL failure, not a download one.'
             exit 1
           }
-          $after = @(Get-ChildItem $dl -File -Recurse -ErrorAction SilentlyContinue)
-          Write-Host "installer cache now holds $($after.Count) file(s)"
+
+          # The whole point, asserted rather than assumed: if choco still reached out, the
+          # pre-seed missed its path and the cache buys nothing. Print the tree so the next
+          # run does not have to guess where it should have gone.
+          if ($out -match 'Download of ') {
+            Write-Host "seeded layout under ${cache}:"
+            Get-ChildItem $cache -Recurse -File | ForEach-Object { Write-Host "  $($_.FullName)" }
+            Write-Host '::error::choco downloaded the installer anyway -- the pre-seed path is wrong, so this cache is inert. Fix the seed path above.'
+            exit 1
+          }
+          Write-Host "choco used the pre-seeded installer -- no SourceForge fetch during install"
       - name: Test (locked)
         # MATHLESS_GATE_D=require turns "no MSVC found" into a FAILURE instead of a skip, so
         # acceptance D (a real C host loading the module) can never silently stop running

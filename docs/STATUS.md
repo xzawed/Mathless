@@ -1416,6 +1416,41 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
 
+### 9-21. CI의 FPC가 i386 전용인 **이유** (2026-09-09, E2) — choco 패키지의 캐시 충돌
+
+`MATHLESS_GATE_FPC_HOST`가 CI에서 못 도는 이유를 여태 "러너의 fpc가 i386 전용이라서"로만 적어
+왔다. 캐시를 파다가 **왜 그런지**가 나왔다.
+
+`freepascal` 3.2.2 패키지의 `tools/ChocolateyInstall.ps1`은 `Install-ChocolateyPackage`를 **두 번**
+부른다:
+
+| 호출 | URL | 선언된 sha256 |
+|---|---|---|
+| 1 | `fpc-3.2.2.i386-win32.exe` | `7ec78b…` |
+| 2 (64비트에서만) | `fpc-3.2.2.win32.and.win64.exe` | **`7ec78b…` — 같은 문자열** |
+
+두 호출이 같은 패키지명·같은 버전이라 **캐시 경로가 하나다**
+(`<cache>/freepascal/3.2.2/freepascalInstall.exe`). 그래서 2회차는 1회차가 받아 둔 **i386 파일을
+재사용**하고, 체크섬 문자열이 같으니 검증도 통과한다. 러너 로그가 그대로 보여준다:
+
+```
+Downloading freepascal from '.../fpc-3.2.2.i386-win32.exe/download'
+Download of freepascalInstall.exe (50.99 MB) completed.
+Hashes match.                          -> Installing freepascal... 설치됨
+File appears to be downloaded already. Verifying with package checksum...
+Hashes match.                          -> Installing freepascal... 설치됨   <- 같은 파일이다
+```
+
+**즉 win32+win64 인스톨러는 이 러너에 한 번도 내려온 적이 없다.** 결합본은 별개 파일이고 크기도
+다르다(E1 — Grok이 Fossies를 인용했다. **우리가 잰 것이 아니다**). 패키지에 적힌 `checksum64`는
+애초에 그 파일의 값일 수 없다.
+
+**여기서는 고치지 않는다.** #191은 캐시 PR이고, 이 발견까지 함께 고치면 두 관심사가 섞인다. 미리
+심는 것도 **오늘의 동작을 바꾸지 않는다** — 심어 주는 파일이 i386이므로 결과는 지금과 같다.
+후속 후보로 적어 둔다: 결합 인스톨러를 직접 내려받아 설치하면 CI가 x86_64 fpc를 갖게 되고,
+**`MATHLESS_GATE_FPC_HOST`가 로컬 전용에서 CI 게이트로 올라갈 수 있다.** 그때 필요한 것은 그
+파일의 sha256을 **우리가 재는 것**이다 — 패키지의 값은 쓸 수 없다.
+
 ### 9-20. **`MATHLESS_GATE_DELPHI`이 통과한다** (2026-09-09, E2) — 내가 안 재고 단정한 것
 
 사용자가 물었다: *"Delphi IDE를 Claude가 호출해서 구동하는 건 어려운가?"*
@@ -1540,9 +1575,41 @@ freepascal (exited 404)
 > **캐시 대상은 트리가 아니라 설치본이다.** 재 보니 설치 트리는 **729 MB / 6,903 파일**(units만
 > 658 MB)이고, 그걸 Windows에서 복원하는 것은 **두 번째 fat tail**이다. 멈춘 곳은 압축 해제가 아니라
 > **다운로드**였다. 그래서 **51 MB 파일 하나**를 버전 키로 캐시하고 `choco --cache-location`으로
-> 그 자리를 가리킨다. 적중이면 choco가 밖으로 나가지 않는다.
+> 그 자리를 가리킨다. ~~적중이면 choco가 밖으로 나가지 않는다.~~ **틀렸다 — 바로 아래.**
 >
 > **로그가 적중/실패를 말한다** — 조용히 아무것도 안 하는 캐시는 이 저장소가 반복해서 걷어내는 모양이다.
+>
+> #### 그리고 그 캐시는 아무것도 담지 않았다 (2026-09-09, E2)
+>
+> CI는 두 잡 다 초록이었고 post-job이 `Cache saved with key: fpc-installer-3.2.2-i386-win32`까지
+> 찍었다. **업로드는 2,634 바이트였다.**
+>
+> ```
+> Download of freepascalInstall.exe (50.99 MB) completed.   <- 받기는 받았다
+> installer cache now holds 4 file(s)
+> Sent 2634 of 2634 (100.0%)                                <- 51 MB가 아니다
+> Cache saved with key: fpc-installer-3.2.2-i386-win32
+> ```
+>
+> **원인은 캐시 디렉터리를 그대로 `--cache-location`으로 넘긴 것이다.** `Install-ChocolateyPackage`는
+> `$chocoTempDir = $env:TEMP`를 쓰고 `--cache-location`이 그 `TEMP`를 대체한다
+> (`C:\ProgramData\chocolatey\helpers\functions\Install-ChocolateyPackage.ps1:372`). 즉 **그
+> 디렉터리는 choco의 것이고 choco가 비운다.** 나는 choco의 임시 폴더를 캐시해 놓고 설치본을
+> 캐시했다고 적었다.
+>
+> **바로 윗 문단에 "로그가 적중/실패를 말한다"고 써 놓고 저질렀다.** 적중 판정을 **파일 존재**로만
+> 했기 때문이다 — 남아 있던 4개는 51 MB가 아니었고, 판정은 그 둘을 구분하지 못했다. 초록인데
+> 아무것도 하지 않는 단계, 이 저장소가 반복해서 걷어내는 바로 그 모양이다.
+>
+> **고친 방식(#191).** 파일을 우리가 소유한다: choco가 모르는 `fpc-installer/`에 직접 내려받아
+> **sha256(`7ec78b…`, 패키지가 스스로 선언한 값)을 검증**하고, choco의 스크래치 캐시에 **미리 심어서**
+> 넘긴다. 그리고 주장을 가드로 바꿨다 — choco 출력에 `Download of `가 남으면 심기가 빗나간 것이므로
+> 트리를 찍고 **실패한다.** 캐시 키도 함께 바꿨다(`-sha7ec78b`): 옛 키를 두면 2.6 KB 항목이 복원되고
+> post-job이 "이미 존재"로 저장을 건너뛰어 **영원히 채워지지 않는다.**
+>
+> 심는 이름은 **둘**이다. choco는 `<package>Install.<ext>`를 만든 뒤 `-GetOriginalFileName`을 넘기므로
+> 실제 이름은 SourceForge가 주는 헤더에 달렸고, 이 러너에서는 기본값으로 떨어진다(로그의
+> `Download of freepascalInstall.exe`는 **저장 파일명**을 찍는다 — `Get-WebFile.ps1:317`).
 
 ### 9-17. Pascal 호스트를 고유 축으로 키웠다 (2026-09-07, E2) — **두 건, 둘 다 주장에 가드가 없었다**
 

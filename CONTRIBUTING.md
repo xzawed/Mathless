@@ -24,9 +24,10 @@ into a failure, and **CI sets it** — the windows job installs Free Pascal firs
 gate can never quietly stop running there. Locally it skips, loudly, when fpc is absent. Check: `cargo test -p ml_oracle --test fpc_units --
 --nocapture` prints `GATE_FPC_OK`. A second test in that file builds and RUNS
 `hosts/delphi-host/host.dpr` against real modules; it needs an fpc that can target
-x86_64 (the official win32.and.win64 installer, which winget installs — chocolatey's
-package is i386-only), so it has its own `MATHLESS_GATE_FPC_HOST` and CI does not set
-it. It is not the Delphi gate either.
+x86_64 (the official win32.and.win64 installer; chocolatey's package delivers an
+i386-only fpc, which is why the windows job installs that file directly), so it has its
+own `MATHLESS_GATE_FPC_HOST` — and **CI sets that to `require` too**, so it prints
+`GATE_FPC_HOST_LOADBIND_OK` rather than skipping. It is not the Delphi gate either.
 
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
 Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
@@ -155,9 +156,10 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 멈출 수 없다. 로컬에서는 fpc가 없으면 **시끄럽게** skip한다. 확인: `cargo test -p ml_oracle --test fpc_units -- --nocapture`가
 `GATE_FPC_OK`를 찍는다. 같은 파일의 두 번째 테스트는 `hosts/delphi-host/host.dpr`를
 빌드해 **실제 모듈을 로드·호출**한다. 그것은 x86_64를 타깃할 수 있는 fpc가 필요하므로
-(공식 win32.and.win64 설치본 — winget이 그것을 깐다. chocolatey 패키지는 i386 전용)
-**별도 변수 `MATHLESS_GATE_FPC_HOST`** 를 쓰고 CI는 설정하지 않는다. 이것도 Delphi
-게이트가 아니다.
+(공식 win32.and.win64 설치본. chocolatey 패키지는 i386 전용 fpc를 깔기 때문에
+windows 잡이 그 파일을 직접 설치한다) **별도 변수 `MATHLESS_GATE_FPC_HOST`** 를 쓰고,
+**CI도 그것을 `require`로 설정한다** — skip이 아니라 `GATE_FPC_HOST_LOADBIND_OK`를 찍는다.
+이것도 Delphi 게이트가 아니다.
 
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
 Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).

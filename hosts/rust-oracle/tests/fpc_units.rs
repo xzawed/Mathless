@@ -100,28 +100,66 @@ fn every_generated_unit_is_valid_object_pascal() {
         return;
     };
 
-    // Which target? The units import an x64 module, so x86_64 is the closer match and this
-    // asks for it first. But the claim this gate makes is about the TEXT -- syntax, `cdecl`,
-    // `external`, `UInt64`, `PAnsiChar` -- and none of those declarations depend on pointer
-    // size, so a driver without the x64 cross backend still answers the question it is here
-    // to answer. Chocolatey's package fetches the i386-only installer, so that case is real.
+    // Which targets? EVERY one this driver can reach, not the closest one.
     //
-    // It falls back, and it SAYS which it used. A gate that quietly answers a smaller
-    // question is the shape this repository keeps removing.
-    let mut probe = Command::new(&fpc);
-    probe.arg("-Px86_64").arg("-iTP");
-    let probe_out = common::output_with_deadline(
-        probe,
-        std::time::Duration::from_secs(60),
-        "fpc -Px86_64 -iTP",
-    );
-    let x64_ok =
-        probe_out.status.success() && String::from_utf8_lossy(&probe_out.stdout).trim() == "x86_64";
-    let target = if x64_ok { Some("x86_64") } else { None };
+    // Until CI installed the combined win32+win64 build, this asked for x86_64 and fell back
+    // to the driver's default, which made CI compile at i386 and this machine at x86_64. The
+    // doc comment on the host gate below called that "luck, not design" and asked whoever
+    // made the two environments agree to know what they were giving up. They agreed, and the
+    // answer is: compile at both, deliberately, wherever both exist.
+    //
+    // Neither width is the "real" one for the module -- it is x64, and a 32-bit program could
+    // not load it. But the claim this gate makes is about the TEXT (syntax, `cdecl`,
+    // `external`, `UInt64`, `PAnsiChar`), and 32-bit is a second reading of that text for
+    // free. A driver that can reach neither still answers the question, with its default.
+    //
+    // It SAYS which it used. A gate that quietly answers a smaller question is the shape this
+    // repository keeps removing.
+    let can_target = |arch: &str| {
+        let mut probe = Command::new(&fpc);
+        probe.arg(format!("-P{arch}")).arg("-iTP");
+        let out = common::output_with_deadline(
+            probe,
+            std::time::Duration::from_secs(60),
+            &format!("fpc -P{arch} -iTP"),
+        );
+        out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == arch
+    };
+    let targets: Vec<&str> = ["x86_64", "i386"]
+        .into_iter()
+        .filter(|a| can_target(a))
+        .collect();
+
+    // Deriving the width count from the driver has a hole, and it is the hole this gate is
+    // built to refuse: the floor below is `examples x passes`, so a driver that loses a
+    // backend makes BOTH sides shrink and the assertion still passes -- green, at fewer
+    // widths, saying nothing. `require` is where the toolchain is ours (CI installs the
+    // combined win32+win64 build and that step already fails if it cannot reach x86_64), so
+    // there, reaching fewer widths is a defect. Off `require` -- a contributor with a partial
+    // fpc -- take what is there and say which in the line below.
+    if std::env::var("MATHLESS_GATE_FPC").as_deref() == Ok("require") {
+        let missing: Vec<&str> = ["x86_64", "i386"]
+            .into_iter()
+            .filter(|a| !targets.contains(a))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "MATHLESS_GATE_FPC=require but this fpc cannot target {} — the gate would have \
+             passed anyway, at fewer widths, because its floor is derived from the driver. \
+             Install a Free Pascal carrying both backends (the official win32.and.win64 \
+             build); the windows job does exactly that.",
+            missing.join(" and ")
+        );
+    }
+
+    // `None` = pass no `-P` and take whatever the driver defaults to.
+    let passes: Vec<Option<&str>> = if targets.is_empty() {
+        vec![None]
+    } else {
+        targets.iter().copied().map(Some).collect()
+    };
 
     let work = common::TempOut::new("gate_fpc");
-    let units_dir = work.path().join("units");
-    std::fs::create_dir_all(&units_dir).expect("create unit output dir");
 
     // Enumerate `examples/` rather than listing names: a new example that does not compile
     // must break this, and a hardcoded list would let it through (the lesson of A5).
@@ -145,31 +183,39 @@ fn every_generated_unit_is_valid_object_pascal() {
         let arts =
             emit_artifacts(&src, &stem, work.path()).unwrap_or_else(|e| panic!("emit {stem}: {e}"));
 
-        // `-Mdelphi` is the dialect the unit is written for. `-Sew` turns warnings into
-        // errors: the defect this gate found was a warning, and a warning nobody fails on is
-        // a warning that ships. `-Px86_64` matches the module the unit imports.
-        let mut cmd = Command::new(&fpc);
-        if let Some(t) = target {
-            cmd.arg(format!("-P{t}"));
-        }
-        cmd.arg("-Mdelphi")
-            .arg("-Sew")
-            .arg(format!("-FU{}", units_dir.display()))
-            .arg(&arts.delphi_unit);
-        let out = common::output_with_deadline(
-            cmd,
-            std::time::Duration::from_secs(120),
-            &format!("fpc on {stem}"),
-        );
+        for pass in &passes {
+            // A separate `-FU` per width. `.ppu`/`.o` for two pointer widths in one directory
+            // is a way to make the second compile read the first one's units.
+            let units_dir = work.path().join("units").join(pass.unwrap_or("default"));
+            std::fs::create_dir_all(&units_dir).expect("create unit output dir");
 
-        if out.status.success() {
-            compiled += 1;
-        } else {
-            failures.push(format!(
-                "--- {stem} ---\n{}{}",
-                String::from_utf8_lossy(&out.stdout),
-                String::from_utf8_lossy(&out.stderr)
-            ));
+            // `-Mdelphi` is the dialect the unit is written for. `-Sew` turns warnings into
+            // errors: the defect this gate found was a warning, and a warning nobody fails
+            // on is a warning that ships.
+            let mut cmd = Command::new(&fpc);
+            if let Some(t) = pass {
+                cmd.arg(format!("-P{t}"));
+            }
+            cmd.arg("-Mdelphi")
+                .arg("-Sew")
+                .arg(format!("-FU{}", units_dir.display()))
+                .arg(&arts.delphi_unit);
+            let out = common::output_with_deadline(
+                cmd,
+                std::time::Duration::from_secs(120),
+                &format!("fpc on {stem}"),
+            );
+
+            if out.status.success() {
+                compiled += 1;
+            } else {
+                let width = pass.unwrap_or("the driver's default");
+                failures.push(format!(
+                    "--- {stem} ({width}) ---\n{}{}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr)
+                ));
+            }
         }
     }
 
@@ -185,18 +231,26 @@ fn every_generated_unit_is_valid_object_pascal() {
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("mls"))
         .count();
     assert_eq!(
-        compiled, example_count,
-        "every example must contribute a unit that compiles; the floor is derived from \
-         examples/ so adding one cannot loosen it"
+        compiled,
+        example_count * passes.len(),
+        "every example must contribute a unit that compiles at every width this driver can \
+         reach; the count is derived from examples/, so adding one cannot loosen it. The \
+         WIDTHS are derived too, which is why `require` pins them above -- otherwise this \
+         line shrinks with the driver and stays green"
     );
     assert!(
         compiled > 0,
         "the corpus is empty, so this gate proved nothing"
     );
 
-    let shown = target.unwrap_or("the driver's default (no x86_64 backend here)");
+    let shown = if targets.is_empty() {
+        "the driver's default (it answers for neither x86_64 nor i386)".to_string()
+    } else {
+        targets.join(" + ")
+    };
     println!(
-        "GATE_FPC_OK: {compiled} generated units compiled with -Mdelphi -Sew, target {shown},          using {}",
+        "GATE_FPC_OK: {example_count} generated units compiled with -Mdelphi -Sew at {} width(s), target {shown},          using {}",
+        passes.len(),
         fpc.display()
     );
 }
@@ -222,28 +276,26 @@ fn every_generated_unit_is_valid_object_pascal() {
 /// and hid it, because every module answers 1. The C host cannot meet this: it resolves per
 /// module handle. It is a hazard of the import-unit binding, and it took a compiler to see.
 ///
-/// **Its own variable, `MATHLESS_GATE_FPC_HOST`, and CI does not set it.** Unlike the units
-/// above, this host LOADS x64 modules, so it needs an fpc that can target x86_64.
-/// Chocolatey's package -- what the windows job installs -- fetches the i386-only installer;
-/// measured on CI: `GATE_FPC_OK ... target the driver's default (no x86_64 backend here)`.
-/// Requiring it there would paint the build red over a runner's packaging, so it requires
-/// nothing and skips loudly instead. It still RUNS wherever the backend exists, which is
-/// every full local run here (the official win32.and.win64 installer carries ppcrossx64,
-/// and that is the one winget installs).
+/// **Its own variable, `MATHLESS_GATE_FPC_HOST`, and CI sets it to `require` (#193).** Unlike
+/// the units above, this host LOADS x64 modules, so it needs an fpc that can target x86_64 --
+/// and for a long time CI had none, because chocolatey's `freepascal` package installs the
+/// i386-only build twice (it resolves both of its URLs to one cache path under one declared
+/// checksum). So this gate could only skip there:
 ///
-/// Closing that gap means putting an x86_64-capable Free Pascal on the runner. That is not
-/// done, and this is where a person finds out why instead of guessing.
+///     before   GATE_FPC_HOST_SKIPPED: this fpc cannot target x86_64 ... the host did not run
+///     after    GATE_FPC_HOST_LOADBIND_OK: a missing module killed the host before `begin`
 ///
-/// **The split turns out to buy something nobody designed for.** The units test above runs
-/// in BOTH places and takes whatever target the local driver offers, so between them the
-/// generated `.pas` is compiled at two pointer widths on every push -- i386 on CI
-/// (chocolatey's package) and x86_64 here (winget's). Both lines are from real runs:
+/// The windows job now installs the combined win32+win64 build directly (#192), the step
+/// fails if `fpc -Px86_64 -iTP` does not answer `x86_64`, and this gate is required on top --
+/// because a gate that may skip is a gate that can stop running without anyone noticing,
+/// which is the failure mode this repository keeps removing.
 ///
-///     CI     GATE_FPC_OK: 19 ... target the driver's default (no x86_64 backend here)
-///     local  GATE_FPC_OK: 19 ... target x86_64
-///
-/// That is luck, not design. It is written down so a later change which makes both
-/// environments agree knows what it would be giving up.
+/// **What that agreement cost, and what was done about it.** Before the two environments
+/// matched, the units test above compiled at i386 on CI (chocolatey's driver) and x86_64
+/// here, so the generated `.pas` was read at two pointer widths on every push -- by luck, not
+/// design. Making both environments agree would have quietly dropped one width. It did not:
+/// that test now probes for every backend the driver has and compiles at each, so both widths
+/// are deliberate and a lost backend fails the count instead of shrinking the claim.
 #[test]
 fn the_staged_pascal_host_builds_and_calls_the_modules() {
     let Some(fpc) = fpc() else {

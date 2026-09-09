@@ -199,6 +199,13 @@ jobs:
           # Same reason, for the same failure mode: a gate that skips can never go red, and
           # the FPC gate caught a real defect on its first run (11 of 19 units warned).
           MATHLESS_GATE_FPC: require
+          # The Pascal HOST gate -- an Object Pascal program that loads x64 modules and calls
+          # them. It could only skip here until the step above started installing the
+          # combined win32+win64 build, because chocolatey's package delivers an i386-only
+          # fpc. It ran green on #192 (GATE_FPC_HOST_LOADBIND_OK); this is what stops it
+          # going back to skipping without anyone noticing. Until now C was CI's only
+          # host-loads-a-module gate.
+          MATHLESS_GATE_FPC_HOST: require
         run: cargo test --workspace --locked
       - name: Say what the FPC gate measured
         # cargo swallows a passing test's stdout, so `GATE_FPC_OK` never reaches the log

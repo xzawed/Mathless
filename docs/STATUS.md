@@ -1416,6 +1416,54 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
 
+### 9-22. Pascal 호스트 게이트를 CI로 올렸다 (2026-09-09, E2) — **그리고 우연이던 폭을 설계로 바꿨다**
+
+§9-21이 CI에 x86_64 fpc를 만들었다(#192). 그 위에서 두 가지를 했다.
+
+**(1) `MATHLESS_GATE_FPC_HOST=require`.** 그 게이트는 Object Pascal 호스트가 **x64 모듈을 로드하고
+호출**한다. #192 전까지 CI에서는 skip밖에 못 했고, #192에서 초록으로 돌았다
+(`GATE_FPC_HOST_LOADBIND_OK`). required가 아니면 **다시 조용히 skip으로 돌아가도 아무도 모른다** —
+이 저장소가 반복해서 걷어내는 그 모양이다. 이로써 CI에서 "호스트가 실제로 모듈을 부른다"를 지키는
+게이트가 **C 하나에서 둘**이 된다.
+
+**(2) 그 승격이 무엇을 앗아갈 뻔했는가.** `fpc_units.rs`가 스스로 적어 둔 문장이 있었다:
+
+> *"The split turns out to buy something nobody designed for. … 그 사이에서 생성 `.pas`는 매 푸시마다
+> 두 포인터 폭으로 컴파일된다 — CI에서 i386(chocolatey), 여기서 x86_64(winget). **That is luck, not
+> design.** 나중에 두 환경을 일치시키는 변경이 무엇을 포기하는지 알도록 적어 둔다."*
+
+두 환경을 일치시킨 변경이 바로 이것이다. 그대로 뒀으면 **i386 컴파일이 조용히 사라졌다** —
+커버리지가 느는 게 아니라 옮겨가고, 아무 줄도 그것을 말하지 않는다. (Grok이 착수 계획에서 같은
+지적을 했고, 나는 처음에 "게이트의 주장은 텍스트에 대한 것"이라며 받지 않았다. 그 파일 자신의
+문장을 읽고 뒤집었다.)
+
+그래서 유닛 게이트가 이제 **드라이버가 닿을 수 있는 모든 폭**을 물어보고 각각 컴파일한다. 폭마다
+별도 `-FU` 출력 디렉터리를 쓴다 — 두 폭의 `.ppu`/`.o`를 한 디렉터리에 섞으면 두 번째 컴파일이 첫
+번째의 유닛을 읽는다. 하한도 유도값이다: `examples/ 개수 x 폭 개수`. 백엔드를 하나 잃으면 개수가
+맞지 않아... **아니다.** `grok_build_verify`가 여기서 걸었다: `passes`가 드라이버에서 유도되므로
+백엔드가 사라지면 **기대값도 같이 줄어** `19 x 1 == 19`로 통과한다. 폭 하나를 잃고도 초록이다 —
+내가 assert 메시지에 적어 둔 보장이 거짓이었고, 이 저장소가 걷어내는 바로 그 모양을 내가 새로 심을
+뻔했다.
+
+그래서 **`require`가 폭을 못 박는다.** `MATHLESS_GATE_FPC=require`면 x86_64와 i386 **둘 다** 닿아야
+하고, 아니면 무엇이 없는지 이름을 대고 실패한다. require가 아닌 로컬(부분 설치한 기여자)에서는
+있는 것만 쓰고 줄이 그것을 말한다. 양쪽으로 쟀다 — `ppcrossx64.exe`를 잠시 치우고 돌리니:
+
+```
+panicked at fpc_units.rs:145:
+  MATHLESS_GATE_FPC=require but this fpc cannot target x86_64 — the gate would have
+  passed anyway, at fewer widths, because its floor is derived from the driver.
+```
+
+```
+before   GATE_FPC_OK: 19 generated units compiled ... target x86_64            (로컬)
+after    GATE_FPC_OK: 19 generated units compiled ... at 2 width(s), target x86_64 + i386
+비용     7.94s -> 9.71s
+```
+
+전체 스위트 **448 passed / 0 failed**(`MATHLESS_GATE_D` · `_FPC` · `_FPC_HOST` · `_DELPHI` 모두
+`require`).
+
 ### 9-21. CI의 FPC가 i386 전용인 **이유** (2026-09-09, E2) — choco 패키지의 캐시 충돌
 
 `MATHLESS_GATE_FPC_HOST`가 CI에서 못 도는 이유를 여태 "러너의 fpc가 i386 전용이라서"로만 적어

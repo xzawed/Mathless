@@ -141,32 +141,35 @@ jobs:
             Write-Host "fetched $([int]((Get-Item $exe).Length/1MB)) MB, sha256 verified"
           }
 
-          # Pre-place it where choco looks:
-          # <cacheLocation>/<package>/<version>/<package>Install.exe. Under RUNNER_TEMP,
-          # because choco owns and clears this one.
+          # Pre-place it where choco actually looks, which is NOT --cache-location:
+          # Install-ChocolateyPackage builds `$env:TEMP/<package>/<version>/
+          # <package>Install.<ext>` (Install-ChocolateyPackage.ps1:372-382).
+          # --cache-location holds the .nupkg and a ChocolateyScratch copy of the package
+          # files -- measured: seeding THAT left choco downloading anyway, and the four
+          # files it kept were the scratch nuspec and tools. So point TEMP at our seed.
+          #
+          # The filename is measured too, not assumed: choco passes -GetOriginalFileName,
+          # so the name comes from a HEAD to SourceForge, and calling its own
+          # `Get-WebFileName` against both package URLs returns `freepascalInstall.exe`
+          # for each -- the DefaultName fallback.
           #
           # The package calls Install-ChocolateyPackage TWICE -- Url32, then Url64 for the
-          # win32+win64 installer -- but both calls resolve to this ONE path and declare
-          # the SAME checksum string, so the second reuses the first file. That is the
-          # runner's existing behaviour, unchanged by pre-seeding: CI gets an i386-only FPC
-          # either way. Recorded as a finding, not fixed here (docs/STATUS.md).
-          #
-          # Both names, deliberately. Install-ChocolateyPackage builds
-          # `<package>Install.<ext>` but then passes -GetOriginalFileName, so the real name
-          # is whatever a HEAD to SourceForge yields, falling back to that default. On this
-          # runner it falls back -- the log says "Download of freepascalInstall.exe" and
-          # that message prints the DESTINATION name -- but a Content-Disposition appearing
-          # later would silently move the target. Seeding both costs one copy.
-          $cache = Join-Path $env:RUNNER_TEMP "choco-cache"
-          $seed  = Join-Path $cache "freepascal/3.2.2"
+          # win32+win64 installer -- but both resolve to this ONE path and declare the SAME
+          # checksum string, so the second reuses the first file. That is the runner's
+          # existing behaviour, unchanged by seeding: CI gets an i386-only FPC either way.
+          # Recorded as a finding, not fixed here (docs/STATUS.md §9-21).
+          $origTemp = $env:TEMP
+          $root = Join-Path $env:RUNNER_TEMP "choco-cache"
+          $seed = Join-Path $root "freepascal/3.2.2"
           New-Item -ItemType Directory -Force -Path $seed | Out-Null
           Copy-Item $exe (Join-Path $seed "freepascalInstall.exe") -Force
-          Copy-Item $exe (Join-Path $seed "fpc-3.2.2.i386-win32.exe") -Force
+          $env:TEMP = $root
+          $env:TMP  = $root
 
           # No `2>&1`: GitHub runs pwsh with $ErrorActionPreference='stop', and
           # redirecting a native command's stderr can turn a harmless line into a
           # terminating NativeCommandError. stderr goes straight to the log instead.
-          $out = & choco install freepascal -y --no-progress --cache-location "$cache"
+          $out = & choco install freepascal -y --no-progress --cache-location "$root"
           $out | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 0) {
             Write-Host '::error::choco install freepascal failed. The installer was already on disk and hash-verified, so this is an INSTALL failure, not a download one.'
@@ -177,9 +180,16 @@ jobs:
           # pre-seed missed its path and the cache buys nothing. Print the tree so the next
           # run does not have to guess where it should have gone.
           if ($out -match 'Download of ') {
-            Write-Host "seeded layout under ${cache}:"
-            Get-ChildItem $cache -Recurse -File | ForEach-Object { Write-Host "  $($_.FullName)" }
-            Write-Host '::error::choco downloaded the installer anyway -- the pre-seed path is wrong, so this cache is inert. Fix the seed path above.'
+            Write-Host "seeded layout under ${root}:"
+            Get-ChildItem $root -Recurse -File | ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
+            # Where did it ACTUALLY land? Answering this in the same run is the difference
+            # between one more iteration and three.
+            Write-Host "freepascalInstall.exe anywhere under the temp roots:"
+            foreach ($r in @($root, $origTemp, $env:RUNNER_TEMP)) {
+              Get-ChildItem $r -Recurse -File -Filter "freepascalInstall.exe" -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
+            }
+            Write-Host '::error::choco downloaded the installer anyway -- the seed is not on the path it uses, so this cache is inert. The listing above says where it went.'
             exit 1
           }
           Write-Host "choco used the pre-seeded installer -- no SourceForge fetch during install"

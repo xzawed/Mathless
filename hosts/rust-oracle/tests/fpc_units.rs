@@ -129,6 +129,29 @@ fn every_generated_unit_is_valid_object_pascal() {
         .into_iter()
         .filter(|a| can_target(a))
         .collect();
+
+    // Deriving the width count from the driver has a hole, and it is the hole this gate is
+    // built to refuse: the floor below is `examples x passes`, so a driver that loses a
+    // backend makes BOTH sides shrink and the assertion still passes -- green, at fewer
+    // widths, saying nothing. `require` is where the toolchain is ours (CI installs the
+    // combined win32+win64 build and that step already fails if it cannot reach x86_64), so
+    // there, reaching fewer widths is a defect. Off `require` -- a contributor with a partial
+    // fpc -- take what is there and say which in the line below.
+    if std::env::var("MATHLESS_GATE_FPC").as_deref() == Ok("require") {
+        let missing: Vec<&str> = ["x86_64", "i386"]
+            .into_iter()
+            .filter(|a| !targets.contains(a))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "MATHLESS_GATE_FPC=require but this fpc cannot target {} — the gate would have \
+             passed anyway, at fewer widths, because its floor is derived from the driver. \
+             Install a Free Pascal carrying both backends (the official win32.and.win64 \
+             build); the windows job does exactly that.",
+            missing.join(" and ")
+        );
+    }
+
     // `None` = pass no `-P` and take whatever the driver defaults to.
     let passes: Vec<Option<&str>> = if targets.is_empty() {
         vec![None]
@@ -211,8 +234,9 @@ fn every_generated_unit_is_valid_object_pascal() {
         compiled,
         example_count * passes.len(),
         "every example must contribute a unit that compiles at every width this driver can \
-         reach; both floors are derived -- from examples/ and from the driver -- so neither \
-         adding an example nor losing a backend can quietly loosen this"
+         reach; the count is derived from examples/, so adding one cannot loosen it. The \
+         WIDTHS are derived too, which is why `require` pins them above -- otherwise this \
+         line shrinks with the driver and stays green"
     );
     assert!(
         compiled > 0,

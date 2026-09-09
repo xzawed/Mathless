@@ -1440,7 +1440,20 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 그래서 유닛 게이트가 이제 **드라이버가 닿을 수 있는 모든 폭**을 물어보고 각각 컴파일한다. 폭마다
 별도 `-FU` 출력 디렉터리를 쓴다 — 두 폭의 `.ppu`/`.o`를 한 디렉터리에 섞으면 두 번째 컴파일이 첫
 번째의 유닛을 읽는다. 하한도 유도값이다: `examples/ 개수 x 폭 개수`. 백엔드를 하나 잃으면 개수가
-맞지 않아 **실패한다** — 주장이 조용히 작아지지 않는다.
+맞지 않아... **아니다.** `grok_build_verify`가 여기서 걸었다: `passes`가 드라이버에서 유도되므로
+백엔드가 사라지면 **기대값도 같이 줄어** `19 x 1 == 19`로 통과한다. 폭 하나를 잃고도 초록이다 —
+내가 assert 메시지에 적어 둔 보장이 거짓이었고, 이 저장소가 걷어내는 바로 그 모양을 내가 새로 심을
+뻔했다.
+
+그래서 **`require`가 폭을 못 박는다.** `MATHLESS_GATE_FPC=require`면 x86_64와 i386 **둘 다** 닿아야
+하고, 아니면 무엇이 없는지 이름을 대고 실패한다. require가 아닌 로컬(부분 설치한 기여자)에서는
+있는 것만 쓰고 줄이 그것을 말한다. 양쪽으로 쟀다 — `ppcrossx64.exe`를 잠시 치우고 돌리니:
+
+```
+panicked at fpc_units.rs:145:
+  MATHLESS_GATE_FPC=require but this fpc cannot target x86_64 — the gate would have
+  passed anyway, at fewer widths, because its floor is derived from the driver.
+```
 
 ```
 before   GATE_FPC_OK: 19 generated units compiled ... target x86_64            (로컬)

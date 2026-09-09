@@ -172,9 +172,17 @@ jobs:
               ForEach-Object { Write-Host "  found instead: $($_.FullName)" }
             exit 1
           }
-          $target = (& $fpc -Px86_64 -iTP 2>$null | Select-Object -First 1)
-          if ($LASTEXITCODE -ne 0 -or "$target".Trim() -ne "x86_64") {
-            Write-Host "  fpc -Px86_64 -iTP said '$target' (exit $LASTEXITCODE), expected x86_64"
+          # Assign, THEN read $LASTEXITCODE. Piping the call straight into
+          # `Select-Object -First 1` closes the pipeline early and leaves $LASTEXITCODE
+          # unset -- empty on the runner's pwsh 7, -1 on Windows PowerShell 5.1, measured
+          # both -- so the guard compared that against 0 and tripped on an install that was
+          # perfectly good -- measured: it printed "said 'x86_64' (exit )" and listed
+          # ppcrossx64.exe as present while failing the job.
+          $probe  = & $fpc -Px86_64 -iTP 2>$null
+          $code   = $LASTEXITCODE
+          $target = ($probe | Select-Object -First 1)
+          if ($code -ne 0 -or "$target".Trim() -ne "x86_64") {
+            Write-Host "  fpc -Px86_64 -iTP said '$target' (exit $code), expected x86_64"
             Write-Host "  compilers present:"
             Get-ChildItem $bin -Filter "ppc*.exe" | ForEach-Object { Write-Host "    $($_.Name)" }
             Write-Host '::error::this fpc has no x86_64 backend, so the Pascal host gate would skip. That is the entire reason this step installs the combined win32+win64 build.'

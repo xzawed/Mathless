@@ -1451,6 +1451,59 @@ Hashes match.                          -> Installing freepascal... 설치됨   <
 **`MATHLESS_GATE_FPC_HOST`가 로컬 전용에서 CI 게이트로 올라갈 수 있다.** 그때 필요한 것은 그
 파일의 sha256을 **우리가 재는 것**이다 — 패키지의 값은 쓸 수 없다.
 
+> **고쳤다 (2026-09-09, E2).** 위 문단은 "#191의 범위 밖"이라는 뜻이었고, 그 PR이 닫히자마자
+> 후속으로 열었다. 결합 인스톨러를 **직접** 재고 설치한다:
+>
+> ```
+> fpc-3.2.2.win32.and.win64.exe   93,909,874 B   sha256 8C255390...   magic 4D 5A
+> ```
+>
+> **이 값은 우리가 잰 것이다.** 패키지가 이 URL에 붙여 둔 `checksum64`는 `7ec78b…` — i386 파일의
+> 해시다. 즉 베껴 쓸 수 있는 신뢰 가능한 값이 애초에 없었고, 그래서 **choco에 미리 심는 방법도
+> 불가능하다**: 바이트를 거부당한다. `choco install freepascal`을 걷어내는 이유가 그것이다.
+>
+> 무인 설치를 **로컬에서 비권한으로 먼저 확인**했다 — CI에서 쓸 명령 그대로다:
+>
+> ```
+> /verysilent /norestart /LoadInf=<inf>   with SetupType=full
+>   -> exit 0, 731 MB, bin\i386-win32\{ppc386.exe, ppcrossx64.exe}
+>   -> fpc -Px86_64 -iTP  =>  x86_64   exit 0      <- 게이트 프로브가 요구하는 그것
+>   -> fpc -iTP           =>  i386     exit 0
+> ```
+>
+> 설치 위치는 `C:\FPC\3.2.2`다 — 공식 인스톨러의 기본값이자 이 개발 PC의 위치이고, 게이트가 가장
+> 먼저 뒤지는 루트다. CI와 로컬이 같은 레이아웃으로 모인다.
+>
+> **그리고 주장을 가드로 둔다.** x86_64 백엔드가 없는 fpc를 깔면 `MATHLESS_GATE_FPC_HOST`는
+> chocolatey 시절과 **똑같이 조용히 skip**한다 — 초록이고, 아무것도 재지 않는다. 그래서 설치 단계가
+> `fpc -Px86_64 -iTP`를 직접 물어보고, `x86_64`가 아니면 `ppc*.exe` 목록을 찍고 **실패한다.**
+>
+> **바뀌는 것 하나를 적어 둔다:** `MATHLESS_GATE_FPC`(19개 유닛 컴파일)는 CI에서 여태 드라이버
+> 기본값인 **i386**으로 돌았고, 이제 **x86_64**로 돈다. 커버리지가 늘지 않고 **옮겨간다.** 두 폭을
+> 다 컴파일하자는 제안(Grok)은 받지 않았다 — 그 테스트가 스스로 적어 둔 근거 때문이다: *"이 게이트가
+> 하는 주장은 텍스트에 대한 것이고, 그 선언들 중 포인터 폭에 의존하는 것은 없다."* 그리고 유닛이
+> import하는 모듈은 x64이므로 x86_64가 그 파일 말대로 "더 가까운 짝"이다. 두 폭 컴파일은 후보로만
+> 남긴다.
+
+> **CI에서 확인됐다 (#192).** 로그가 로컬 기준선과 같은 줄을 찍는다 — 바뀐 것은 두 줄이다:
+>
+> ```
+> before   GATE_FPC_HOST_SKIPPED: this fpc cannot target x86_64 ... the host did not run.
+>          GATE_FPC_OK: 19 ... target the driver's default (no x86_64 backend here)
+>
+> after    GATE_FPC_HOST_LOADBIND_OK: a missing module killed the host before `begin`
+>          GATE_FPC_OK: 19 ... target x86_64, using C:\FPC\3.2.2\bin\i386-win32\fpc.exe
+> ```
+>
+> **Object Pascal 호스트가 CI에서 x64 모듈을 로드하고 호출한 것은 이번이 처음이다.** 그전까지 CI에서
+> "호스트가 모듈을 실제로 부른다"를 지키는 게이트는 C뿐이었다.
+>
+> 그리고 **캐시의 값이 같은 실행에서 증명됐다**: 이번 fetch는 `11:09:00` → `11:16:50`, **7분 50초**가
+> 걸렸다(로컬에서는 5초였다). 느림 꼬리는 가설이 아니라 이 PR의 첫 실행에 그대로 걸렸다. post-job이
+> 93,844,796 B를 저장했으므로 다음 실행부터는 그 구간이 사라진다.
+>
+> 설치 자체는 33초다(11:16:50 → 11:17:35, 731 MB). chocolatey 경로의 ~50초보다 오히려 짧다.
+
 ### 9-20. **`MATHLESS_GATE_DELPHI`이 통과한다** (2026-09-09, E2) — 내가 안 재고 단정한 것
 
 사용자가 물었다: *"Delphi IDE를 Claude가 호출해서 구동하는 건 어려운가?"*

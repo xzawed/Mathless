@@ -1602,14 +1602,42 @@ freepascal (exited 404)
 > 아무것도 하지 않는 단계, 이 저장소가 반복해서 걷어내는 바로 그 모양이다.
 >
 > **고친 방식(#191).** 파일을 우리가 소유한다: choco가 모르는 `fpc-installer/`에 직접 내려받아
-> **sha256(`7ec78b…`, 패키지가 스스로 선언한 값)을 검증**하고, choco의 스크래치 캐시에 **미리 심어서**
-> 넘긴다. 그리고 주장을 가드로 바꿨다 — choco 출력에 `Download of `가 남으면 심기가 빗나간 것이므로
-> 트리를 찍고 **실패한다.** 캐시 키도 함께 바꿨다(`-sha7ec78b`): 옛 키를 두면 2.6 KB 항목이 복원되고
-> post-job이 "이미 존재"로 저장을 건너뛰어 **영원히 채워지지 않는다.**
+> **sha256을 검증**하고, choco가 실제로 보는 자리에 **미리 심어서** 넘긴다. 캐시 키도 함께
+> 바꿨다(`-sha7ec78b`): 옛 키를 두면 2.6 KB 항목이 복원되고 post-job이 "이미 존재"로 저장을 건너뛰어
+> **영원히 채워지지 않는다.**
 >
-> 심는 이름은 **둘**이다. choco는 `<package>Install.<ext>`를 만든 뒤 `-GetOriginalFileName`을 넘기므로
-> 실제 이름은 SourceForge가 주는 헤더에 달렸고, 이 러너에서는 기본값으로 떨어진다(로그의
-> `Download of freepascalInstall.exe`는 **저장 파일명**을 찍는다 — `Get-WebFile.ps1:317`).
+> **그리고 "choco가 보는 자리"를 두 번 틀렸다.** 매번 가드가 잡았고, 매번 로그가 답을 줬다:
+>
+> | 심은 곳 | 결과 |
+> |---|---|
+> | `--cache-location/<pkg>/<ver>/` | **아니다.** 거기 남는 건 `ChocolateyScratch`의 nuspec + tools 3개뿐이다 |
+> | 우리가 설정한 `$env:TEMP` | **아니다.** choco가 자식 프로세스의 TEMP를 되돌린다 |
+> | **호출한 사용자의 TEMP** | **맞다** — `C:\Users\runneradmin\AppData\Local\Temp\freepascal\3.2.2\freepascalInstall.exe`, 53,470,080 B |
+>
+> 코드와도 맞는다: `Install-ChocolateyPackage`는 `$env:TEMP/<pkg>/<ver>/<pkg>Install.<ext>`를 쓴다
+> (`Install-ChocolateyPackage.ps1:372-382`). `--cache-location`은 **패키지**를 옮기지 **페이로드**를
+> 옮기지 않는다. 파일명도 실측이다 — choco의 `Get-WebFileName`을 두 패키지 URL에 직접 불러
+> 양쪽 다 `freepascalInstall.exe`(DefaultName 폴백)를 받았다.
+>
+> **세 번의 왕복을 견딘 것은 가드다.** 주장을 가드로 바꿔 뒀기 때문이다 — choco 출력에 `Download of `가
+> 남으면 심기가 빗나간 것이므로 **실패하고**, 트리와 **파일이 실제로 떨어진 경로**를 찍는다. 그
+> 진단 한 줄이 2·3차 추측을 각각 한 번에 끝냈다.
+>
+> **양쪽 경로를 다 쟀다**(2026-09-09):
+>
+> ```
+> MISS   fetch attempt 1 -> fetched 51 MB, sha256 verified      (1.8초)
+>        File appears to be downloaded already. / Hashes match.  x2
+>        choco used the pre-seeded installer
+>        Cache saved ... Sent 53,403,984 of 53,403,984          <- 2,634 B가 아니다
+>
+> HIT    Cache restored from key: fpc-installer-3.2.2-i386-win32-sha7ec78b
+>        installer cache HIT: 51 MB, sha256 verified
+>        choco used the pre-seeded installer
+> ```
+>
+> **HIT 경로에서 SourceForge 요청은 0건이다.** required 게이트가 매 실행마다 그 호스트에 기대는 관계가
+> 여기서 끊긴다. (캐시 스코프는 브랜치별이다 — `main`에 머지된 뒤 그쪽 첫 실행이 한 번 MISS로 채운다.)
 >
 > **그리고 그 수정의 첫 판은 세 번 조용히 실패했다** (같은 날, E2). 직접 받겠다고 한 순간
 > SourceForge가 무엇을 주는지가 우리 문제가 됐다:

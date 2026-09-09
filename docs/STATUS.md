@@ -1485,6 +1485,25 @@ Hashes match.                          -> Installing freepascal... 설치됨   <
 > import하는 모듈은 x64이므로 x86_64가 그 파일 말대로 "더 가까운 짝"이다. 두 폭 컴파일은 후보로만
 > 남긴다.
 
+> **CI에서 확인됐다 (#192).** 로그가 로컬 기준선과 같은 줄을 찍는다 — 바뀐 것은 두 줄이다:
+>
+> ```
+> before   GATE_FPC_HOST_SKIPPED: this fpc cannot target x86_64 ... the host did not run.
+>          GATE_FPC_OK: 19 ... target the driver's default (no x86_64 backend here)
+>
+> after    GATE_FPC_HOST_LOADBIND_OK: a missing module killed the host before `begin`
+>          GATE_FPC_OK: 19 ... target x86_64, using C:\FPC\3.2.2\bin\i386-win32\fpc.exe
+> ```
+>
+> **Object Pascal 호스트가 CI에서 x64 모듈을 로드하고 호출한 것은 이번이 처음이다.** 그전까지 CI에서
+> "호스트가 모듈을 실제로 부른다"를 지키는 게이트는 C뿐이었다.
+>
+> 그리고 **캐시의 값이 같은 실행에서 증명됐다**: 이번 fetch는 `11:09:00` → `11:16:50`, **7분 50초**가
+> 걸렸다(로컬에서는 5초였다). 느림 꼬리는 가설이 아니라 이 PR의 첫 실행에 그대로 걸렸다. post-job이
+> 93,844,796 B를 저장했으므로 다음 실행부터는 그 구간이 사라진다.
+>
+> 설치 자체는 33초다(11:16:50 → 11:17:35, 731 MB). chocolatey 경로의 ~50초보다 오히려 짧다.
+
 ### 9-20. **`MATHLESS_GATE_DELPHI`이 통과한다** (2026-09-09, E2) — 내가 안 재고 단정한 것
 
 사용자가 물었다: *"Delphi IDE를 Claude가 호출해서 구동하는 건 어려운가?"*

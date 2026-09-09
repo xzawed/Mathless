@@ -1416,6 +1416,41 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
 
+### 9-21. CI의 FPC가 i386 전용인 **이유** (2026-09-09, E2) — choco 패키지의 캐시 충돌
+
+`MATHLESS_GATE_FPC_HOST`가 CI에서 못 도는 이유를 여태 "러너의 fpc가 i386 전용이라서"로만 적어
+왔다. 캐시를 파다가 **왜 그런지**가 나왔다.
+
+`freepascal` 3.2.2 패키지의 `tools/ChocolateyInstall.ps1`은 `Install-ChocolateyPackage`를 **두 번**
+부른다:
+
+| 호출 | URL | 선언된 sha256 |
+|---|---|---|
+| 1 | `fpc-3.2.2.i386-win32.exe` | `7ec78b…` |
+| 2 (64비트에서만) | `fpc-3.2.2.win32.and.win64.exe` | **`7ec78b…` — 같은 문자열** |
+
+두 호출이 같은 패키지명·같은 버전이라 **캐시 경로가 하나다**
+(`<cache>/freepascal/3.2.2/freepascalInstall.exe`). 그래서 2회차는 1회차가 받아 둔 **i386 파일을
+재사용**하고, 체크섬 문자열이 같으니 검증도 통과한다. 러너 로그가 그대로 보여준다:
+
+```
+Downloading freepascal from '.../fpc-3.2.2.i386-win32.exe/download'
+Download of freepascalInstall.exe (50.99 MB) completed.
+Hashes match.                          -> Installing freepascal... 설치됨
+File appears to be downloaded already. Verifying with package checksum...
+Hashes match.                          -> Installing freepascal... 설치됨   <- 같은 파일이다
+```
+
+**즉 win32+win64 인스톨러는 이 러너에 한 번도 내려온 적이 없다.** 결합본은 별개 파일이고 크기도
+다르다(E1 — Grok이 Fossies를 인용했다. **우리가 잰 것이 아니다**). 패키지에 적힌 `checksum64`는
+애초에 그 파일의 값일 수 없다.
+
+**여기서는 고치지 않는다.** #191은 캐시 PR이고, 이 발견까지 함께 고치면 두 관심사가 섞인다. 미리
+심는 것도 **오늘의 동작을 바꾸지 않는다** — 심어 주는 파일이 i386이므로 결과는 지금과 같다.
+후속 후보로 적어 둔다: 결합 인스톨러를 직접 내려받아 설치하면 CI가 x86_64 fpc를 갖게 되고,
+**`MATHLESS_GATE_FPC_HOST`가 로컬 전용에서 CI 게이트로 올라갈 수 있다.** 그때 필요한 것은 그
+파일의 sha256을 **우리가 재는 것**이다 — 패키지의 값은 쓸 수 없다.
+
 ### 9-20. **`MATHLESS_GATE_DELPHI`이 통과한다** (2026-09-09, E2) — 내가 안 재고 단정한 것
 
 사용자가 물었다: *"Delphi IDE를 Claude가 호출해서 구동하는 건 어려운가?"*
@@ -1522,6 +1557,110 @@ freepascal (exited 404)
 
 **의존 자체는 남는다.** 재시도는 창을 좁힐 뿐이다. 없애려면 설치본을 캐시하거나 러너에 미리 있는
 것만 쓰는 수밖에 없고, 둘 다 이 슬라이스의 범위 밖이다 — **적어 두고 지불하지 않는다.**
+
+> ### 그 청구서가 두 번째로 왔다 (2026-09-09) — **그리고 내 수정은 엉뚱한 꼬리를 겨눴다**
+>
+> ```
+> 00:02:06 -> 00:03:23   ~1.3분   (평소)
+> 00:09:12 -> 00:10:40   ~1.5분
+> 23:34:02 -> 23:45:58   ~12분    ← 잡 전체가 3.5분에서 14분 25초로
+> 한 번                   실패     ← SourceForge 무응답, PR이 무관한 이유로 red
+> ```
+>
+> **12분짜리는 성공했다. 그래서 재시도가 한 번도 발동하지 않았다.** 내가 넣은 것은 **실패** 꼬리를
+> 다루는데, 실제로 더 비쌌던 것은 **느림** 꼬리였다. Grok이 그것을 짚으며 자기 앞선 판단
+> (*"캐싱은 보험이지 결함을 내지 않는다"*)도 정정했다 — **red 한 건만 보고 내린 판단이었고, 분포를
+> 보면 다르다.**
+>
+> **캐시 대상은 트리가 아니라 설치본이다.** 재 보니 설치 트리는 **729 MB / 6,903 파일**(units만
+> 658 MB)이고, 그걸 Windows에서 복원하는 것은 **두 번째 fat tail**이다. 멈춘 곳은 압축 해제가 아니라
+> **다운로드**였다. 그래서 **51 MB 파일 하나**를 버전 키로 캐시하고 `choco --cache-location`으로
+> 그 자리를 가리킨다. ~~적중이면 choco가 밖으로 나가지 않는다.~~ **틀렸다 — 바로 아래.**
+>
+> **로그가 적중/실패를 말한다** — 조용히 아무것도 안 하는 캐시는 이 저장소가 반복해서 걷어내는 모양이다.
+>
+> #### 그리고 그 캐시는 아무것도 담지 않았다 (2026-09-09, E2)
+>
+> CI는 두 잡 다 초록이었고 post-job이 `Cache saved with key: fpc-installer-3.2.2-i386-win32`까지
+> 찍었다. **업로드는 2,634 바이트였다.**
+>
+> ```
+> Download of freepascalInstall.exe (50.99 MB) completed.   <- 받기는 받았다
+> installer cache now holds 4 file(s)
+> Sent 2634 of 2634 (100.0%)                                <- 51 MB가 아니다
+> Cache saved with key: fpc-installer-3.2.2-i386-win32
+> ```
+>
+> **원인은 캐시 디렉터리를 그대로 `--cache-location`으로 넘긴 것이다.** `Install-ChocolateyPackage`는
+> `$chocoTempDir = $env:TEMP`를 쓰고 `--cache-location`이 그 `TEMP`를 대체한다
+> (`C:\ProgramData\chocolatey\helpers\functions\Install-ChocolateyPackage.ps1:372`). 즉 **그
+> 디렉터리는 choco의 것이고 choco가 비운다.** 나는 choco의 임시 폴더를 캐시해 놓고 설치본을
+> 캐시했다고 적었다.
+>
+> **바로 윗 문단에 "로그가 적중/실패를 말한다"고 써 놓고 저질렀다.** 적중 판정을 **파일 존재**로만
+> 했기 때문이다 — 남아 있던 4개는 51 MB가 아니었고, 판정은 그 둘을 구분하지 못했다. 초록인데
+> 아무것도 하지 않는 단계, 이 저장소가 반복해서 걷어내는 바로 그 모양이다.
+>
+> **고친 방식(#191).** 파일을 우리가 소유한다: choco가 모르는 `fpc-installer/`에 직접 내려받아
+> **sha256을 검증**하고, choco가 실제로 보는 자리에 **미리 심어서** 넘긴다. 캐시 키도 함께
+> 바꿨다(`-sha7ec78b`): 옛 키를 두면 2.6 KB 항목이 복원되고 post-job이 "이미 존재"로 저장을 건너뛰어
+> **영원히 채워지지 않는다.**
+>
+> **그리고 "choco가 보는 자리"를 두 번 틀렸다.** 매번 가드가 잡았고, 매번 로그가 답을 줬다:
+>
+> | 심은 곳 | 결과 |
+> |---|---|
+> | `--cache-location/<pkg>/<ver>/` | **아니다.** 거기 남는 건 `ChocolateyScratch`의 nuspec + tools 3개뿐이다 |
+> | 우리가 설정한 `$env:TEMP` | **아니다.** choco가 자식 프로세스의 TEMP를 되돌린다 |
+> | **호출한 사용자의 TEMP** | **맞다** — `C:\Users\runneradmin\AppData\Local\Temp\freepascal\3.2.2\freepascalInstall.exe`, 53,470,080 B |
+>
+> 코드와도 맞는다: `Install-ChocolateyPackage`는 `$env:TEMP/<pkg>/<ver>/<pkg>Install.<ext>`를 쓴다
+> (`Install-ChocolateyPackage.ps1:372-382`). `--cache-location`은 **패키지**를 옮기지 **페이로드**를
+> 옮기지 않는다. 파일명도 실측이다 — choco의 `Get-WebFileName`을 두 패키지 URL에 직접 불러
+> 양쪽 다 `freepascalInstall.exe`(DefaultName 폴백)를 받았다.
+>
+> **세 번의 왕복을 견딘 것은 가드다.** 주장을 가드로 바꿔 뒀기 때문이다 — choco 출력에 `Download of `가
+> 남으면 심기가 빗나간 것이므로 **실패하고**, 트리와 **파일이 실제로 떨어진 경로**를 찍는다. 그
+> 진단 한 줄이 2·3차 추측을 각각 한 번에 끝냈다.
+>
+> **양쪽 경로를 다 쟀다**(2026-09-09):
+>
+> ```
+> MISS   fetch attempt 1 -> fetched 51 MB, sha256 verified      (1.8초)
+>        File appears to be downloaded already. / Hashes match.  x2
+>        choco used the pre-seeded installer
+>        Cache saved ... Sent 53,403,984 of 53,403,984          <- 2,634 B가 아니다
+>
+> HIT    Cache restored from key: fpc-installer-3.2.2-i386-win32-sha7ec78b
+>        installer cache HIT: 51 MB, sha256 verified
+>        choco used the pre-seeded installer
+> ```
+>
+> **HIT 경로에서 SourceForge 요청은 0건이다.** required 게이트가 매 실행마다 그 호스트에 기대는 관계가
+> 여기서 끊긴다. (캐시 스코프는 브랜치별이다 — `main`에 머지된 뒤 그쪽 첫 실행이 한 번 MISS로 채운다.)
+>
+> **그리고 그 수정의 첫 판은 세 번 조용히 실패했다** (같은 날, E2). 직접 받겠다고 한 순간
+> SourceForge가 무엇을 주는지가 우리 문제가 됐다:
+>
+> ```
+> fetch attempt 1 of 3      즉시 실패, 예외 없음
+> fetch attempt 2 of 3      즉시 실패, 예외 없음
+> fetch attempt 3 of 3      즉시 실패, 예외 없음
+> ::error:: ... availability failure of that host ...     <- 거짓이다. 호스트는 멀쩡했다
+> ```
+>
+> 로컬에서 그대로 재현했다. **`Invoke-WebRequest`의 기본 UA에 "Mozilla"가 들어 있어서**
+> SourceForge가 브라우저용 안내 페이지를 준다 — 호출은 **성공하고**, 예외도 없고,
+> `146,849` 바이트의 `<!doctype html>`이 파일로 떨어진다. **해시만이 그것을 알아챈다.**
+>
+> | 요청 | 받은 것 |
+> |---|---|
+> | IWR 기본 UA | 146,849 B, `3C 21 64 6F …` = `<!do` |
+> | `-UserAgent "curl/8.4.0"` | **53,470,080 B, `4D 5A` = `MZ`, sha256 `7EC78B…`** |
+>
+> 그래서 **핀은 이제 E2다** — 패키지가 그렇게 말해서가 아니라 우리가 받아서 쟀고, 값이 일치한다.
+> 그리고 실패 경로가 **무엇이 왔는지 찍는다**(크기와 sha256). 죽은 호스트와 HTML 페이지를
+> 구분하지 못하는 로그가 이 실패를 세 번 반복시켰다 — 세 번 다 같은 이유로, 아무 말 없이.
 
 ### 9-17. Pascal 호스트를 고유 축으로 키웠다 (2026-09-07, E2) — **두 건, 둘 다 주장에 가드가 없었다**
 

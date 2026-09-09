@@ -1610,6 +1610,29 @@ freepascal (exited 404)
 > 심는 이름은 **둘**이다. choco는 `<package>Install.<ext>`를 만든 뒤 `-GetOriginalFileName`을 넘기므로
 > 실제 이름은 SourceForge가 주는 헤더에 달렸고, 이 러너에서는 기본값으로 떨어진다(로그의
 > `Download of freepascalInstall.exe`는 **저장 파일명**을 찍는다 — `Get-WebFile.ps1:317`).
+>
+> **그리고 그 수정의 첫 판은 세 번 조용히 실패했다** (같은 날, E2). 직접 받겠다고 한 순간
+> SourceForge가 무엇을 주는지가 우리 문제가 됐다:
+>
+> ```
+> fetch attempt 1 of 3      즉시 실패, 예외 없음
+> fetch attempt 2 of 3      즉시 실패, 예외 없음
+> fetch attempt 3 of 3      즉시 실패, 예외 없음
+> ::error:: ... availability failure of that host ...     <- 거짓이다. 호스트는 멀쩡했다
+> ```
+>
+> 로컬에서 그대로 재현했다. **`Invoke-WebRequest`의 기본 UA에 "Mozilla"가 들어 있어서**
+> SourceForge가 브라우저용 안내 페이지를 준다 — 호출은 **성공하고**, 예외도 없고,
+> `146,849` 바이트의 `<!doctype html>`이 파일로 떨어진다. **해시만이 그것을 알아챈다.**
+>
+> | 요청 | 받은 것 |
+> |---|---|
+> | IWR 기본 UA | 146,849 B, `3C 21 64 6F …` = `<!do` |
+> | `-UserAgent "curl/8.4.0"` | **53,470,080 B, `4D 5A` = `MZ`, sha256 `7EC78B…`** |
+>
+> 그래서 **핀은 이제 E2다** — 패키지가 그렇게 말해서가 아니라 우리가 받아서 쟀고, 값이 일치한다.
+> 그리고 실패 경로가 **무엇이 왔는지 찍는다**(크기와 sha256). 죽은 호스트와 HTML 페이지를
+> 구분하지 못하는 로그가 이 실패를 세 번 반복시켰다 — 세 번 다 같은 이유로, 아무 말 없이.
 
 ### 9-17. Pascal 호스트를 고유 축으로 키웠다 (2026-09-07, E2) — **두 건, 둘 다 주장에 가드가 없었다**
 

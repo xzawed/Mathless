@@ -80,10 +80,9 @@ jobs:
         # Typical is ~1.3 min. So: usually cheap, occasionally 8x, occasionally fatal.
         #
         # So WE fetch the installer, WE check its hash, and we hand it to choco pre-placed
-        # in a scratch cache it is welcome to empty afterwards. The retry belongs around
-        # our download, which is the thing that talks to SourceForge -- note the earlier
-        # retry only ever addressed the FAILURE tail, and the 12-minute run SUCCEEDED, so
-        # nothing retried.
+        # on the path it downloads to. The retry belongs around our download, which is the
+        # thing that talks to SourceForge -- note the earlier retry only ever addressed the
+        # FAILURE tail, and the 12-minute run SUCCEEDED, so nothing retried.
         shell: pwsh
         run: |
           $keep = Join-Path $PWD "fpc-installer"
@@ -174,6 +173,11 @@ jobs:
           # No `2>&1`: GitHub runs pwsh with $ErrorActionPreference='stop', and
           # redirecting a native command's stderr can turn a harmless line into a
           # terminating NativeCommandError. stderr goes straight to the log instead.
+          #
+          # The cost is that the `Download of ` check below sees stdout only. Measured:
+          # choco puts that line on stdout -- it tripped this guard three times while the
+          # seed path was still wrong. If it ever moved to stderr the guard would go quiet,
+          # which is why the check is written to fail rather than warn.
           $out = & choco install freepascal -y --no-progress
           $out | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 0) {

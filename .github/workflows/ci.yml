@@ -141,15 +141,24 @@ jobs:
             Write-Host "fetched $([int]((Get-Item $exe).Length/1MB)) MB, sha256 verified"
           }
 
-          # Pre-place it where choco actually looks, which is NOT --cache-location:
-          # Install-ChocolateyPackage builds `$env:TEMP/<package>/<version>/
-          # <package>Install.<ext>` (Install-ChocolateyPackage.ps1:372-382).
-          # --cache-location holds the .nupkg and a ChocolateyScratch copy of the package
-          # files -- measured: seeding THAT left choco downloading anyway, and the four
-          # files it kept were the scratch nuspec and tools. So point TEMP at our seed.
+          # Pre-place it where choco actually looks. Two wrong guesses got measured out
+          # of the way first, and the log said where the bytes really went each time:
+          #
+          #   --cache-location/<pkg>/<ver>/     no. That holds the .nupkg and a
+          #                                     ChocolateyScratch copy of the package
+          #                                     files -- nuspec plus three tools scripts.
+          #   $env:TEMP we set ourselves        no. choco resets it for its child.
+          #   the invoking user's own TEMP      YES, measured 53,470,080 bytes at
+          #                                     C:/Users/runneradmin/AppData/Local/Temp/
+          #                                     freepascal/3.2.2/freepascalInstall.exe
+          #
+          # Which matches the code: Install-ChocolateyPackage builds
+          # `$env:TEMP/<package>/<version>/<package>Install.<ext>`
+          # (Install-ChocolateyPackage.ps1:372-382). It is the USER's TEMP, and this step
+          # runs as that user, so $env:TEMP here is that directory.
           #
           # The filename is measured too, not assumed: choco passes -GetOriginalFileName,
-          # so the name comes from a HEAD to SourceForge, and calling its own
+          # so the name comes from a HEAD to SourceForge, and calling chocolatey's own
           # `Get-WebFileName` against both package URLs returns `freepascalInstall.exe`
           # for each -- the DefaultName fallback.
           #
@@ -158,18 +167,14 @@ jobs:
           # checksum string, so the second reuses the first file. That is the runner's
           # existing behaviour, unchanged by seeding: CI gets an i386-only FPC either way.
           # Recorded as a finding, not fixed here (docs/STATUS.md §9-21).
-          $origTemp = $env:TEMP
-          $root = Join-Path $env:RUNNER_TEMP "choco-cache"
-          $seed = Join-Path $root "freepascal/3.2.2"
+          $seed = Join-Path $env:TEMP "freepascal/3.2.2"
           New-Item -ItemType Directory -Force -Path $seed | Out-Null
           Copy-Item $exe (Join-Path $seed "freepascalInstall.exe") -Force
-          $env:TEMP = $root
-          $env:TMP  = $root
 
           # No `2>&1`: GitHub runs pwsh with $ErrorActionPreference='stop', and
           # redirecting a native command's stderr can turn a harmless line into a
           # terminating NativeCommandError. stderr goes straight to the log instead.
-          $out = & choco install freepascal -y --no-progress --cache-location "$root"
+          $out = & choco install freepascal -y --no-progress
           $out | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 0) {
             Write-Host '::error::choco install freepascal failed. The installer was already on disk and hash-verified, so this is an INSTALL failure, not a download one.'
@@ -180,12 +185,12 @@ jobs:
           # pre-seed missed its path and the cache buys nothing. Print the tree so the next
           # run does not have to guess where it should have gone.
           if ($out -match 'Download of ') {
-            Write-Host "seeded layout under ${root}:"
-            Get-ChildItem $root -Recurse -File | ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
+            Write-Host "seeded layout under ${seed}:"
+            Get-ChildItem $seed -Recurse -File | ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
             # Where did it ACTUALLY land? Answering this in the same run is the difference
-            # between one more iteration and three.
+            # between one more iteration and three -- it already spared two.
             Write-Host "freepascalInstall.exe anywhere under the temp roots:"
-            foreach ($r in @($root, $origTemp, $env:RUNNER_TEMP)) {
+            foreach ($r in @($env:TEMP, $env:RUNNER_TEMP)) {
               Get-ChildItem $r -Recurse -File -Filter "freepascalInstall.exe" -ErrorAction SilentlyContinue |
                 ForEach-Object { Write-Host "  $($_.FullName)  $($_.Length)" }
             }

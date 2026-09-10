@@ -67,7 +67,12 @@ conversion between them; `i32` division is total, so `x / 0` is `0` rather than 
 A `string` can be a parameter or a `-> string!` return; it compares with `==` and `!=` on
 bytes, and concatenates with `+` — which only a `return` may hold, since the module has no
 allocator. `i32 as string` renders a number. Returning a string uses a caller-allocated
-buffer — the module never allocates. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
+buffer — the module never allocates. An array parameter is written `xs: [i32]` (elements may
+be `i32`, `f64` or `bool`): it arrives as a borrowed pointer plus a length the compiler appends,
+so one surface parameter becomes two C parameters. It is read-only, `len(xs)` gives the element
+count, and `xs[i]` is bounds-checked — which is why a function that indexes must be declared
+`-> T!`, since an out-of-range read fails with a reserved negative status rather than through an
+invisible channel. Arrays cannot yet be returned. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
 `let` and `let mut`, with assignment. Operators include unary `-` and `!`, plus `&&` and
 `||`. There are four built-ins — `floor`, `ceil`, `round`, `trunc` — which match C's
 `<math.h>` exactly. A function can be fallible: `-> T!` with `error NAME = N` and

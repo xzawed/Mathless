@@ -122,8 +122,12 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
    | `PAnsiChar(S)` | `55 00 50 00 53 00 4E 00` | **틀렸다** | **W1044** Suspicious typecast of string to PAnsiChar |
    | `PAnsiChar(Pointer(S))` | `55 00 50 00 53 00 4E 00` | **틀렸다** | **아무 말도 안 한다** |
 
-   - `PAnsiChar(AnsiString(S))` — 맞다. 단, `AnsiString`을 **지역 변수에 담아** 호출이 끝날 때까지
-     살려 둘 것. 캐스트 식 안의 임시값은 그 **문장**까지만 산다.
+   - `PAnsiChar(AnsiString(S))` — 맞다. **인라인으로 인자 자리에 써도 된다**(실측: status 0).
+     캐스트 식이 만드는 임시값은 그 **문장**까지 살고 호출이 곧 그 문장이기 때문이다. 이 문서는
+     오래 *"지역 변수에 담아 두라"* 고 적었는데, 그것은 **호출 자체의 조건이 아니다.** 진짜 규칙은
+     **포인터를 문장 밖으로 들고 가지 말라**는 것이다 — `P := PAnsiChar(AnsiString(S))` 로 받아
+     다음 문장에서 쓰면 임시값은 이미 죽었다. 그쪽은 **재지 않았고 잴 수도 없다**: 정의되지 않은
+     동작이라 "돌아갔다"는 관측이 아무것도 증명하지 않는다. 그래서 규칙으로만 적는다.
    - `PAnsiChar(S)`(UnicodeString에 직접) — **변환되지 않는다.** 이 문서는 오래 "암시적 캐스트 경고와
      함께 ANSI 코드 페이지로 변환되고 ASCII는 살아남는다"고 적었고, **그것은 틀렸다**(E1 추정이었다).
      실측하면 `PAnsiChar(Pointer(S))`와 **바이트 단위로 같은 것**을 보낸다 — 하드 포인터 캐스트다.
@@ -143,7 +147,7 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
    > 명시적으로 `S: UnicodeString`을 선언한 경우에는 **FPC도 같은 바이트를 보낸다**(실측). 즉 이
    > 함정 자체는 Embarcadero 고유가 아니고, **`string`의 기본 뜻이 다른 것**이 고유하다.
 
-   생성 `.pas`에 같은 표가 들어간다.
+   생성 `.pas`가 같은 사실을 줄글로 싣는다(표가 아니라 목록이다).
 
 ### 가변 길이 데이터 — **문자열 반환은 구현·실측 완료**(Q12, 2026-08-31)
 

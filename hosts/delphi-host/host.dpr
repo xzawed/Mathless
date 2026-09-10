@@ -296,6 +296,21 @@ begin
        The same four lines, two compilers, two different answers. That is the sharpest
        measurement in this file of why `-Mdelphi` is a dialect emulation and not Delphi,
        and why MATHLESS_GATE_FPC_HOST can never stand in for MATHLESS_GATE_DELPHI. }
+  { 5. The correct spelling again, but INLINE instead of through a local. The advice this
+       project has repeated since the string slice -- "keep the AnsiString in a local for the
+       duration of the call" -- reads as if the call itself needs it. Measured here, because
+       it was carried for a month without being measured: the temporary a cast expression
+       makes lives to the end of the STATEMENT, and the call IS that statement, so one call
+       is fine. What the advice is really about is not STORING the pointer for later, and
+       that failure is undefined behaviour -- a run where it appears to work proves nothing,
+       so this file does not pretend to measure it. }
+  FillChar(Buf, SizeOf(Buf), 0);
+  Needed := -1;
+  Status := mlx_carrier_name(PAnsiChar(AnsiString(S)), @Buf[0], SizeOf(Buf), Needed);
+  Check((Status = 0) and (PAnsiChar(@Buf[0]) = 'UPS Ground'),
+    'PAnsiChar(AnsiString(S)) INLINE is fine for the duration of one call: status ' +
+    IntToStr(Status));
+
   T := 'UPSN';
   FillChar(Buf, SizeOf(Buf), 0);
   Needed := -1;

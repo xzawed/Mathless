@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 저장소 성격
 
-- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 크레이트는 아니지만 **`hosts/c-host/`(동적 결합)** 와 **`hosts/c-host-link/`(링크 결합, 2026-09-03)** 두 C11 데모 호스트도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본(`MATHLESS_GATE_D=require`로 수용 D skip 금지), `ubuntu-latest`는 프런트엔드 보험.
+- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. 크레이트: `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더 + PE export 리더), `examples/`, `runtime/`(C ABI 헤더). 크레이트는 아니지만 **`hosts/c-host/`(동적 결합)** 와 **`hosts/c-host-link/`(링크 결합, 2026-09-03)** 두 C11 데모 호스트도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본, `ubuntu-latest`는 프런트엔드 보험. **CI가 required로 거는 게이트는 셋이다**(`MATHLESS_GATE_D`=C 호스트 · `MATHLESS_GATE_FPC`=생성 유닛 컴파일 · `MATHLESS_GATE_FPC_HOST`=Pascal 호스트 로드·호출) — 목록의 정본은 `.github/workflows/ci.yml`의 `env:`이고 여기 복제하지 않는다. **`MATHLESS_GATE_DELPHI`은 로컬 전용**이다(러너에 Delphi도 대화형 세션도 없다).
 - 설계 산출물은 여전히 `docs/*.md`와 루트의 `README.md` / `CLAUDE.md`이며, **개념을 깨지 않는 것**이 최우선이다(위 규칙 우선).
 - 작업은 이제 **문서 정합(모순 탐지·열린 질문)** 과 **SDD+WBS+TDD 구현**을 함께 한다. 코드 변경은 실패 테스트 → 구현 → 통과 → Grok 검증 → PR 순서를 따른다(아래 "개발 방법론").
 
@@ -104,24 +104,24 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
 
 ## 작업 우선순위
 
-Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 **A/B/C/D**는 **완료**다 — 단 D는 **자동 게이트로서 C 쪽만**이고, Delphi는 2026-09-07에 **한 번 실측**됐으나 게이트가 없다(아래 1번).
+Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 **A/B/C/D**는 **완료**다 — 단 D의 Delphi 절반은 **로컬 게이트까지**이고 **CI 게이트는 아직 C·FPC뿐**이다(아래 1번).
 
 > **우선순위의 정본은 `docs/STATUS.md` §9다** — 이 목록은 슬라이스마다 낡는다. 착수 전 그 문서를 먼저 읽는다.
 > 완료된 슬라이스 이력은 `docs/slices/README.md` 색인, phase 단위 작업 분해는 `docs/phase1/WBS.md`.
 
 큰 줄기만 적는다:
 
-1. 수용 D — **C 쪽 완료**(MSVC `cl` 호스트, 2026-08-29). **Delphi는 2026-09-07에 실측됐다** — IDE에서 `dcc64`로 빌드한 Win64 호스트가 14개 검사를 통과(`GATE_DELPHI_OK`). 남은 절반은 이제 **검증이 아니라 자동화**다: 가진 에디션이 명령줄 빌드를 거부해 `MATHLESS_GATE_DELPHI`가 실행되지 않는다(§9-15).
+1. 수용 D — **C 쪽 완료**(MSVC `cl` 호스트, 2026-08-29). **Delphi의 로컬 자동화도 닫혔다(2026-09-09, §9-20)**: `dcc64`가 명령줄 빌드를 거부하면 게이트가 `bds.exe -b`로 IDE 빌드를 부르고 Community Edition이 그것은 막지 않는다 — `MATHLESS_GATE_DELPHI=require`가 이 머신에서 통과한다. **남은 것은 CI뿐이고, 그것은 여기서 못 닫는다**(러너에 Delphi도 대화형 세션도 없다).
 2. 다음 슬라이스는 `docs/STATUS.md` §9(**▶ 여기서 시작한다** 블록)에서 고른다. **닫힌 슬라이스를 다시 열지 않는다** — 닫힌 목록의 정본은 `docs/slices/README.md` 색인이다. **여기에 개수나 이름을 나열하지 않는다**: 그렇게 적어 둔 "오늘 기준 9개"가 실제 20개가 될 때까지 낡아 있었다(2026-09-04 감사). 세려면 `ls docs/slices/SPEC-*.md | wc -l`.
-3. 이후 슬라이스 후보: D16의 나머지(context handle), **구조체·배열** 마샬링, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4), 그리고 Q14가 닫혀 열린 **DP-H3(b)**(지문을 심볼 이름에 박아 로더가 강제). **문자열 마샬링은 닫혔다**(입력 #89 · 반환 #92 · 연결 #108).
+3. 이후 슬라이스 후보: D16의 나머지(context handle), **구조체** 마샬링, **배열 반환**, 1단계 콜백, 두 번째 호스트(C#, ROADMAP Phase 4). **문자열 마샬링은 닫혔다**(입력 #89 · 반환 #92 · 연결 #108). **배열 입력도 닫혔다**(#200). **DP-H3(b)는 후보가 아니다** — 2026-09-05에 *하지 않는다*로 닫혔고(`SPEC-symbol-embedded-hash.md`, #141), 재검토 조건 둘이 충족되기 전에는 다시 열지 않는다.
 
 ## 산출물 규칙
 
 - 설계 변경은 해당 `docs/*.md`를 **먼저** 수정한다.
-- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트하며, **`hosts/c-host-link/`가 두 번째 소비 경로(헤더 + `.lib` 링크)를 닫는다**(2026-09-03). **`hosts/delphi-host/`는 2026-09-07에 처음 컴파일·실행됐다** — Delphi IDE(`dcc64`, Win64)로 한 번, 그리고 Free Pascal이 게이트로. **자동 Delphi 게이트는 없다**(에디션이 명령줄 빌드를 거부).
+- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트하며, **`hosts/c-host-link/`가 두 번째 소비 경로(헤더 + `.lib` 링크)를 닫는다**(2026-09-03). **`hosts/delphi-host/`는 2026-09-07에 처음 컴파일·실행됐고, 2026-09-09에 로컬 게이트가 됐다**(`MATHLESS_GATE_DELPHI` — `dcc64`가 거부하면 `bds.exe -b`로 IDE 빌드를 부른다). Free Pascal은 **CI 게이트**다(`MATHLESS_GATE_FPC`·`MATHLESS_GATE_FPC_HOST`) — 다만 `-Mdelphi`는 방언 에뮬레이션이라 **Delphi 게이트를 대신하지 못한다**. **CI에 도는 Delphi 게이트는 없다.**
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.
 
 ## 성공 기준 (초기)
 
-호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **달성**: Rust 오라클(수용 A/B)과 **실제 C 호스트**(MSVC `cl`, 수용 D, 2026-08-29). **Delphi도 달성됐다(2026-09-07)** — IDE에서 `dcc64`가 생성 `.pas`를 컴파일했고 Win64 호스트가 모듈을 로드·호출해 14개 검사를 통과했다. 다만 **한 번, 손으로**였다: 에디션이 명령줄 빌드를 거부하므로 **자동 게이트는 C뿐**이다(§9-15).
+호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **달성**: Rust 오라클(수용 A/B)과 **실제 C 호스트**(MSVC `cl`, 수용 D, 2026-08-29). **Delphi도 달성됐다(2026-09-07)** — IDE에서 `dcc64`가 생성 `.pas`를 컴파일했고 Win64 호스트가 모듈을 로드·호출했다. 처음엔 **한 번, 손으로**였지만 2026-09-09에 **반복 가능한 로컬 게이트**가 됐다(§9-20, `bds.exe -b`). **CI에서 도는 게이트는 C와 Free Pascal뿐이다** — Delphi는 러너에 없다.

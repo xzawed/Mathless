@@ -444,9 +444,12 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
              compares BYTES up to the NUL and never inspects the encoding (SPEC-string-input\n  \
              DP-S2), so how you build the argument decides whether it can match at all.\n  \
              MEASURED on Delphi 37.0 Win64 through this ABI, sending \"UPSN\":\n  \
-             - PAnsiChar(AnsiString(S)) - CORRECT. Sends 55 50 53 4E 00. Keep the AnsiString\n    \
-             in a local for the duration of the call; the temporary in a cast expression\n    \
-             lives only for the statement.\n  \
+             - PAnsiChar(AnsiString(S)) - CORRECT. Sends 55 50 53 4E 00. Inline as an\n    \
+             argument is fine (measured): the temporary a cast expression makes lives to\n    \
+             the end of the STATEMENT, and the call is that statement. What you must not\n    \
+             do is KEEP the pointer - `P := PAnsiChar(AnsiString(S))` and use P in a later\n    \
+             statement reads a dead temporary. That failure is undefined behaviour, so it\n    \
+             is stated as a rule and not claimed as measured.\n  \
              - PAnsiChar(S) on a UnicodeString - WRONG. It does NOT convert. It sends the\n    \
              UTF-16 bytes 55 00 50 00 53 00 4E 00, identical to the Pointer spelling below,\n    \
              so the module reads to the first NUL and sees ONE character. The compiler does\n    \
@@ -457,7 +460,10 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
              Plain `string` IS UnicodeString in Delphi, so PAnsiChar(S) on one is the SECOND\n  \
              line, not the first. Free Pascal in -Mdelphi mode does not emulate that - its\n  \
              `string` is AnsiString, so identical source is correct there and wrong here.\n  \
-             Measured both ways, which is why an FPC run cannot stand in for a Delphi one."
+             Measured both ways, which is why an FPC run cannot stand in for a Delphi one.\n  \
+             With an EXPLICIT UnicodeString, Free Pascal sends the same bytes as Delphi\n  \
+             (measured), so the trap itself is not Embarcadero-only - what differs is what\n  \
+             `string` means."
         );
     }
     let _ = writeln!(s, "  }}");

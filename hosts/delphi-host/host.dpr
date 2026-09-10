@@ -55,7 +55,8 @@ uses
   discount,
   safe_div,
   carrier,
-  shapes;
+  shapes,
+  basket;
 
 var
   Failures: Integer = 0;
@@ -156,6 +157,16 @@ var
   S: UnicodeString;
   A: AnsiString;
   T: string;
+  { Array input. DYNAMIC arrays on purpose: that is what a Delphi host actually holds, and
+    the empty one is where its natural idiom breaks (SPEC-array-input 5.2). }
+  Qty, Price: array of Integer;
+  Empty: array of Integer;
+  Xs: array of Double;
+  Flags: array of Boolean;
+  IntOut, Tally: Integer;
+  DblOut: Double;
+  BoolOut: Boolean;
+  ElemsP: PInteger;
 begin
   if ParamCount < 1 then
   begin
@@ -324,6 +335,74 @@ begin
     'Delphi: `string` IS UnicodeString, so the natural PAnsiChar(T) sends UTF-16 -- ' +
     'status ' + IntToStr(Status) + ' (Free Pascal answers 0 for this same line)');
 {$ENDIF}
+
+  { ---- Array INPUT (SPEC-array-input). ----
+
+    A Pascal host is the one that can ask two things the C host cannot. First, the generated
+    unit declares `xs: PInteger; xs_len: Integer` -- TWO parameters for one surface argument --
+    and a host that gets them out of order does not compile. Second, `Boolean` here is one
+    byte, which is the size the module reads per element. }
+  SetLength(Qty, 3);
+  Qty[0] := 2;  Qty[1] := 1;  Qty[2] := 4;
+  SetLength(Price, 3);
+  Price[0] := 30;  Price[1] := 500;  Price[2] := 25;
+
+  IntOut := -1;
+  Status := mlx_basket_total(@Qty[0], Length(Qty), @Price[0], Length(Price), 100, IntOut);
+  Check((Status = 0) and (IntOut = 260), 'basket_total reads three lines in ONE call: ' +
+    IntToStr(IntOut));
+
+  Tally := 12345;
+  Status := mlx_basket_total(@Qty[0], Length(Qty), @Price[0], 2, 100, Tally);
+  Check(Status = ML_BASKET_ERR_E_LENGTH_MISMATCH,
+    'mismatched lengths are the module''s domain error');
+  Check(Tally = 12345, 'and a failed call writes no out-param');
+
+  { The reserved negative. Only a host can reach it -- every loop inside the module is
+    bounded by `len`. }
+  Tally := 12345;
+  Status := mlx_pick(@Qty[0], Length(Qty), 3, Tally);
+  Check(Status = ML_ST_INDEX_OUT_OF_RANGE,
+    'an out-of-range index is ML_ST_INDEX_OUT_OF_RANGE, a constant the UNIT declares');
+  Check(Tally = 12345, 'and it leaves the out-param untouched');
+
+  { ---- The hazard this slice creates, measured rather than warned about. ----
+
+    `@arr[0]` is how a Delphi host naturally takes the address of a dynamic array. On an
+    EMPTY one there is no element 0. With range checking off -- the default in a release
+    build, and what this host compiles under -- it does not raise: it yields the array's
+    own (nil) pointer, which is exactly what the module wants for a length of 0, because it
+    never dereferences. That is why this is a trap and not a crash: it works, until someone
+    builds with the $R+ directive and it starts raising instead.
+
+    The idiom the generated unit recommends is the one below: ask Length first. }
+  SetLength(Empty, 0);
+  if Length(Empty) = 0 then
+    ElemsP := nil
+  else
+    ElemsP := @Empty[0];
+  Check(ElemsP = nil, 'the safe idiom yields nil for an empty array, and never indexes it');
+
+  SetLength(Xs, 3);
+  Xs[0] := 1.5;  Xs[1] := 9.25;  Xs[2] := -3.0;
+  DblOut := 0.0;
+  Status := mlx_largest(@Xs[0], Length(Xs), 0.0, DblOut);
+  Check((Status = 0) and (DblOut = 9.25), 'largest over an f64 array');
+
+  DblOut := -1.0;
+  Status := mlx_largest(PDouble(nil), 0, 42.0, DblOut);
+  Check((Status = 0) and (DblOut = 42.0),
+    'an EMPTY array with a nil pointer is an ordinary answer: the module never dereferences');
+
+  { One byte per element, on both sides. Only the last flag is set, so a module reading four
+    bytes per Boolean would walk past the end and answer from whatever follows. }
+  SetLength(Flags, 4);
+  Flags[0] := False;  Flags[1] := False;  Flags[2] := False;  Flags[3] := True;
+  Check(SizeOf(Boolean) = 1, 'Pascal Boolean is one byte -- the module ABI''s element size');
+  Check(mlx_how_many(@Flags[0], Length(Flags)) = 4, 'len is the number the host passed');
+  BoolOut := False;
+  Status := mlx_any_set(@Flags[0], Length(Flags), BoolOut);
+  Check((Status = 0) and BoolOut, 'the fourth Boolean is set, and it is one byte along');
 
   if Failures = 0 then
   begin

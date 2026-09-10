@@ -662,45 +662,6 @@ fn check_function(
     })
 }
 
-/// The first array an index reads, anywhere in `body`. `None` if nothing is indexed.
-///
-/// Exhaustive on both enums on purpose: a new statement or expression that can hold an index
-/// must say so here, or DP-A3 would stop covering it and an infallible function would lower
-/// an early return that has nowhere to go.
-fn first_index(body: &[IrStmt]) -> Option<String> {
-    fn in_expr(e: &IrExpr) -> Option<String> {
-        match &e.kind {
-            IrExprKind::Index { array, index } => {
-                Some(in_expr(index).unwrap_or_else(|| array.clone()))
-            }
-            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
-                in_expr(operand)
-            }
-            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs).or_else(|| in_expr(rhs)),
-            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => {
-                args.iter().find_map(in_expr)
-            }
-            IrExprKind::Len { .. }
-            | IrExprKind::ConstF64(_)
-            | IrExprKind::ConstStr(_)
-            | IrExprKind::ConstI32(_)
-            | IrExprKind::ConstBool(_)
-            | IrExprKind::Var(_) => None,
-        }
-    }
-    body.iter().find_map(|s| match s {
-        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
-            in_expr(cond).or_else(|| first_index(body))
-        }
-        IrStmt::Return(e)
-        | IrStmt::Let { value: e, .. }
-        | IrStmt::Assign { value: e, .. }
-        | IrStmt::AssignOut { value: e, .. } => in_expr(e),
-        IrStmt::TryCall { args, .. } => args.iter().find_map(in_expr),
-        IrStmt::Fail(_) => None,
-    })
-}
-
 /// Definite assignment for `out` parameters (DP-O2).
 ///
 /// Conservative and deliberately simple: an assignment inside an `if` or `while` body does

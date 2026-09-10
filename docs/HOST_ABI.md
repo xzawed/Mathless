@@ -118,7 +118,7 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
 
    | 철자 | 모듈에 도착한 바이트 | 결과 | 컴파일러 |
    |---|---|---|---|
-   | `PAnsiChar(AnsiString(S))` (지역 변수) | `55 50 53 4E 00` | **맞다** | 무언 |
+   | `PAnsiChar(AnsiString(S))` (지역 변수든 인자 자리 인라인이든) | `55 50 53 4E 00` | **맞다** | 무언 |
    | `PAnsiChar(S)` | `55 00 50 00 53 00 4E 00` | **틀렸다** | **W1044** Suspicious typecast of string to PAnsiChar |
    | `PAnsiChar(Pointer(S))` | `55 00 50 00 53 00 4E 00` | **틀렸다** | **아무 말도 안 한다** |
 

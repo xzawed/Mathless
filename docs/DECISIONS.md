@@ -95,9 +95,23 @@ Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/
     - **그래서 생성 `.pas`의 문구가 바뀌었다.** *"NOT yet verified against a Delphi host"* 가
       거짓이 됐으므로, 이제 **한 번 검증됐다는 것과 반복되지 않는다는 것을 함께** 적고,
       C 헤더와 같은 어법으로 **생성기**를 credit한다(그 파일이 아니라).
-    - **미측정으로 남는 것**: `UnicodeString` → `PAnsiChar` 조용한 오답. 호스트는 올바른 철자
+    - ~~**미측정으로 남는 것**: `UnicodeString` → `PAnsiChar` 조용한 오답. 호스트는 올바른 철자
       (`PAnsiChar` 리터럴)만 쓰므로 틀린 경로를 밟지 않는다. Embarcadero 고유 성질이라 Free
-      Pascal로는 잴 수 없다.
+      Pascal로는 잴 수 없다.~~
+    - **잰다 (2026-09-10, E2 — 사용자 승인 후 갱신).** §9-20이 연 `bds.exe -b` 경로로 세 철자를
+      전부 실측했다(STATUS §9-23). 호스트가 이제 **일부러** 세 철자를 다 쓰고, 게이트가 각각을
+      못 박는다. **위 두 문장은 둘 다 틀렸다:**
+        - `PAnsiChar(S)`는 **변환하지 않는다.** `PAnsiChar(Pointer(S))`와 바이트 단위로 같은
+          UTF-16을 보내고(`55 00 50 00 53 00 4E 00`), 모듈은 첫 NUL까지 읽어 한 글자를 본다.
+          다른 것은 결과가 아니라 컴파일러의 태도다 — `W1044`가 붙는 쪽과 **아무 말도 없는**
+          쪽(`Pointer(S)`)이 갈린다. 침묵은 부재로 가드한다.
+        - **Free Pascal로 잴 수 없다는 것도 틀렸다.** `S: UnicodeString`을 명시하면 FPC도 같은
+          바이트를 보낸다. Embarcadero 고유한 것은 함정이 아니라 **`string`의 기본 뜻**이다 —
+          Delphi에서는 `UnicodeString`, `-Mdelphi`에서는 `AnsiString`이라 **같은 소스 줄의 답이
+          갈리고**, 그 갈림 자체를 이제 게이트가 지킨다. 이것이 `MATHLESS_GATE_FPC_HOST`가
+          `MATHLESS_GATE_DELPHI`를 대신할 수 없다는 말의 가장 선명한 증거다.
+      정본은 `HOST_ABI.md` 문자열 규칙 5이고, 생성 `.pas`가 같은 사실을 싣는다. 근거: STATUS
+      §9-23·§9-24, PR #195·#196·#197.
     - **Free Pascal이 그 사이를 메운다(§9-11·§9-14).** 생성 유닛 19개는 CI에서 `-Mdelphi -Sew`로
       컴파일되고(`MATHLESS_GATE_FPC`), 스테이징 호스트는 x64 백엔드가 있는 곳에서 빌드·실행된다
       (`MATHLESS_GATE_FPC_HOST`). **둘 다 Delphi 게이트가 아니다** — 방언 에뮬레이션이다.

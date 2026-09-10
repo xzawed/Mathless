@@ -41,6 +41,10 @@ end.
   An array parameter is TWO parameters here: the pointer, then the length
   in ELEMENTS -- not bytes; ml_cap and ml_needed are bytes and these are not. The
   module borrows the memory for the call, never writes to it, never keeps it.
+  The length must be TRUE: the bounds check tests the number YOU pass, so a
+  length larger than the array reads past its end. That is undefined and the
+  module cannot catch it - the same kind of contract as a NUL-terminated
+  string.
   - Pass a dynamic array as `@Arr[0], Length(Arr)`.
   - EMPTY arrays: `@Arr[0]` has no element 0. With range checking off (the
     release default) it does not raise - it yields the array's own nil pointer,

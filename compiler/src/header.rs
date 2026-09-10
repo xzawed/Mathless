@@ -486,6 +486,10 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
             "\n  An array parameter is TWO parameters here: the pointer, then the length\n  \
              in ELEMENTS -- not bytes; ml_cap and ml_needed are bytes and these are not. The\n  \
              module borrows the memory for the call, never writes to it, never keeps it.\n  \
+             The length must be TRUE: the bounds check tests the number YOU pass, so a\n  \
+             length larger than the array reads past its end. That is undefined and the\n  \
+             module cannot catch it - the same kind of contract as a NUL-terminated\n  \
+             string.\n  \
              - Pass a dynamic array as `@Arr[0], Length(Arr)`.\n  \
              - EMPTY arrays: `@Arr[0]` has no element 0. With range checking off (the\n    \
              release default) it does not raise - it yields the array's own nil pointer,\n    \

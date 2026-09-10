@@ -53,6 +53,36 @@ pub enum Type {
     F64,
     Bool,
     I32,
+    /// `[T]` — an array **borrowed** from the host for the duration of the call (D16 rule 1).
+    ///
+    /// Parameter position only, read-only, scalar elements only. Each of those limits has the
+    /// same root as `string`'s: the module has no allocator, so anything that asks where new
+    /// elements would live is a different slice (SPEC-array-input §2.1, §5.1).
+    ///
+    /// The element type is [`ArrayElem`] rather than a boxed `Type`, so "scalar elements
+    /// only" is a fact the type system holds rather than a check someone has to remember —
+    /// and so this enum stays `Copy`.
+    Array(ArrayElem),
+}
+
+/// What an array's elements may be. Deliberately smaller than [`Type`]: no strings (variable
+/// length inside variable length), no nested arrays.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ArrayElem {
+    F64,
+    Bool,
+    I32,
+}
+
+impl ArrayElem {
+    /// The scalar [`Type`] one element has.
+    pub fn as_type(self) -> Type {
+        match self {
+            ArrayElem::F64 => Type::F64,
+            ArrayElem::Bool => Type::Bool,
+            ArrayElem::I32 => Type::I32,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -134,6 +164,15 @@ pub enum Expr {
         op: BinOp,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
+    },
+    /// `NAME[index]` — read one element of an array parameter.
+    ///
+    /// The base is a NAME, not an expression: an array only ever arrives as a parameter, so
+    /// there is nothing else to index, and saying so here makes `f(x)[0]` a parse error with
+    /// a message about arrays instead of a type error about something else.
+    Index {
+        name: String,
+        index: Box<Expr>,
     },
 }
 

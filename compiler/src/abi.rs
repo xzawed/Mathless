@@ -11,3 +11,12 @@
 ///
 /// Bump this — and document the change — only when the module ABI changes incompatibly.
 pub const ML_MODULE_ABI_VERSION: u32 = 1;
+
+/// D17 reserves the NEGATIVE status space for runtime and ABI conditions, as opposed to the
+/// positive codes a module declares with `error NAME = N`.
+///
+/// `-1` is `ML_ST_INSUFFICIENT_BUFFER`, spelled in `header.rs` where the two bindings are
+/// written. This one is next, and it lives here because codegen has to emit the same number
+/// the header promises — the two were literals in two files for `-1`, which is the drift this
+/// constant exists to prevent for `-2`.
+pub const ML_ST_INDEX_OUT_OF_RANGE: i32 = -2;

@@ -107,6 +107,8 @@ fn tree_depth(body: &[Stmt]) -> u32 {
                     work.push((Node::E(rhs), d + 1));
                 }
                 Expr::Call { args, .. } => work.extend(args.iter().map(|a| (Node::E(a), d + 1))),
+                // The base is a name, so only the index is a subtree.
+                Expr::Index { index, .. } => work.push((Node::E(index), d + 1)),
                 Expr::Number(_) | Expr::Str(_) | Expr::Int(_) | Expr::Bool(_) | Expr::Var(_) => {}
             },
         }
@@ -431,6 +433,21 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
+        let ty = self.parse_type_inner()?;
+        // `f64[]` — the other spelling, and the one a C-family user reaches for first. It
+        // parses as a scalar and then stops on the bracket, so without this the message is
+        // "expected ')'": true, and about the wrong thing. Measured 2026-09-05 as one of the
+        // three gaps that reported a character instead of a feature.
+        if self.peek() == &Token::LBracket {
+            return self.err(
+                "an array type is written `[T]`, not `T[]` — write `[f64]`, `[bool]` or                  `[i32]` (SPEC-array-input DP-A1)"
+                    .to_string(),
+            );
+        }
+        Ok(ty)
+    }
+
+    fn parse_type_inner(&mut self) -> Result<Type, ParseError> {
         match self.peek().clone() {
             Token::Ident(s) if s == "f64" => {
                 self.pos += 1;
@@ -450,8 +467,40 @@ impl Parser {
                 self.pos += 1;
                 Ok(Type::Str)
             }
+            // `[T]` (DP-A1). The elements are checked HERE rather than after the fact, so the
+            // message can name the element that is wrong instead of the bracket.
+            Token::LBracket => {
+                self.pos += 1;
+                let elem = match self.peek().clone() {
+                    Token::Ident(s) if s == "f64" => ArrayElem::F64,
+                    Token::Ident(s) if s == "bool" => ArrayElem::Bool,
+                    Token::Ident(s) if s == "i32" => ArrayElem::I32,
+                    Token::Ident(s) if s == "string" => {
+                        return self.err(
+                            "an array of `string` is not in Mathless — array elements are                              scalars (f64|bool|i32). A string is itself variable length, and                              the module has no allocator to put one inside another                              (SPEC-array-input 2.1)"
+                                .to_string(),
+                        );
+                    }
+                    Token::LBracket => {
+                        return self.err(
+                            "a nested array (`[[T]]`) is not in Mathless — array elements are                              scalars (f64|bool|i32)"
+                                .to_string(),
+                        );
+                    }
+                    other => {
+                        return self.err(format!(
+                            "expected an array element type (f64|bool|i32), found {other:?}"
+                        ));
+                    }
+                };
+                self.pos += 1;
+                self.eat(&Token::RBracket, "']'")?;
+                Ok(Type::Array(elem))
+            }
+            // `f64[]` is the other spelling a user reaches for, and it is not this language's.
+            // Naming the feature AND the spelling turns a puzzle into a one-line fix.
             other => self.err(format!(
-                "expected type (f64|bool|i32|string), found {other:?}"
+                "expected type (f64|bool|i32|string|[f64]|[bool]|[i32]), found {other:?} — an                  array type is written `[i32]`, not `i32[]`"
             )),
         }
     }
@@ -561,6 +610,16 @@ impl Parser {
                 self.err(format!(
                     "{gap} are not in Mathless yet — a statement is if, while, return, fail, \
                      let, or an assignment"
+                ))
+            }
+            // `xs[i] = v`. It parses this far and then falls off the end of the statement
+            // forms, so without this arm the user is told a statement was expected where they
+            // wrote one — and hears nothing about the reason, which is that an array parameter
+            // is BORROWED (SPEC-array-input 2.1, D16 rule 1).
+            Token::Ident(name) if self.peek_at(1) == &Token::LBracket => {
+                let name = name.clone();
+                self.err(format!(
+                    "'{name}' is an array parameter, which is READ-ONLY — the module borrows                      the host's memory for the duration of the call (D16) and never writes                      into it. Read with `{name}[i]`; there is no assignment through an index"
                 ))
             }
             other => self.err(format!(
@@ -778,6 +837,18 @@ impl Parser {
                     }
                     self.eat(&Token::RParen, "')' to close the argument list")?;
                     return Ok(Expr::Call { name: s, args });
+                }
+                // `name[i]` is an index. Only a NAME can be indexed: an array reaches a
+                // function as a parameter and nothing produces one, so `f(x)[0]` is refused
+                // below with a message about arrays rather than a type error about a call.
+                if self.peek() == &Token::LBracket {
+                    self.pos += 1;
+                    let index = self.parse_expr()?;
+                    self.eat(&Token::RBracket, "']' to close the index")?;
+                    return Ok(Expr::Index {
+                        name: s,
+                        index: Box::new(index),
+                    });
                 }
                 Ok(Expr::Var(s))
             }

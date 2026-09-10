@@ -13,6 +13,29 @@ pub enum IrType {
     F64,
     Bool,
     I32,
+    /// `[T]` — borrowed for the call, lowered as `*const T` **plus** an `i32` length the
+    /// compiler appends (SPEC-array-input DP-A2). Parameter position only.
+    Array(IrArrayElem),
+}
+
+/// What an array's elements may be — scalars, and that is a fact of the type rather than a
+/// check: no strings (variable length inside variable length), no nesting.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum IrArrayElem {
+    F64,
+    Bool,
+    I32,
+}
+
+impl IrArrayElem {
+    /// The type one element has once it is read out.
+    pub fn scalar(self) -> IrType {
+        match self {
+            IrArrayElem::F64 => IrType::F64,
+            IrArrayElem::Bool => IrType::Bool,
+            IrArrayElem::I32 => IrType::I32,
+        }
+    }
 }
 
 impl std::fmt::Display for IrType {
@@ -24,6 +47,11 @@ impl std::fmt::Display for IrType {
             IrType::F64 => "f64",
             IrType::Bool => "bool",
             IrType::I32 => "i32",
+            // The manifest quotes this, so an array parameter changes the fingerprint and a
+            // changed element type changes it again (SPEC-array-input 2.7).
+            IrType::Array(IrArrayElem::F64) => "[f64]",
+            IrType::Array(IrArrayElem::Bool) => "[bool]",
+            IrType::Array(IrArrayElem::I32) => "[i32]",
         })
     }
 }
@@ -207,6 +235,20 @@ pub enum IrExprKind {
     ///
     /// A lone string is NOT wrapped in this: `return a` keeps the #92 path exactly.
     Concat(Vec<IrExpr>),
+    /// `xs[i]` — read one element, bounds-checked against the companion length.
+    ///
+    /// The check is part of the LOWERING, not of this node: codegen emits it because the
+    /// failure is an early return, and the typechecker has already proved the enclosing
+    /// function is fallible so that early return has somewhere to go (SPEC-array-input 2.4).
+    Index {
+        array: String,
+        index: Box<IrExpr>,
+    },
+    /// `len(xs)` — the companion length, read straight out of the parameter. Cannot fail, so
+    /// it does not make its function fallible (SPEC-array-input 2.4).
+    Len {
+        array: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -237,6 +279,45 @@ pub enum IrBinOp {
     And,
     /// `||` — short-circuiting disjunction.
     Or,
+}
+
+/// The first array an index reads, anywhere in `body`. `None` if nothing is indexed.
+///
+/// Exhaustive on both enums on purpose: a new statement or expression that can hold an index
+/// must say so here, or DP-A3 would stop covering it and an infallible function would lower
+/// an early return that has nowhere to go.
+pub fn first_index(body: &[IrStmt]) -> Option<String> {
+    fn in_expr(e: &IrExpr) -> Option<String> {
+        match &e.kind {
+            IrExprKind::Index { array, index } => {
+                Some(in_expr(index).unwrap_or_else(|| array.clone()))
+            }
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand)
+            }
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs).or_else(|| in_expr(rhs)),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => {
+                args.iter().find_map(in_expr)
+            }
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => None,
+        }
+    }
+    body.iter().find_map(|s| match s {
+        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+            in_expr(cond).or_else(|| first_index(body))
+        }
+        IrStmt::Return(e)
+        | IrStmt::Let { value: e, .. }
+        | IrStmt::Assign { value: e, .. }
+        | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+        IrStmt::TryCall { args, .. } => args.iter().find_map(in_expr),
+        IrStmt::Fail(_) => None,
+    })
 }
 
 /// Whether a statement list is guaranteed to exit the function: its last statement is a

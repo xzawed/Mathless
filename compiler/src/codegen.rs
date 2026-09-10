@@ -186,17 +186,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
 
     // Declared `out` params become `*mut T`, in source order — in the BODY as well as in the
     // adapter, so the adapter forwards the pointer rather than re-deriving it.
-    let params: Vec<String> = f
-        .params
-        .iter()
-        .map(|p| {
-            if p.out {
-                format!("{}: *mut {}", p.name, rust_type(p.ty))
-            } else {
-                format!("{}: {}", p.name, rust_type(p.ty))
-            }
-        })
-        .collect();
+    let params: Vec<String> = rust_params(&f.params);
 
     // ── The body. Every Mathless function has exactly one, and it is a plain Rust `fn`
     // (SPEC-export-wrappers DP-W1). It carries the Rust-native shape: `T` when infallible,
@@ -246,7 +236,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     //
     // SPEC-export-wrappers DP-W2 puts it immediately after its body, so the two halves of one function read
     // together.
-    let args: Vec<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
+    let args: Vec<String> = rust_args(&f.params);
     let call = format!("ml_fn_{}({})", f.name, args.join(", "));
     let mut sig = params;
 
@@ -260,8 +250,12 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         sig.push("ml_cap: i32".to_string());
         sig.push("ml_needed: *mut i32".to_string());
         let args_with_buf = {
-            let mut a: Vec<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
-            a.extend(["ml_buf", "ml_cap", "ml_needed"]);
+            let mut a = rust_args(&f.params);
+            a.extend([
+                "ml_buf".to_string(),
+                "ml_cap".to_string(),
+                "ml_needed".to_string(),
+            ]);
             a.join(", ")
         };
         let _ = writeln!(
@@ -312,7 +306,44 @@ fn rust_type(t: IrType) -> &'static str {
         IrType::F64 => "f64",
         IrType::Bool => "bool",
         IrType::I32 => "i32",
+        // Borrowed exactly like a string, and read-only for the same reason (D16 rule 1).
+        // The LENGTH is a second parameter the caller of this function appends — see
+        // `rust_params` (SPEC-array-input DP-A2).
+        IrType::Array(IrArrayElem::F64) => "*const f64",
+        IrType::Array(IrArrayElem::Bool) => "*const bool",
+        IrType::Array(IrArrayElem::I32) => "*const i32",
     }
+}
+
+/// One Mathless parameter becomes one or TWO Rust parameters: an array brings the companion
+/// length with it, sitting immediately after its pointer and before whatever the author
+/// declared next (SPEC-array-input 2.2). Shared by the body and the adapter so the two lists
+/// cannot drift.
+fn rust_params(params: &[IrParam]) -> Vec<String> {
+    let mut out = Vec::with_capacity(params.len());
+    for p in params {
+        if p.out {
+            out.push(format!("{}: *mut {}", p.name, rust_type(p.ty)));
+        } else {
+            out.push(format!("{}: {}", p.name, rust_type(p.ty)));
+        }
+        if matches!(p.ty, IrType::Array(_)) {
+            out.push(format!("{}_len: i32", p.name));
+        }
+    }
+    out
+}
+
+/// The argument names for a forwarding call, in the same shape `rust_params` declares.
+fn rust_args(params: &[IrParam]) -> Vec<String> {
+    let mut out = Vec::with_capacity(params.len());
+    for p in params {
+        out.push(p.name.clone());
+        if matches!(p.ty, IrType::Array(_)) {
+            out.push(format!("{}_len", p.name));
+        }
+    }
+    out
 }
 
 /// How a function BODY returns. Only two shapes, because a body never speaks the C ABI —
@@ -368,10 +399,10 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             // another Mathless function through `try` — can tell success from a propagated
             // status without a sentinel value.
             RetAbi::Fallible => {
-                let _ = writeln!(out, "{pad}return Ok({});", emit_expr(e));
+                let _ = writeln!(out, "{pad}return Ok({});", emit_expr(e, abi));
             }
             RetAbi::Plain => {
-                let _ = writeln!(out, "{pad}return {};", emit_expr(e));
+                let _ = writeln!(out, "{pad}return {};", emit_expr(e, abi));
             }
             // A string return IS the write into the caller's buffer.
             RetAbi::StringOut => match &e.kind {
@@ -389,11 +420,13 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                 | IrExprKind::ConstI32(_)
                 | IrExprKind::ConstBool(_)
                 | IrExprKind::Unary { .. }
-                | IrExprKind::Binary { .. } => {
+                | IrExprKind::Binary { .. }
+                | IrExprKind::Index { .. }
+                | IrExprKind::Len { .. } => {
                     let _ = writeln!(
                         out,
                         "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
-                        emit_expr(e)
+                        emit_expr(e, abi)
                     );
                 }
             },
@@ -428,7 +461,10 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
         } => {
             let call = format!(
                 "ml_fn_{callee}({})",
-                args.iter().map(emit_expr).collect::<Vec<_>>().join(", ")
+                args.iter()
+                    .map(|a| emit_expr(a, abi))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
             let prop = abi.propagate();
             match dest {
@@ -486,23 +522,27 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
         } => {
             // Internal binding — a plain Rust `let`, never an export.
             let kw = if *mutable { "let mut" } else { "let" };
-            let _ = writeln!(out, "{pad}{kw} {name} = {};", emit_expr(value));
+            let _ = writeln!(out, "{pad}{kw} {name} = {};", emit_expr(value, abi));
         }
         IrStmt::AssignOut { name, value } => {
             // Same shape as the D17 success write: a raw store through the caller's pointer.
             // The host contract is that the pointer is valid for the duration of the call
             // (D16); a NULL is undefined behaviour here exactly as it already is for
             // `out_value` (SPEC-out-params section 5.1 — inherited, not introduced).
-            let _ = writeln!(out, "{pad}unsafe {{ *{name} = {}; }}", emit_expr(value));
+            let _ = writeln!(
+                out,
+                "{pad}unsafe {{ *{name} = {}; }}",
+                emit_expr(value, abi)
+            );
         }
         IrStmt::Assign { name, value } => {
             // Reassign an in-scope `let mut`. Inside an `if` this mutates the OUTER binding,
             // which is the point of the slice: `if` is a statement, so a mutable local is how
             // a branch result is collected.
-            let _ = writeln!(out, "{pad}{name} = {};", emit_expr(value));
+            let _ = writeln!(out, "{pad}{name} = {};", emit_expr(value, abi));
         }
         IrStmt::If { cond, body } => {
-            let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond));
+            let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond, abi));
             for st in body {
                 emit_stmt(st, indent + 1, abi, out);
             }
@@ -512,7 +552,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             // A module export may now fail to return (SPEC-while §5.1). There is nothing to
             // emit for that: no fuel counter without the VM R01 rejected, no timeout without a
             // runtime. The contract is documented in HOST_ABI instead.
-            let _ = writeln!(out, "{pad}while {} {{", emit_expr(cond));
+            let _ = writeln!(out, "{pad}while {} {{", emit_expr(cond, abi));
             for st in body {
                 emit_stmt(st, indent + 1, abi, out);
             }
@@ -521,8 +561,36 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
     }
 }
 
-fn emit_expr(e: &IrExpr) -> String {
+fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
     match &e.kind {
+        // `xs[i]`, bounds-checked (SPEC-array-input 2.3).
+        //
+        // A Rust BLOCK EXPRESSION, because the check has to be able to leave the function and
+        // an expression cannot otherwise: `{ let i = …; if out of range { return …; } read }`
+        // yields a value and can early-return from the enclosing `fn`. That is why no hoisting
+        // pass was needed, and why this arm has to know the return ABI — a fallible body hands
+        // back `Result`, a `-> string!` body hands back the status directly.
+        //
+        // Typeck has already proved the enclosing function is fallible, so `Plain` is
+        // unreachable from source. It is spelled out rather than `_` so that a new ABI has to
+        // decide what an out-of-range index means instead of inheriting an answer.
+        IrExprKind::Index { array, index } => {
+            let bail = match abi {
+                RetAbi::Fallible => {
+                    format!("return Err({});", crate::abi::ML_ST_INDEX_OUT_OF_RANGE)
+                }
+                RetAbi::StringOut => format!("return {};", crate::abi::ML_ST_INDEX_OUT_OF_RANGE),
+                RetAbi::Plain => unreachable!(
+                    "indexing requires `-> T!` — typeck rejects it in an infallible function"
+                ),
+            };
+            format!(
+                "{{ let __i = {}; if __i < 0 || __i >= {array}_len {{ {bail} }} unsafe {{ *{array}.add(__i as usize) }} }}",
+                emit_expr(index, abi)
+            )
+        }
+        // The companion, read straight out. Cannot fail, so no block and no early return.
+        IrExprKind::Len { array } => format!("{array}_len"),
         // A concatenation is not an expression in the emitted Rust: it has no value until it
         // is written into the caller's buffer, which is what `emit_concat_return` does. Typeck
         // confines it to `return` (DP-K3) precisely so this arm is unreachable.
@@ -537,7 +605,7 @@ fn emit_expr(e: &IrExpr) -> String {
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
         IrExprKind::Call { name, args } => {
-            let args: Vec<String> = args.iter().map(emit_expr).collect();
+            let args: Vec<String> = args.iter().map(|a| emit_expr(a, abi)).collect();
             // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). That is
             // safe because `reserved::generated_prefix` rejects `ml_` on PARAMETERS and
             // LOCALS, which are still emitted raw — when this comment once claimed the prefix
@@ -571,7 +639,7 @@ fn emit_expr(e: &IrExpr) -> String {
             // exactly the semantics the SPEC pins. That agreement is why this lowering is one
             // line; it is NOT the reason the semantics were chosen, and a C backend must
             // implement them by hand (C casts are UB out of range).
-            format!("({} as {})", emit_expr(operand), rust_type(*to))
+            format!("({} as {})", emit_expr(operand, abi), rust_type(*to))
         }
         IrExprKind::Unary { op, operand } => {
             // Backend safety net for directly-built IR, in the same spirit as
@@ -590,13 +658,13 @@ fn emit_expr(e: &IrExpr) -> String {
             // i32::MIN`"), and Rust's plain `-` only wraps while `overflow-checks` is off.
             // Same reasoning as the `wrapping_*` arms below: put the rule in the code.
             if matches!(op, IrUnOp::Neg) && operand.ty == IrType::I32 {
-                return format!("({}).wrapping_neg()", emit_expr(operand));
+                return format!("({}).wrapping_neg()", emit_expr(operand, abi));
             }
             let sym = match op {
                 IrUnOp::Neg => "-",
                 IrUnOp::Not => "!",
             };
-            format!("({sym}{})", emit_expr(operand))
+            format!("({sym}{})", emit_expr(operand, abi))
         }
         IrExprKind::Binary { op, lhs, rhs } => {
             // Directly-built IR could put `&&`/`||` on non-bool operands. Note this is a
@@ -628,8 +696,8 @@ fn emit_expr(e: &IrExpr) -> String {
                 };
                 return format!(
                     "{{ let __d = {}; if __d == 0 {{ 0i32 }} else {{ ({}).{}(__d) }} }}",
-                    emit_expr(rhs),
-                    emit_expr(lhs),
+                    emit_expr(rhs, abi),
+                    emit_expr(lhs, abi),
                     method
                 );
             }
@@ -667,7 +735,11 @@ fn emit_expr(e: &IrExpr) -> String {
                     | IrBinOp::And
                     | IrBinOp::Or => None,
                 } {
-                    return format!("({}).{method}({})", emit_expr(lhs), emit_expr(rhs));
+                    return format!(
+                        "({}).{method}({})",
+                        emit_expr(lhs, abi),
+                        emit_expr(rhs, abi)
+                    );
                 }
             }
             // A string is a `*const u8` (SPEC-string-input DP-S1). Rust's `==` on raw pointers compares the
@@ -675,14 +747,19 @@ fn emit_expr(e: &IrExpr) -> String {
             // happens to hold exactly those bytes — the wrong answer, silently, with no
             // compile error. Route both directions through the byte-loop helper instead.
             if matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str {
-                let call = format!("ml_streq({}, {})", emit_expr(lhs), emit_expr(rhs));
+                let call = format!("ml_streq({}, {})", emit_expr(lhs, abi), emit_expr(rhs, abi));
                 return if matches!(op, IrBinOp::Eq) {
                     call
                 } else {
                     format!("(!{call})")
                 };
             }
-            format!("({} {} {})", emit_expr(lhs), op_str(*op), emit_expr(rhs))
+            format!(
+                "({} {} {})",
+                emit_expr(lhs, abi),
+                op_str(*op),
+                emit_expr(rhs, abi)
+            )
         }
     }
 }
@@ -780,6 +857,12 @@ enum PieceKind<'a> {
 fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
     match &p.kind {
         IrExprKind::Cast { operand, .. } => PieceKind::Digits { operand },
+        // Array elements are scalars, so neither of these is ever `Str` and neither can reach
+        // a concatenation. Named rather than lumped in below, because "already a pointer" is
+        // false for both — treating one as an address is the bug this match exists to prevent.
+        IrExprKind::Index { .. } | IrExprKind::Len { .. } => {
+            unreachable!("an array element is a scalar, so it is never a piece of a built string")
+        }
         // Every piece is `Str` by the time codegen sees it (typeck flattens and checks), so
         // each of these is already a pointer. Spelled out so that a future string-shaped
         // variant has to say which it is instead of being assumed to be an address.
@@ -809,8 +892,10 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     // reason (it asks `ml_ilen`); this gives the string pieces the same guarantee.
     for (i, p) in pieces.iter().enumerate() {
         let e = match piece_kind(p) {
-            PieceKind::Digits { operand } => emit_expr(operand),
-            PieceKind::Bytes => emit_expr(p),
+            // A concat only ever exists in a `-> string!` body, which is StringOut by
+            // construction (SPEC-string-concat 2.3).
+            PieceKind::Digits { operand } => emit_expr(operand, RetAbi::StringOut),
+            PieceKind::Bytes => emit_expr(p, RetAbi::StringOut),
         };
         let _ = writeln!(out, "{pad}let __p{i} = {e};");
     }
@@ -862,6 +947,10 @@ fn builds_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
             IrExprKind::Concat(_) => true,
+            // The index is an ordinary expression and could hold anything; the array name
+            // cannot. `Len` has no subtree at all.
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::Len { .. } => false,
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
             IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
                 in_expr(operand)
@@ -982,6 +1071,10 @@ fn emit_concat_helpers(module: &IrModule, out: &mut String) {
 fn compares_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
+            // An element is a scalar, so an index never compares strings — but the INDEX
+            // itself is an ordinary expression and could.
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::Len { .. } => false,
             IrExprKind::Binary { op, lhs, rhs } => {
                 (matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str)
                     || in_expr(lhs)
@@ -1045,6 +1138,8 @@ fn emit_string_helper(module: &IrModule, out: &mut String) {
 fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
     fn walk_expr(e: &IrExpr, found: &mut Vec<crate::typeck::Rounder>) {
         match &e.kind {
+            IrExprKind::Index { index, .. } => walk_expr(index, found),
+            IrExprKind::Len { .. } => {}
             IrExprKind::Call { name, args, .. } => {
                 if let Some(b) = crate::typeck::Rounder::from_name(name) {
                     if !found.contains(&b) {

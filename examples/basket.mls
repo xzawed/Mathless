@@ -1,0 +1,69 @@
+// Array-input slice: a rule that reads a whole list in ONE call.
+//
+// The point is not that this cannot be done without arrays — STATUS §9-9 measured five times
+// that it can, by handing the host a general fold and calling it per item. The point is what
+// that costs: the host is called `N` times instead of once, and its plaintext source then
+// shows the METHOD (fold with these seeds, in this order), where this module shows only that
+// a rule exists. That is the D05 half of SPEC-array-input §1.1.
+//
+// `-> i32!` is not decoration. Indexing can fail, and D17 only gives a function a status when
+// its signature says so — so a function that reads `qty[i]` says `!` and the host checks it.
+
+error E_LENGTH_MISMATCH = 1
+
+// Line totals with a per-line cap. Two arrays that must agree in length, which the module
+// checks itself: the host passes two independent pointers and nothing else can.
+export fn basket_total(qty: [i32], price: [i32], cap: i32) -> i32! {
+  if len(qty) != len(price) { fail E_LENGTH_MISMATCH }
+  let mut total = 0
+  let mut i = 0
+  while i < len(qty) {
+    let line = qty[i] * price[i]
+    if line > cap {
+      total = total + cap
+    }
+    if line <= cap {
+      total = total + line
+    }
+    i = i + 1
+  }
+  return total
+}
+
+// The empty case is an ordinary answer, not an error: the loop runs zero times and the seed
+// is returned. Pinned because "empty" is where a host's `@arr[0]` idiom breaks, not the
+// module's arithmetic (SPEC-array-input §5.2).
+export fn largest(xs: [f64], floor: f64) -> f64! {
+  let mut best = floor
+  let mut i = 0
+  while i < len(xs) {
+    if xs[i] > best { best = xs[i] }
+    i = i + 1
+  }
+  return best
+}
+
+// `len` alone does not make a function fallible — there is nothing to fail.
+export fn how_many(flags: [bool]) -> i32 {
+  return len(flags)
+}
+
+// A bool array read one element at a time. One byte per element on both sides: the generated
+// unit declares `PBoolean`, and Delphi's `Boolean` is one byte — the hazard measured on
+// 2026-09-07 for out-params, which is the same hazard in an array.
+export fn any_set(flags: [bool]) -> bool! {
+  let mut i = 0
+  while i < len(flags) {
+    if flags[i] { return true }
+    i = i + 1
+  }
+  return false
+}
+
+// The HOST chooses the index here, so the bounds check is reachable from outside the module —
+// every other function in this file bounds its own loop by `len` and can never trip it. That
+// makes this the one export acceptance C can use to measure the reserved negative status and
+// the untouched out-param (SPEC-array-input §3-C).
+export fn pick(xs: [i32], idx: i32) -> i32! {
+  return xs[idx]
+}

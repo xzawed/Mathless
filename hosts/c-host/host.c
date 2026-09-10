@@ -44,6 +44,7 @@
 #include "carrier.h"
 #include "quote.h"
 #include "receipt.h"
+#include "basket.h"
 /* Included for the header alone (N1): these four are exercised by the Rust oracle, but
  * until now no C compiler had read the headers that ship beside them. `shapes.h` is the
  * one that matters most -- shapes.mls collects the export shapes where a mis-written
@@ -57,6 +58,15 @@
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);
+/* basket.mls: array INPUT. One surface parameter is TWO C parameters -- the pointer and the
+ * length the compiler appends -- so a host that forgets the second one does not compile,
+ * which is the point of writing these typedefs from the header's own declarations. */
+typedef int32_t (*basket_total_fn)(const int32_t *, int32_t, const int32_t *, int32_t, int32_t,
+                                   int32_t *);
+typedef int32_t (*pick_fn)(const int32_t *, int32_t, int32_t, int32_t *);
+typedef int32_t (*largest_fn)(const double *, int32_t, double, double *);
+typedef int32_t (*how_many_fn)(const bool *, int32_t);
+typedef int32_t (*any_set_fn)(const bool *, int32_t, bool *);
 typedef double (*discount_fn)(double, bool);
 typedef int32_t (*safe_div_fn)(double, double, double *);
 typedef int32_t (*sum_to_fn)(int32_t);
@@ -906,6 +916,61 @@ int main(int argc, char **argv) {
     } else {
         printf("GATE_D_DRIFT_SKIPPED: no drifted module named on the command line, so the "
                "refusal path was NOT exercised by this run\n");
+    }
+
+    /* --- basket.dll: array INPUT (SPEC-array-input). ---
+     *
+     * The host's own arrays, borrowed for the call. What a C host adds over the Rust oracle
+     * is that the DECLARATION is read by a C compiler: `mlx_basket_total` takes two pointers
+     * and two lengths, and the typedef above is bound to the header, so dropping a companion
+     * would not compile rather than silently shift every argument. */
+    HMODULE bk = load(dir, "basket.dll", expected_abi, ML_BASKET_IFACE_HASH);
+    if (bk == NULL) {
+        return 1;
+    }
+    basket_total_fn basket_total = (basket_total_fn)sym(bk, "mlx_basket_total");
+    pick_fn pick = (pick_fn)sym(bk, "mlx_pick");
+    largest_fn largest = (largest_fn)sym(bk, "mlx_largest");
+    how_many_fn how_many = (how_many_fn)sym(bk, "mlx_how_many");
+    any_set_fn any_set = (any_set_fn)sym(bk, "mlx_any_set");
+    if (basket_total && pick && largest && how_many && any_set) {
+        const int32_t qty[3] = {2, 1, 4};
+        const int32_t price[3] = {30, 500, 25};
+        int32_t got = -1;
+        check(basket_total(qty, 3, price, 3, 100, &got) == 0 && got == 260,
+              "basket_total reads three lines in ONE call");
+
+        int32_t untouched = 12345;
+        check(basket_total(qty, 3, price, 2, 100, &untouched) == ML_BASKET_ERR_E_LENGTH_MISMATCH,
+              "mismatched lengths are the module's domain error, not a crash");
+        check(untouched == 12345, "and a failed call writes no out-param");
+
+        /* The reserved negative, and the canary that says nothing was written. Only a host
+           can choose an out-of-range index -- every loop inside the module is bounded by
+           `len`, so this path is unreachable from the .mls source alone. */
+        int32_t canary = 0x5A5A5A5A;
+        check(pick(qty, 3, 3, &canary) == ML_ST_INDEX_OUT_OF_RANGE,
+              "an out-of-range index is the reserved negative status");
+        check(canary == 0x5A5A5A5A, "and it leaves the out-param untouched");
+        check(pick(qty, 3, -1, &canary) == ML_ST_INDEX_OUT_OF_RANGE,
+              "a negative index is out of range too");
+        int32_t last = -1;
+        check(pick(qty, 3, 2, &last) == 0 && last == 4, "the last element is in range");
+
+        double best = 0.0;
+        const double xs[3] = {1.5, 9.25, -3.0};
+        check(largest(xs, 3, 0.0, &best) == 0 && best == 9.25, "largest over an f64 array");
+        best = -1.0;
+        check(largest(xs, 0, 42.0, &best) == 0 && best == 42.0,
+              "an empty array is an ordinary answer, not an error");
+
+        /* One byte per element on both sides. A module reading four bytes per bool would walk
+           past the end of this array and answer from whatever follows it. */
+        const bool flags[4] = {false, false, false, true};
+        check(how_many(flags, 4) == 4, "len is the number the host passed");
+        bool any = false;
+        check(any_set(flags, 4, &any) == 0 && any,
+              "the fourth bool is set, and it is one byte along");
     }
 
     if (failures == 0) {

@@ -238,6 +238,15 @@ fn a_real_c_host_loads_and_calls_the_module() {
 
     let vat =
         emit_artifacts(include_str!("../../../examples/vat.mls"), "vat", &work).expect("emit vat");
+    // Array INPUT. Behavioural, not header-only: the host loads it and calls it with its own
+    // arrays, which is the half the Rust oracle cannot speak to — a C compiler reading the
+    // two-parameters-per-array declaration.
+    let basket = emit_artifacts(
+        include_str!("../../../examples/basket.mls"),
+        "basket",
+        &work,
+    )
+    .expect("emit basket");
 
     let carrier = emit_artifacts(
         include_str!("../../../examples/carrier.mls"),
@@ -503,6 +512,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &carrier.dll,
         &quote.dll,
         &receipt.dll,
+        &basket.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

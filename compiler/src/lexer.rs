@@ -52,6 +52,9 @@ pub enum Token {
     RBrace,
     Comma,
     Colon,
+    /// `[` / `]` — an array type (`[i32]`) or an index (`xs[i]`), SPEC-array-input.
+    LBracket,
+    RBracket,
     Assign,
     Bang,
     // operators
@@ -217,6 +220,8 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
         let single = match c {
             '(' => Some(Token::LParen),
             ')' => Some(Token::RParen),
+            '[' => Some(Token::LBracket),
+            ']' => Some(Token::RBracket),
             '{' => Some(Token::LBrace),
             '}' => Some(Token::RBrace),
             ',' => Some(Token::Comma),
@@ -477,10 +482,6 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
         let msg = match c {
             '&' => "`&` is not an operator in Mathless — did you mean `&&`?".to_string(),
             '|' => "`|` is not an operator in Mathless — did you mean `||`?".to_string(),
-            '[' | ']' => {
-                "arrays are not in Mathless yet — `[` is not valid in a type or an expression"
-                    .to_string()
-            }
             // A `.` inside a number is consumed by the literal path above, so one arriving
             // here is a field access (`c.tier`) or a stray dot — EXCEPT after a range, where
             // the number path has already eaten the first dot of `0..3` as part of `0.` and

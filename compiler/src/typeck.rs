@@ -110,6 +110,13 @@ impl Rounder {
     }
 }
 
+/// `len(xs)` — the one builtin that takes an array (SPEC-array-input 2.5).
+///
+/// A NAME, not a keyword: `let len = 3` stays legal, exactly as DP-R1 decided for the
+/// rounding builtins. What it costs is that a user FUNCTION may not be called this either,
+/// which is checked beside theirs.
+pub const LEN_BUILTIN: &str = "len";
+
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
     let mut error_table: Scope2 = HashMap::new();
@@ -224,6 +231,16 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
         );
     }
     for f in &module.functions {
+        // `len` is a builtin SIGNATURE too (DP-A4), so it is reserved for the same reason and
+        // with the same wording. It is not in `Rounder` because it is polymorphic in the
+        // element type and returns i32, which that enum's one shape cannot say.
+        if f.name == LEN_BUILTIN {
+            return Err(TypeError::new(format!(
+                "function '{}' collides with the built-in `{LEN_BUILTIN}` — rename it \
+                 (`{LEN_BUILTIN}(xs)` reads an array parameter's length and returns i32)",
+                f.name
+            )));
+        }
         if Rounder::from_name(&f.name).is_some() {
             return Err(TypeError::new(format!(
                 "function '{}' collides with the built-in `{}` — rename it (the built-ins are \
@@ -294,6 +311,8 @@ fn collect_calls(body: &[Stmt], out: &mut Vec<String>) {
                 expr(lhs, out);
                 expr(rhs, out);
             }
+            // The base of an index is a name, so only the index itself can hold a call.
+            Expr::Index { index, .. } => expr(index, out),
             Expr::Number(_) | Expr::Int(_) | Expr::Bool(_) | Expr::Str(_) | Expr::Var(_) => {}
         }
     }
@@ -391,6 +410,11 @@ fn ir_type(t: Type) -> IrType {
         Type::F64 => IrType::F64,
         Type::Bool => IrType::Bool,
         Type::I32 => IrType::I32,
+        Type::Array(e) => IrType::Array(match e {
+            ast::ArrayElem::F64 => IrArrayElem::F64,
+            ast::ArrayElem::Bool => IrArrayElem::Bool,
+            ast::ArrayElem::I32 => IrArrayElem::I32,
+        }),
     }
 }
 
@@ -479,6 +503,34 @@ fn check_function(
                 f.name, p.name
             )));
         }
+        // An `out` array would have the module WRITE into host memory, which is a different
+        // decision from borrowing it (SPEC-array-input 2.1). Refuse it rather than let the
+        // read-only promise be true of some parameters and not others.
+        if p.out && matches!(p.ty, Type::Array(_)) {
+            return Err(TypeError::new(format!(
+                "function '{}': parameter '{}' is an `out` array, which is not supported — an \
+                 array parameter is BORROWED and read-only (D16 rule 1). Writing into the \
+                 host's memory is a separate slice",
+                f.name, p.name
+            )));
+        }
+        // DP-A2: the companion is the compiler's name. A collision has to be loud, because
+        // the alternative is two parameters with one name in the generated C.
+        if matches!(p.ty, Type::Array(_)) {
+            let companion = format!("{}_len", p.name);
+            if let Some(clash) = f
+                .params
+                .iter()
+                .find(|q| q.name.eq_ignore_ascii_case(&companion))
+            {
+                return Err(TypeError::new(format!(
+                    "function '{}': parameter '{}' is an array, so the compiler appends a \
+                     length parameter called '{companion}' — but '{}' is already declared. \
+                     Rename one of them",
+                    f.name, p.name, clash.name
+                )));
+            }
+        }
         let ty = ir_type(p.ty);
         scope.insert(
             p.name.clone(),
@@ -519,6 +571,21 @@ fn check_function(
     // means the module ALWAYS has a status to report — truncation is possible on every call.
     // So `!` is mandatory (DP-T1): the surface's one mark for "check the status" must not
     // come apart from the C-level `int32_t` return.
+    // An array RETURN would need somewhere for the elements to live, and the module has no
+    // allocator. Q12's caller-allocates buffer is the answer, and applying it to arrays is a
+    // separate slice (SPEC-array-input 5.1) — refuse it now rather than lower something the
+    // ABI has not agreed.
+    if let Type::Array(elem) = f.ret {
+        return Err(TypeError::new(format!(
+            "function '{}' returns an array, which is not supported yet — the module has no              allocator, so a returned array needs the caller-allocates buffer protocol the              way `-> string!` does (Q12). Take `[{}]` as a PARAMETER instead, or return a              scalar",
+            f.name,
+            match elem {
+                ast::ArrayElem::F64 => "f64",
+                ast::ArrayElem::Bool => "bool",
+                ast::ArrayElem::I32 => "i32",
+            }
+        )));
+    }
     if f.ret == Type::Str {
         if !f.fallible {
             return Err(TypeError::new(format!(
@@ -566,6 +633,25 @@ fn check_function(
         check_outs_assigned(&body, &outs, &mut assigned, &f.name)?;
     }
 
+    // DP-A3. An out-of-range index leaves the function with a reserved negative status, and
+    // D17 gives a function a status ONLY when it is declared `-> T!`. Without this, an
+    // infallible function containing `xs[i]` would need an invisible status channel — the
+    // exact shape #67 measured, where a domain code came back as an ordinary value.
+    //
+    // Checked here rather than in `check_expr` because that one cannot see the signature, and
+    // because this is the same shape as the out-param pass above: a walk over the finished
+    // body asking one question.
+    if !f.fallible {
+        if let Some(array) = first_index(&body) {
+            return Err(TypeError::new(format!(
+                "function '{}' indexes '{array}', so it can fail — declare it `-> {}!`. An \
+                 index outside 0..len is reported as a reserved negative status, and D17 only \
+                 gives a function a status when its signature says `!`",
+                f.name, ret
+            )));
+        }
+    }
+
     Ok(IrFunction {
         name: f.name.clone(),
         params,
@@ -573,6 +659,45 @@ fn check_function(
         fallible: f.fallible,
         exported: f.exported,
         body,
+    })
+}
+
+/// The first array an index reads, anywhere in `body`. `None` if nothing is indexed.
+///
+/// Exhaustive on both enums on purpose: a new statement or expression that can hold an index
+/// must say so here, or DP-A3 would stop covering it and an infallible function would lower
+/// an early return that has nowhere to go.
+fn first_index(body: &[IrStmt]) -> Option<String> {
+    fn in_expr(e: &IrExpr) -> Option<String> {
+        match &e.kind {
+            IrExprKind::Index { array, index } => {
+                Some(in_expr(index).unwrap_or_else(|| array.clone()))
+            }
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand)
+            }
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs).or_else(|| in_expr(rhs)),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => {
+                args.iter().find_map(in_expr)
+            }
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => None,
+        }
+    }
+    body.iter().find_map(|s| match s {
+        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+            in_expr(cond).or_else(|| first_index(body))
+        }
+        IrStmt::Return(e)
+        | IrStmt::Let { value: e, .. }
+        | IrStmt::Assign { value: e, .. }
+        | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+        IrStmt::TryCall { args, .. } => args.iter().find_map(in_expr),
+        IrStmt::Fail(_) => None,
     })
 }
 
@@ -1169,6 +1294,10 @@ fn is_built_string(e: &IrExpr) -> bool {
         // Pieces appended into the caller's buffer, and the digits of `n as string` — both
         // are bytes this module produces.
         IrExprKind::Concat(_) | IrExprKind::Cast { .. } => true,
+        // Unreachable behind the `e.ty != Str` guard above — an array element is a scalar and
+        // a length is an i32 — but spelled out rather than lumped into the `false` list, so a
+        // string-shaped array would have to answer this question instead of inheriting `no`.
+        IrExprKind::Index { .. } | IrExprKind::Len { .. } => false,
         IrExprKind::Binary { op, .. } => match op {
             // `a + b` on strings is concatenation before `flatten_concat` rewrites it.
             IrBinOp::Add => true,
@@ -1257,6 +1386,61 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                 "function '{fname}': unknown variable '{name}'"
             ))),
         },
+        // `xs[i]` — read one element (SPEC-array-input 2.3). The bounds check is codegen's;
+        // what is decided here is that `xs` IS an array, that the index is an i32, and (in a
+        // later pass, because this one cannot see the signature) that the enclosing function
+        // is fallible so the check has somewhere to fail to.
+        Expr::Index { name, index } => {
+            let Some((ty, _binding)) = scope.get(name) else {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': unknown name '{name}'"
+                )));
+            };
+            let IrType::Array(elem) = *ty else {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': '{name}' is {ty}, not an array — only an array                      parameter can be indexed"
+                )));
+            };
+            let index = check_expr(index, scope, fname, sigs)?;
+            if index.ty != IrType::I32 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': an array index must be i32, found {} — there is no                      implicit conversion (write `{} as i32` if that is what you mean)",
+                    index.ty, index.ty
+                )));
+            }
+            Ok(IrExpr {
+                ty: elem.scalar(),
+                kind: IrExprKind::Index {
+                    array: name.clone(),
+                    index: Box::new(index),
+                },
+            })
+        }
+        Expr::Call { name, args } if name == LEN_BUILTIN => {
+            // Polymorphic in the element type, so it cannot be a `Sig`; intercepted here.
+            if args.len() != 1 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{LEN_BUILTIN}` takes exactly one array argument,                      found {}",
+                    args.len()
+                )));
+            }
+            let arg = check_expr(&args[0], scope, fname, sigs)?;
+            if !matches!(arg.ty, IrType::Array(_)) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{LEN_BUILTIN}` takes an array, found {} — it reads                      the length the host passed alongside the pointer",
+                    arg.ty
+                )));
+            }
+            let IrExprKind::Var(array) = arg.kind else {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{LEN_BUILTIN}` takes an array PARAMETER by name"
+                )));
+            };
+            Ok(IrExpr {
+                ty: IrType::I32,
+                kind: IrExprKind::Len { array },
+            })
+        }
         Expr::Call { name, args } => {
             let Some(sig) = sigs.get(name) else {
                 return Err(TypeError::new(format!(

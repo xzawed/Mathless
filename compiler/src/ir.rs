@@ -13,6 +13,29 @@ pub enum IrType {
     F64,
     Bool,
     I32,
+    /// `[T]` — borrowed for the call, lowered as `*const T` **plus** an `i32` length the
+    /// compiler appends (SPEC-array-input DP-A2). Parameter position only.
+    Array(IrArrayElem),
+}
+
+/// What an array's elements may be — scalars, and that is a fact of the type rather than a
+/// check: no strings (variable length inside variable length), no nesting.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum IrArrayElem {
+    F64,
+    Bool,
+    I32,
+}
+
+impl IrArrayElem {
+    /// The type one element has once it is read out.
+    pub fn scalar(self) -> IrType {
+        match self {
+            IrArrayElem::F64 => IrType::F64,
+            IrArrayElem::Bool => IrType::Bool,
+            IrArrayElem::I32 => IrType::I32,
+        }
+    }
 }
 
 impl std::fmt::Display for IrType {
@@ -24,6 +47,11 @@ impl std::fmt::Display for IrType {
             IrType::F64 => "f64",
             IrType::Bool => "bool",
             IrType::I32 => "i32",
+            // The manifest quotes this, so an array parameter changes the fingerprint and a
+            // changed element type changes it again (SPEC-array-input 2.7).
+            IrType::Array(IrArrayElem::F64) => "[f64]",
+            IrType::Array(IrArrayElem::Bool) => "[bool]",
+            IrType::Array(IrArrayElem::I32) => "[i32]",
         })
     }
 }
@@ -207,6 +235,20 @@ pub enum IrExprKind {
     ///
     /// A lone string is NOT wrapped in this: `return a` keeps the #92 path exactly.
     Concat(Vec<IrExpr>),
+    /// `xs[i]` — read one element, bounds-checked against the companion length.
+    ///
+    /// The check is part of the LOWERING, not of this node: codegen emits it because the
+    /// failure is an early return, and the typechecker has already proved the enclosing
+    /// function is fallible so that early return has somewhere to go (SPEC-array-input 2.4).
+    Index {
+        array: String,
+        index: Box<IrExpr>,
+    },
+    /// `len(xs)` — the companion length, read straight out of the parameter. Cannot fail, so
+    /// it does not make its function fallible (SPEC-array-input 2.4).
+    Len {
+        array: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

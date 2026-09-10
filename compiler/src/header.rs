@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 
 use std::collections::HashMap;
 
-use crate::ir::{IrFunction, IrModule, IrStmt, IrType};
+use crate::ir::{IrArrayElem, IrFunction, IrModule, IrStmt, IrType};
 
 fn c_type(t: IrType) -> &'static str {
     match t {
@@ -19,6 +19,12 @@ fn c_type(t: IrType) -> &'static str {
         IrType::F64 => "double",
         IrType::Bool => "bool",
         IrType::I32 => "int32_t",
+        // Borrowed and read-only, hence `const` — the same promise `const char*` makes for a
+        // string. The LENGTH is a second parameter, written by `c_params` (SPEC-array-input
+        // 2.2); this function names one type, not one parameter.
+        IrType::Array(IrArrayElem::F64) => "const double*",
+        IrType::Array(IrArrayElem::Bool) => "const bool*",
+        IrType::Array(IrArrayElem::I32) => "const int32_t*",
     }
 }
 
@@ -31,6 +37,12 @@ fn delphi_type(t: IrType) -> &'static str {
         IrType::F64 => "Double",
         IrType::Bool => "Boolean",
         IrType::I32 => "Integer",
+        // The pointer types Delphi already has for these. `PBoolean` is a pointer to a
+        // ONE-BYTE Boolean, which is the size the module writes — the same hazard the unit's
+        // header warns about for out-params, measured 2026-09-07.
+        IrType::Array(IrArrayElem::F64) => "PDouble",
+        IrType::Array(IrArrayElem::Bool) => "PBoolean",
+        IrType::Array(IrArrayElem::I32) => "PInteger",
     }
 }
 
@@ -350,18 +362,24 @@ fn c_param_name(name: &str) -> String {
 }
 
 fn c_signature(f: &IrFunction) -> String {
-    let mut parts: Vec<String> = f
-        .params
-        .iter()
-        .map(|p| {
-            // A declared `out` is a pointer, exactly like D17's `out_value` below it.
-            if p.out {
-                format!("{}* {}", c_type(p.ty), c_param_name(&p.name))
-            } else {
-                format!("{} {}", c_type(p.ty), c_param_name(&p.name))
-            }
-        })
-        .collect();
+    let mut parts: Vec<String> = Vec::with_capacity(f.params.len());
+    for p in &f.params {
+        // A declared `out` is a pointer, exactly like D17's `out_value` below it.
+        if p.out {
+            parts.push(format!("{}* {}", c_type(p.ty), c_param_name(&p.name)));
+        } else {
+            parts.push(format!("{} {}", c_type(p.ty), c_param_name(&p.name)));
+        }
+        // An array brings its length with it, immediately after the pointer and before
+        // whatever the author declared next (SPEC-array-input DP-A2). The unit is ELEMENTS,
+        // which is not the unit `ml_cap`/`ml_needed` use — those are bytes.
+        if matches!(p.ty, IrType::Array(_)) {
+            parts.push(format!(
+                "int32_t {}",
+                c_param_name(&format!("{}_len", p.name))
+            ));
+        }
+    }
     if f.ret == IrType::Str {
         // SPEC-string-return DP-T1/T4: the Q12 triple IS the return value, so it comes last
         // (DP-O1 unchanged). `ml_cap` and `*ml_needed` are total bytes INCLUDING the NUL, on
@@ -535,18 +553,18 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
 }
 
 fn delphi_signature(f: &IrFunction) -> String {
-    let mut parts: Vec<String> = f
-        .params
-        .iter()
-        .map(|p| {
-            // Delphi already spells this for `out_value`; a declared out gets the same keyword.
-            if p.out {
-                format!("out {}: {}", p.name, delphi_type(p.ty))
-            } else {
-                format!("{}: {}", p.name, delphi_type(p.ty))
-            }
-        })
-        .collect();
+    let mut parts: Vec<String> = Vec::with_capacity(f.params.len());
+    for p in &f.params {
+        // Delphi already spells this for `out_value`; a declared out gets the same keyword.
+        if p.out {
+            parts.push(format!("out {}: {}", p.name, delphi_type(p.ty)));
+        } else {
+            parts.push(format!("{}: {}", p.name, delphi_type(p.ty)));
+        }
+        if matches!(p.ty, IrType::Array(_)) {
+            parts.push(format!("{}_len: Integer", p.name));
+        }
+    }
     if f.ret == IrType::Str {
         // DP-T3: `PByte`, deliberately NOT `PAnsiChar`. Both silent Delphi misspellings that
         // the string-INPUT slice could only warn about — `PAnsiChar(S)` on a UnicodeString and

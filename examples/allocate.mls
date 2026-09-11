@@ -1,0 +1,34 @@
+// SPEC-array-return, acceptance C. The rule that is the slice's actual argument (§0.2).
+//
+// Fill an order from warehouses in order: each one gives what it has until the order is met.
+// What warehouse `w` contributes depends on what the earlier ones already took, so before
+// array return the host called this once per warehouse and the module re-walked the prefix
+// every time. The rule had to be cut into n pieces the host reassembled, and "the answer for
+// warehouse w" is a concept the rule never had -- the ABI made us invent it.
+//
+// Now it answers once.
+
+export fn allocate(stock: [i32], want: i32) -> [i32]! {
+    result len(stock)
+    let mut left = want
+    let mut i = 0
+    while i < len(stock) {
+        let mut take = stock[i]
+        if take > left { take = left }
+        result[i] = take
+        left = left - take
+        i = i + 1
+    }
+}
+
+// A [bool] result, because the element WIDTH is the hazard this slice adds (SPEC §2.6): the
+// module writes one byte per element, and a host that declares its array as four-byte
+// booleans reads a stride that does not exist. Measured in the Delphi gate, not asserted.
+export fn in_stock(stock: [i32]) -> [bool]! {
+    result len(stock)
+    let mut i = 0
+    while i < len(stock) {
+        result[i] = stock[i] > 0
+        i = i + 1
+    }
+}

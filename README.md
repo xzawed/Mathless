@@ -72,7 +72,12 @@ be `i32`, `f64` or `bool`): it arrives as a borrowed pointer plus a length the c
 so one surface parameter becomes two C parameters. It is read-only, `len(xs)` gives the element
 count, and `xs[i]` is bounds-checked — which is why a function that indexes must be declared
 `-> T!`, since an out-of-range read fails with a reserved negative status rather than through an
-invisible channel. Arrays cannot yet be returned. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
+invisible channel. An array can also be **returned**, using the caller-allocates protocol a
+returned string uses: the body declares its length with `result <n>`, which is where the host's
+capacity is checked, and then writes elements with `result[i] = e`. Because the check happens
+before the first write, a call that does not fit writes nothing at all. One difference worth
+knowing: for an array return `ml_cap` and `*ml_needed` count **elements**, where a string
+return counts bytes. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
 `let` and `let mut`, with assignment. Operators include unary `-` and `!`, plus `&&` and
 `||`. There are four built-ins — `floor`, `ceil`, `round`, `trunc` — which match C's
 `<math.h>` exactly. A function can be fallible: `-> T!` with `error NAME = N` and

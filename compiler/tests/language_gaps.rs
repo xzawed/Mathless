@@ -186,6 +186,11 @@ fn conversions_that_do_not_exist_yet() {
 
 #[test]
 fn data_shapes_that_do_not_exist_yet() {
+    // Not a gap any more, and kept anyway. Arrays exist in BOTH directions since 2026-09-11,
+    // so `배열` came out of `GAPS` -- but `i32[]` is still refused, because the spelling is
+    // `[i32]` (DP-A1). What this pins is a SYNTAX choice, not a missing feature, and the
+    // diagnostic has to keep saying which: before the array slice it answered "expected ')'",
+    // which was true and told the author nothing.
     rejected(
         "array type",
         "export fn f(xs: i32[]) -> i32 { return xs[0] }",
@@ -224,7 +229,6 @@ const GAPS: &[(&str, &str)] = &[
     ("포맷", "f64 as string"),
     ("지역 변수", "string local"),
     ("struct", "struct declaration"),
-    ("배열", "array type"),
     ("option", "option type"),
     ("for", "for"),
     ("else", "else"),

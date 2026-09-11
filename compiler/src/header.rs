@@ -199,7 +199,11 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
         );
         let _ = writeln!(s, " * to allocate, in the same unit as ml_cap. */");
         let _ = writeln!(s, "#ifndef ML_ST_INSUFFICIENT_BUFFER");
-        let _ = writeln!(s, "#define ML_ST_INSUFFICIENT_BUFFER (-1)");
+        let _ = writeln!(
+            s,
+            "#define ML_ST_INSUFFICIENT_BUFFER ({})",
+            crate::abi::ML_ST_INSUFFICIENT_BUFFER
+        );
         let _ = writeln!(s, "#endif");
         s.push('\n');
     }
@@ -221,12 +225,16 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
             " * Passing a byte count as ml_cap promises more room than you",
             " * allocated, and the module writes on that promise. Truncation is",
             " * still a FAILURE, and nothing is written when it happens. */",
-            "#ifndef ML_ST_INSUFFICIENT_BUFFER",
-            "#define ML_ST_INSUFFICIENT_BUFFER (-1)",
-            "#endif",
         ] {
             let _ = writeln!(s, "{line}");
         }
+        let _ = writeln!(s, "#ifndef ML_ST_INSUFFICIENT_BUFFER");
+        let _ = writeln!(
+            s,
+            "#define ML_ST_INSUFFICIENT_BUFFER ({})",
+            crate::abi::ML_ST_INSUFFICIENT_BUFFER
+        );
+        let _ = writeln!(s, "#endif");
         s.push('\n');
     }
 

@@ -279,48 +279,54 @@ fn an_out_array_parameter_is_still_refused() {
     );
 }
 
-// ------------------------------------------------------------ the seam between AR1 and AR3
+// ------------------------------------------------------------------- AR3b, the lowering
 
-/// AR1 ends at the IR. Lowering is AR3, and the gap must SAY so.
+/// The seam test that stood here is gone, and that is the point of having had it.
 ///
-/// A feature that parses and typechecks but does not lower is exactly what STATUS §5-5.2
-/// warns about: half implemented, and nothing notices. This pins the half, so the day AR3
-/// lands this test fails and somebody has to delete it on purpose.
+/// It pinned the state where the frontend accepted `result` and the backend refused to lower
+/// it, and it was written to FAIL the day AR3 landed so that deleting it would be a decision
+/// rather than an oversight. It failed on exactly that commit. What replaces it is this: the
+/// order of the lowered steps, which is the whole reason Q12 survives a value that has to be
+/// computed.
 ///
-/// The message matters as much as the refusal. Before the guard in `codegen::emit`, this
-/// program hit the all-paths-return safety net and the author was told "function 'f' may not
-/// return on all paths" — true of the lowered shape, and wrong about their source, which is
-/// correct. §9-12 records the same failure: a true sentence pointing at the wrong thing.
+/// The VALUES are measured in `hosts/rust-oracle/tests/array_return.rs`, through a loaded
+/// module and a real buffer. This one only reads the text, and STATUS §7 is explicit that
+/// text alone proves little — it is here because the ORDER is what a reader has to check, and
+/// a reordering that still passes every value test would still be a protocol violation.
 #[test]
-fn the_backend_refuses_by_name_until_ar3_lands() {
-    let ir = compile_to_ir(
+fn the_capacity_check_precedes_every_write() {
+    let rust = mlc::compile_to_rust(
         "export fn f(n: i32) -> [i32]! {
            result n
            result[0] = 1
          }",
     )
-    .expect("AR1 owns the frontend, so this must typecheck");
-    let _ = ir;
+    .expect("AR3b lowers this");
 
-    let err = mlc::compile_to_rust(
-        "export fn f(n: i32) -> [i32]! {
-           result n
-           result[0] = 1
-         }",
-    )
-    .expect_err("lowering is AR3; until then the backend must refuse");
-    let msg = err.to_string();
+    let needed = rust.find("*ml_needed =").expect("*ml_needed is written");
+    let check = rust
+        .find("if __n > __cap")
+        .expect("the capacity is checked");
+    let fill = rust
+        .find("*ml_buf.add(__z")
+        .expect("the elements are zeroed");
+    let write = rust
+        .find("*ml_buf.add(__i")
+        .expect("the author's element write");
+
     assert!(
-        msg.contains("does not lower it yet"),
-        "the refusal must say the BACKEND is unfinished: {msg}"
+        needed < check,
+        "*ml_needed must be written BEFORE the capacity test: Q12's truncation row says the          host learns the size it needs, and returning first would deny it that"
     );
     assert!(
-        msg.contains("Nothing is wrong with the source"),
-        "and it must say the source is fine, or the author goes looking for a bug they do          not have: {msg}"
+        check < fill,
+        "the capacity test must come BEFORE the zero fill, or a truncated call has already          written into a buffer it just decided was too small"
     );
+    assert!(fill < write, "the fill precedes the author's writes");
     assert!(
-        !msg.contains("may not return on all paths"),
-        "that is the all-paths safety net firing -- a true sentence about the wrong thing          (§9-12). The guard in codegen::emit exists to get ahead of it: {msg}"
+        rust.contains("if __n < 0 { 0 }") && rust.contains("if ml_cap < 0 { 0 }"),
+        "both negatives are clamped to zero rather than read as huge unsigned values          (§2.7, the _snprintf(count < 0) hazard):
+{rust}"
     );
 }
 

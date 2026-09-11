@@ -47,6 +47,8 @@
 #include "quote.h"
 #include "receipt.h"
 #include "basket.h"
+#include "schedule.h"
+#include "allocate.h"
 /* Included for the header alone (N1): these four are exercised by the Rust oracle, but
  * until now no C compiler had read the headers that ship beside them. `shapes.h` is the
  * one that matters most -- shapes.mls collects the export shapes where a mis-written
@@ -60,6 +62,14 @@
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);
+/* schedule.mls / allocate.mls: array RETURN (SPEC-array-return). The Q12 triple comes LAST,
+ * and here ml_cap and ml_needed count ELEMENTS -- the header says so, and this host allocates
+ * with the multiplication on purpose so the trap is written in code and not only in prose. */
+typedef int32_t (*schedule_fn)(int32_t, int32_t, int32_t *, int32_t, int32_t *);
+typedef int32_t (*allocate_fn)(const int32_t *, int32_t, int32_t, int32_t *, int32_t,
+                               int32_t *);
+typedef int32_t (*in_stock_fn)(const int32_t *, int32_t, bool *, int32_t, int32_t *);
+
 /* basket.mls: array INPUT. One surface parameter is TWO C parameters -- the pointer and the
  * length the compiler appends -- so a host that forgets the second one does not compile,
  * which is the point of writing these typedefs from the header's own declarations. */
@@ -974,6 +984,106 @@ int main(int argc, char **argv) {
         check(any_set(flags, 4, &any) == 0 && any,
               "the fourth bool is set, and it is one byte along");
     }
+
+    /* --- schedule.dll / allocate.dll: array RETURN (SPEC-array-return). ---
+     *
+     * What a C host adds over the Rust oracle here is the ALLOCATION. The unit trap this
+     * slice introduces only exists on this side: ml_cap is the host's promise, and a host
+     * that copies the string retry -- malloc(*ml_needed) -- allocates bytes while promising
+     * elements. This host does the multiplication the header prescribes, in code, because
+     * an example is a stronger instruction than a comment. */
+    HMODULE sc = load(dir, "schedule.dll", expected_abi, ML_SCHEDULE_IFACE_HASH);
+    if (sc == NULL) {
+        return 1;
+    }
+    schedule_fn schedule = (schedule_fn)sym(sc, "mlx_schedule");
+    if (schedule) {
+        int32_t buf[16];
+        int32_t needed = -999;
+        memset(buf, 0xAA, sizeof buf);
+        check(schedule(100000, 7, buf, 16, &needed) == 0 && needed == 7,
+              "an array return fills the host's buffer and reports 7 ELEMENTS");
+        int32_t sum = 0;
+        for (int i = 0; i < needed; i++) {
+            sum += buf[i];
+        }
+        check(sum == 99995, "and the elements are the schedule, not zeroes");
+
+        /* Truncation. The whole buffer is compared byte by byte: a partial write of three
+           elements would leave the tail intact, and an element-wise check on the tail would
+           pass while the protocol was broken. */
+        unsigned char canary[3 * sizeof(int32_t)];
+        memset(canary, 0xAA, sizeof canary);
+        needed = -999;
+        check(schedule(100000, 7, (int32_t *)canary, 3, &needed) == ML_ST_INSUFFICIENT_BUFFER,
+              "a buffer too small is a FAILURE, not a short success");
+        check(needed == 7, "and the host is told the exact number of ELEMENTS it needs");
+        int clean = 1;
+        for (size_t i = 0; i < sizeof canary; i++) {
+            if (canary[i] != 0xAA) {
+                clean = 0;
+            }
+        }
+        check(clean, "truncation writes NOT ONE BYTE, even though elements are computed");
+
+        /* The probe, and the allocation the header prescribes. Note the `* sizeof *heap`:
+           without it this is the eight-times overrun the unit choice makes possible. */
+        needed = -999;
+        check(schedule(100000, 7, NULL, 0, &needed) == ML_ST_INSUFFICIENT_BUFFER && needed == 7,
+              "a probe passes NULL with ml_cap 0 and learns the size");
+        int32_t *heap = malloc((size_t)needed * sizeof *heap);
+        if (heap) {
+            int32_t again = -999;
+            check(schedule(100000, 7, heap, needed, &again) == 0 && again == 7,
+                  "and the second call always fits -- the probe converges in TWO calls");
+            free(heap);
+        }
+
+        needed = -999;
+        check(schedule(100000, 7, buf, 7, &needed) == 0, "an exact fit is a success");
+        needed = -999;
+        check(schedule(100000, 7, buf, -5, &needed) == ML_ST_INSUFFICIENT_BUFFER,
+              "a negative capacity is zero, not an enormous unsigned one");
+    }
+
+    HMODULE al = load(dir, "allocate.dll", expected_abi, ML_ALLOCATE_IFACE_HASH);
+    if (al == NULL) {
+        return 1;
+    }
+    allocate_fn allocate = (allocate_fn)sym(al, "mlx_allocate");
+    in_stock_fn in_stock = (in_stock_fn)sym(al, "mlx_in_stock");
+    if (allocate && in_stock) {
+        /* The rule this slice was opened for. Warehouse w depends on what the earlier ones
+           took, so before array return the host called once per warehouse and the module
+           re-walked the prefix every time. One call now. */
+        const int32_t stock[3] = {10, 20, 5};
+        int32_t got[3];
+        int32_t needed = -999;
+        memset(got, 0xAA, sizeof got);
+        check(allocate(stock, 3, 25, got, 3, &needed) == 0 && needed == 3,
+              "the sequential rule answers in ONE call");
+        check(got[0] == 10 && got[1] == 15 && got[2] == 0,
+              "and it fills the warehouses in order until the order is met");
+
+        /* An element the module never assigned is ZERO, not the host's leftover bytes. */
+        needed = -999;
+        memset(got, 0xAA, sizeof got);
+        check(allocate(stock, 3, 10, got, 3, &needed) == 0, "a smaller order succeeds");
+        check(got[0] == 10 && got[1] == 0 && got[2] == 0,
+              "and the warehouses it never reached read as 0, not as 0xAAAAAAAA");
+
+        /* One byte per element on the way OUT, which is the direction array input could not
+           test. A host declaring four-byte booleans would read a stride that is not there. */
+        unsigned char raw[8];
+        memset(raw, 0xAA, sizeof raw);
+        needed = -999;
+        check(in_stock(stock, 3, (bool *)raw, 8, &needed) == 0 && needed == 3,
+              "a [bool] result reports its element count");
+        check(raw[0] == 1 && raw[1] == 1 && raw[2] == 1,
+              "one byte per element, in order");
+        check(raw[3] == 0xAA, "and it does not write past the elements it declared");
+    }
+
 
     if (failures == 0) {
         printf("GATE_D_OK\n");

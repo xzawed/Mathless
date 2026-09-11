@@ -15,8 +15,15 @@ pub const ML_MODULE_ABI_VERSION: u32 = 1;
 /// D17 reserves the NEGATIVE status space for runtime and ABI conditions, as opposed to the
 /// positive codes a module declares with `error NAME = N`.
 ///
-/// `-1` is `ML_ST_INSUFFICIENT_BUFFER`, spelled in `header.rs` where the two bindings are
-/// written. This one is next, and it lives here because codegen has to emit the same number
-/// the header promises — the two were literals in two files for `-1`, which is the drift this
-/// constant exists to prevent for `-2`.
+/// Both reserved negatives live here, for the same reason: codegen and the generated
+/// bindings have to emit the same number, and a literal in each file is how they drift.
+/// Q12's truncation status: the host's buffer is too small, nothing was written, and
+/// `*ml_needed` says how much room is needed.
+///
+/// It lived as a literal `(-1)` in `header.rs` and nowhere else, which was fine while only
+/// the generated bindings mentioned it. The array return made codegen emit it too, and the
+/// note below already said what that costs -- so it moved here before the two could drift,
+/// rather than after.
+pub const ML_ST_INSUFFICIENT_BUFFER: i32 = -1;
+
 pub const ML_ST_INDEX_OUT_OF_RANGE: i32 = -2;

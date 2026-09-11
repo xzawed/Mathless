@@ -471,11 +471,28 @@ fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits
     // Asserted as two positives, not as `assert_eq!` of two `contains` flags. That earlier
     // shape passed when the definition was missing from BOTH files, which is a vacuous
     // success of exactly the kind section 7-1 warns about (Grok caught it in review).
-    let define = "#define ML_ST_INSUFFICIENT_BUFFER (-1)";
+    //
+    // The first half used to grep `header.rs` for the literal `#define
+    // ML_ST_INSUFFICIENT_BUFFER (-1)`. That broke the day the value moved into
+    // `abi::ML_ST_INSUFFICIENT_BUFFER` and the emitter started interpolating it: the guard
+    // failed while the emitted header was unchanged and MORE correct than before. Section 7
+    // says it plainly -- guard the artifact, not the code that writes it. So this calls the
+    // emitter and reads what comes out.
+    let define = format!(
+        "#define ML_ST_INSUFFICIENT_BUFFER ({})",
+        mlc::abi::ML_ST_INSUFFICIENT_BUFFER
+    );
+    let define = define.as_str();
+    let emitted = {
+        let ir = mlc::compile_to_ir("export fn f(s: string) -> string! { return s }")
+            .expect("a string return is what makes the header emit the guard");
+        mlc::header::emit_c_header(&ir, "probe")
+    };
     assert!(
-        header_rs.contains(define),
-        "compiler/src/header.rs no longer emits '{define}' — if the truncation status \
-         changed value, runtime/ml_abi.h has to change with it"
+        emitted.contains(define),
+        "a generated header no longer defines '{define}'. The truncation status is the one \
+         negative both bindings must agree on, so if it changed value, runtime/ml_abi.h has \
+         to change with it"
     );
     assert!(
         abi_h.contains(define),

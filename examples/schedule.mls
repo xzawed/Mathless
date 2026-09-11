@@ -1,0 +1,31 @@
+// SPEC-array-return, acceptance A. One of the two rules that opened the slice (§0.1).
+//
+// Instalments: the principal split over `months`, with the remainder folded into the first
+// payment so the parts sum to exactly the principal. Before array return the host called this
+// once per month and assembled the schedule itself.
+//
+// The length is declared FIRST. That is where the host's capacity is checked, before a single
+// element is written, which is how a truncated call still writes nothing (SPEC §2.4).
+
+error E_BAD_TERM = 1
+
+export fn schedule(principal: i32, months: i32) -> [i32]! {
+    result months
+    let mut i = 0
+    while i < months {
+        result[i] = principal / months
+        i = i + 1
+    }
+}
+
+// The same split, as a single payment, so a host that wants one month need not take the
+// whole schedule. It also keeps a NON-array export in this module, which is what pins that
+// the buffer triple is added per function rather than per module.
+export fn one_payment(principal: i32, months: i32, month: i32) -> i32! {
+    if months <= 0 { fail E_BAD_TERM }
+    if month < 0 { fail E_BAD_TERM }
+    if month >= months { fail E_BAD_TERM }
+    let base = principal / months
+    if month == 0 { return base + principal % months }
+    return base
+}

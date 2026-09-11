@@ -248,6 +248,22 @@ fn a_real_c_host_loads_and_calls_the_module() {
     )
     .expect("emit basket");
 
+    // Array RETURN. Behavioural for the same reason basket is: a C compiler reads the Q12
+    // triple this time, and the unit it counts in (ELEMENTS, not bytes) is a fact only a real
+    // host allocating real memory can get wrong.
+    let schedule = emit_artifacts(
+        include_str!("../../../examples/schedule.mls"),
+        "schedule",
+        &work,
+    )
+    .expect("emit schedule");
+    let allocate = emit_artifacts(
+        include_str!("../../../examples/allocate.mls"),
+        "allocate",
+        &work,
+    )
+    .expect("emit allocate");
+
     let carrier = emit_artifacts(
         include_str!("../../../examples/carrier.mls"),
         "carrier",
@@ -513,6 +529,8 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &quote.dll,
         &receipt.dll,
         &basket.dll,
+        &schedule.dll,
+        &allocate.dll,
     ] {
         let mut ours = pe::read_exports(dll).expect("our PE reader");
         ours.sort();

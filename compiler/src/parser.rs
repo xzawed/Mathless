@@ -440,7 +440,8 @@ impl Parser {
         // three gaps that reported a character instead of a feature.
         if self.peek() == &Token::LBracket {
             return self.err(
-                "an array type is written `[T]`, not `T[]` — write `[f64]`, `[bool]` or                  `[i32]` (SPEC-array-input DP-A1)"
+                "an array type is written `[T]`, not `T[]` — write `[f64]`, `[bool]` or \
+                 `[i32]` (SPEC-array-input DP-A1)"
                     .to_string(),
             );
         }
@@ -477,13 +478,17 @@ impl Parser {
                     Token::Ident(s) if s == "i32" => ArrayElem::I32,
                     Token::Ident(s) if s == "string" => {
                         return self.err(
-                            "an array of `string` is not in Mathless — array elements are                              scalars (f64|bool|i32). A string is itself variable length, and                              the module has no allocator to put one inside another                              (SPEC-array-input 2.1)"
+                            "an array of `string` is not in Mathless — array elements are \
+                             scalars (f64|bool|i32). A string is itself variable length, and \
+                             the module has no allocator to put one inside another \
+                             (SPEC-array-input 2.1)"
                                 .to_string(),
                         );
                     }
                     Token::LBracket => {
                         return self.err(
-                            "a nested array (`[[T]]`) is not in Mathless — array elements are                              scalars (f64|bool|i32)"
+                            "a nested array (`[[T]]`) is not in Mathless — array elements are \
+                             scalars (f64|bool|i32)"
                                 .to_string(),
                         );
                     }
@@ -500,7 +505,8 @@ impl Parser {
             // `f64[]` is the other spelling a user reaches for, and it is not this language's.
             // Naming the feature AND the spelling turns a puzzle into a one-line fix.
             other => self.err(format!(
-                "expected type (f64|bool|i32|string|[f64]|[bool]|[i32]), found {other:?} — an                  array type is written `[i32]`, not `i32[]`"
+                "expected type (f64|bool|i32|string|[f64]|[bool]|[i32]), found {other:?} — an \
+                 array type is written `[i32]`, not `i32[]`"
             )),
         }
     }
@@ -619,7 +625,9 @@ impl Parser {
             Token::Ident(name) if self.peek_at(1) == &Token::LBracket => {
                 let name = name.clone();
                 self.err(format!(
-                    "'{name}' is an array parameter, which is READ-ONLY — the module borrows                      the host's memory for the duration of the call (D16) and never writes                      into it. Read with `{name}[i]`; there is no assignment through an index"
+                    "'{name}' is an array parameter, which is READ-ONLY — the module borrows \
+                     the host's memory for the duration of the call (D16) and never writes \
+                     into it. Read with `{name}[i]`; there is no assignment through an index"
                 ))
             }
             other => self.err(format!(

@@ -99,11 +99,11 @@ exports exactly the three symbols it should — `mlx_discount` plus the reserved
 `ml_module_abi_version` and `ml_iface_hash`. We cross-check that count against
 `dumpbin /exports`, so it does not rest on our own PE reader alone.
 
-**Delphi is measured once, not gated.** On 2026-09-07 a Delphi 64-bit host built with `dcc64`
-compiled the generated units and called the modules across the C ABI — 14 checks,
-`GATE_DELPHI_OK`. It was run BY HAND: the edition available refuses command-line builds, so
-`MATHLESS_GATE_DELPHI` still cannot execute and nothing repeats that run. Acceptance D covers
-the C arm only, and D14's Delphi half remains ungated.
+**Delphi is gated, but not in CI.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with
+`dcc64` and calls the modules across the C ABI. The edition available refuses command-line
+builds, so the gate drives the IDE instead (`bds.exe -b`), which it does allow. That gate
+runs on a developer machine only — the CI runner has neither Delphi nor an interactive
+session — so of D14's two official hosts, **C is the half checked on every push**.
 
 For current numbers, open decisions and the next piece of work, see
 [docs/STATUS.md](docs/STATUS.md).
@@ -122,7 +122,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 mlc build discount.mls -o out/
 #  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C header
-#  out/discount.pas   Delphi import unit (Delphi: verified once by hand 2026-09-07, not gated)
+#  out/discount.pas   Delphi import unit (Delphi: checked by MATHLESS_GATE_DELPHI, which does not run in CI)
 #  out/discount.lib   MSVC import library (link-time binding)
 ```
 

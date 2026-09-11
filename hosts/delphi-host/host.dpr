@@ -1,13 +1,21 @@
-{ Mathless Delphi host — the OTHER half of D14, staged and waiting for a compiler.
+{ Mathless Delphi host — the OTHER half of D14. Gated locally, not in CI.
 
-  STATUS: COMPILED AND RUN BY DELPHI ONCE, NOT GATED. Free Pascal 3.2.2 in -Mdelphi mode built and ran it
-  on 2026-09-07 and every check passed (GATE_DELPHI_OK), which is the first time any
-  compiler had read this file -- and that run found a real defect in it, see GateOk below.
-  It is NOT the Delphi verification: -Mdelphi is a dialect emulation, D14 names dcc64, and
-  the dcc64 on this machine is an edition that refuses command-line builds (measured:
-  dcc64, dcc32 and msbuild all print "does not support command line compiling", write
-  nothing, and exit 0) -- so the gate drives bds.exe -b instead, which the same edition
-  DOES allow, and MATHLESS_GATE_DELPHI passes here.
+  STATUS: GATED ON A DEVELOPER MACHINE. MATHLESS_GATE_DELPHI builds this file with dcc64
+  and runs it, and it passes. The dcc64 on this machine is an edition that refuses
+  command-line builds (measured: dcc64, dcc32 and msbuild all print "does not support
+  command line compiling", write nothing, and exit 0), so the gate drives bds.exe -b
+  instead, which the same edition DOES allow.
+
+  The gate does not run in CI: the runner has neither Delphi nor an interactive desktop
+  session. So CI cannot catch a break here -- whoever changes the generator or this host
+  has to run the gate themselves.
+
+  History, because this header has twice said something that had stopped being true:
+  Free Pascal 3.2.2 in -Mdelphi mode built and ran this file first, on 2026-09-07
+  (GATE_DELPHI_OK) -- the first time any compiler had read it, and that run found a real
+  defect in it, see GateOk below. FPC is NOT the Delphi verification: -Mdelphi is a dialect
+  emulation and D14 names dcc64. Delphi itself followed on 2026-09-07 by hand (9-15), and
+  the gate that repeats it arrived on 2026-09-09 (9-20).
 
   The UnicodeString-vs-PAnsiChar hazard is no longer unmeasured: this file writes all three
   spellings on purpose and pins what each one sends (see the section near the end). That

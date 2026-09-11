@@ -6,8 +6,9 @@
 //! Honesty split: producing the `.dll` and loading it via the Rust oracle is E2 (see
 //! `hosts/rust-oracle/tests/emit_artifacts.rs`). The **`.h` is now E2 as well** — a real C
 //! host built with MSVC compiles it and calls the module (`hosts/rust-oracle/tests/c_host.rs`,
-//! acceptance D). The **`.pas` is still unverified**: there is no `dcc64` here, so nothing has
-//! ever compiled the Delphi unit, and it keeps its DRAFT note.
+//! acceptance D). The **`.pas` is E2 as well**, but by a gate CI cannot run:
+//! `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with `dcc64` through the IDE and calls
+//! the modules, and Free Pascal compiles every generated unit in CI (a smaller question).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

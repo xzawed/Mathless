@@ -17,7 +17,9 @@
  *     gate (abi version + interface fingerprint) before a single call, and with a third
  *     argument the host is handed a deliberately drifted module and must turn it away.
  *
- * What it does NOT prove: anything about Delphi (`.pas` stays DRAFT).
+ * What it does NOT prove: anything about Delphi. That arm has its own gate
+ * (MATHLESS_GATE_DELPHI), which passes -- but only where a Delphi is installed, never
+ * here in CI.
  *
  * usage: host <artifact_dir> <expected_abi_version> [drifted_module.dll]
  */

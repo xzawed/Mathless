@@ -1,19 +1,19 @@
-//! The Delphi half of D14 — staged, and skipped until a compiler exists.
+//! The Delphi half of D14 — gated here, never in CI.
 //!
-//! **Nothing here has ever run.** `dcc64` is absent from this machine (measured: not on
-//! PATH, not on disk, and the registry's `Embarcadero\Studio\15.0` is the leftover of a
-//! removed install). So this test looks for a compiler, says loudly that it did not find
-//! one, and returns — the same skip-gate shape `c_host.rs` used while acceptance D was
-//! blocked, and for the same reason: **a skipped gate is not a passed gate.**
+//! **This runs, and it is what verifies the Delphi arm.** `MATHLESS_GATE_DELPHI=require`
+//! builds `hosts/delphi-host/host.dpr` against the generated units and calls the modules
+//! across the C ABI. The `dcc64` on this machine refuses command-line builds (an EDITION
+//! limit, measured), so the gate falls back to driving the IDE with `bds.exe -b`, which the
+//! same edition allows — see `bds_exe` below for how that correction came about.
 //!
-//! Set `MATHLESS_GATE_DELPHI=require` to turn a missing compiler into a failure. CI does
-//! NOT set it, because requiring a toolchain nobody has would just paint the build red.
-//! The day `dcc64` is installed, that variable is the whole switch.
+//! Without a Delphi it prints `GATE_DELPHI_SKIPPED` and returns: **a skipped gate is not a
+//! passed gate.** CI does not and cannot set `require` — the runner has neither Delphi nor
+//! an interactive desktop session, so nothing here protects a push.
 //!
-//! What it will prove when it runs: that the generated `.pas` units are valid Object
-//! Pascal and their declarations are right. `hosts/c-host` cannot speak to that — it
-//! compiles the `.h`. Until then the generated `.pas` stays DRAFT and every document says
-//! so (D21, STATUS §1).
+//! What it proves: that the generated `.pas` units are valid Object Pascal, that their
+//! declarations are right, and that a real Delphi host calls the modules across the C ABI.
+//! `hosts/c-host` cannot speak to any of that — it compiles the `.h`. What it does NOT give
+//! is CI coverage: the runner has neither Delphi nor an interactive session (STATUS §9-20).
 #![cfg(windows)]
 
 use std::path::{Path, PathBuf};
@@ -188,9 +188,10 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         }
         // Deliberately loud, and deliberately not a pass.
         println!(
-            "GATE_DELPHI_SKIPPED: no dcc64 found. The generated .pas is STILL unverified — \
-             D14's Delphi arm remains open, and hosts/delphi-host/host.dpr has never been \
-             compiled."
+            "GATE_DELPHI_SKIPPED: no dcc64 found, so THIS RUN proves nothing about Delphi \
+             -- a skipped gate is not a passed gate. The arm itself is not open: the gate \
+             passes where a Delphi is installed (STATUS 9-20). It is this environment \
+             that cannot check it, which is also why CI never can."
         );
         return;
     };
@@ -393,11 +394,35 @@ fn the_staged_host_exists_and_says_it_is_unverified() {
         .join("delphi-host")
         .join("host.dpr");
     let text = std::fs::read_to_string(&host_dpr).expect("staged Delphi host");
+    // This guard has now forced this file to state something false TWICE, in opposite
+    // directions. It first demanded "NEVER COMPILED BY DELPHI" after 9-15 had compiled it;
+    // the fix then demanded "NOT GATED" -- and 9-20 made the gate run, so that became the
+    // second lie. Both times the guard was green while the file was wrong, because it pinned
+    // a PHRASE rather than a FACT.
+    //
+    // What is durable is the SHAPE of the limit, not its current wording: this host is
+    // checked by a gate that runs on a developer machine and not in CI. Assert that, and
+    // assert the superseded claim is gone -- a substring like "NOT GATED in CI" would keep
+    // the old pin green while proving nothing.
     assert!(
-        text.contains("NOT GATED"),
-        "the staged host must keep saying its Delphi verification does not repeat. A \
-         Delphi IDE build DID compile and run it (9-15), and a guard that still demanded \
-         \"NEVER COMPILED BY DELPHI\" was forcing the file to state something false: {}",
+        text.contains("MATHLESS_GATE_DELPHI"),
+        "the staged host must name the gate that builds and runs it, so a reader knows what \
+         to run: {}",
+        host_dpr.display()
+    );
+    assert!(
+        text.contains("not in CI"),
+        "the staged host must say its gate does not run in CI -- the runner has neither \
+         Delphi nor an interactive session: {}",
+        host_dpr.display()
+    );
+    // Both halves are needed. Verification review caught that asserting only the two above
+    // still let a file saying "NOT GATED" through, which is the very phrase this guard used
+    // to demand -- the old lie could have walked straight back in beside the new truth.
+    assert!(
+        !text.contains("NOT GATED") && !text.contains("nothing repeats"),
+        "the staged host still carries a superseded claim that its Delphi verification does \
+         not repeat. It does: this very test drives it via `bds.exe -b` (9-20): {}",
         host_dpr.display()
     );
     assert!(

@@ -1,7 +1,7 @@
 //! Are the generated `.pas` units valid Object Pascal at all?
 //!
-//! **This is NOT the Delphi gate.** D14's Delphi arm needs `dcc64`, stays open, and the
-//! generated unit stays DRAFT — see `delphi_host.rs`, which is the test that closes it. This
+//! **This is NOT the Delphi gate.** D14's Delphi arm needs `dcc64` — see `delphi_host.rs`,
+//! which is the test that drives it, and which runs locally rather than in CI. This
 //! one asks a strictly smaller question, the same one the C++ gate asks of the header: does a
 //! compiler accept the text? Nothing here loads a module, calls a function, or observes the
 //! ABI, and a green run says nothing about Delphi.

@@ -24,9 +24,10 @@ against the **generated** headers, runs the resulting executable, and asserts on
 
 ## What it does NOT prove
 
-- **Anything about Delphi.** A Delphi IDE build compiled and called the generated `.pas`
-  once (2026-09-07), but the edition here refuses command-line builds, so there is no
-  Delphi GATE. D14's official pair is Delphi + C, and only C is gated.
+- **Anything about Delphi.** That arm has its own gate — `MATHLESS_GATE_DELPHI`, which
+  builds `hosts/delphi-host` with `dcc64` through the IDE (`bds.exe -b`). It passes, but it
+  runs only on a developer machine; CI has no Delphi. So of D14's official pair, **C is the
+  half gated on every push** and this host is what does that.
 - Any C compiler other than MSVC, and any target other than Windows x64 (D22).
 - That a *third-party* host rejects an ABI major-version mismatch. This host does reject —
   `gate()` refuses on a version or fingerprint mismatch before the first call, on every

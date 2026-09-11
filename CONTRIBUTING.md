@@ -17,9 +17,10 @@ each item is what a gate actually shells out to.
 
 **Optional, and a skip-gate when absent:** **Free Pascal 3.2.2** (`winget install
 FreePascal.FreePascalCompiler`) compiles every generated `.pas` under `-Mdelphi -Sew`.
-It is **not** the Delphi gate — D14 needs `dcc64`, that arm stays open, and the unit stays
-DRAFT. It proves only that the generated text is valid Object Pascal, the same kind of claim
-the C++ gate makes about the header. `MATHLESS_GATE_FPC=require` turns a missing compiler
+It is **not** the Delphi gate — D14 names `dcc64`, and that arm has its own gate
+(`MATHLESS_GATE_DELPHI`, which runs locally, never in CI). This one proves only that the
+generated text is valid Object Pascal, the same kind of claim the C++ gate makes about the
+header. `MATHLESS_GATE_FPC=require` turns a missing compiler
 into a failure, and **CI sets it** — the windows job installs Free Pascal first, so the
 gate can never quietly stop running there. Locally it skips, loudly, when fpc is absent. Check: `cargo test -p ml_oracle --test fpc_units --
 --nocapture` prints `GATE_FPC_OK`. A second test in that file builds and RUNS
@@ -149,9 +150,9 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 
 **선택 사항이고, 없으면 skip-게이트다:** **Free Pascal 3.2.2**
 (`winget install FreePascal.FreePascalCompiler`)가 생성 `.pas` 전부를 `-Mdelphi -Sew`로
-컴파일한다. **Delphi 게이트가 아니다** — D14는 `dcc64`가 필요하고, 그 반쪽은 열려 있으며, 유닛은
-그대로 DRAFT다. 증명하는 것은 **생성 텍스트가 유효한 Object Pascal인가**까지이며, C++ 게이트가
-헤더에 대해 하는 주장과 같은 종류다. `MATHLESS_GATE_FPC=require`가 부재를 실패로 바꾸고,
+컴파일한다. **Delphi 게이트가 아니다** — D14는 `dcc64`를 지목하고, 그 반쪽에는 별도 게이트가
+있다(`MATHLESS_GATE_DELPHI` — 로컬에서만 돌고 CI에서는 돌지 않는다). 이쪽이 증명하는 것은
+**생성 텍스트가 유효한 Object Pascal인가**까지이며, C++ 게이트가 헤더에 대해 하는 주장과 같은 종류다. `MATHLESS_GATE_FPC=require`가 부재를 실패로 바꾸고,
 **CI는 그것을 설정한다** — windows 잡이 Free Pascal을 먼저 설치하므로 거기서는 게이트가 조용히
 멈출 수 없다. 로컬에서는 fpc가 없으면 **시끄럽게** skip한다. 확인: `cargo test -p ml_oracle --test fpc_units -- --nocapture`가
 `GATE_FPC_OK`를 찍는다. 같은 파일의 두 번째 테스트는 `hosts/delphi-host/host.dpr`를

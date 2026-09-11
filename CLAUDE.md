@@ -97,6 +97,7 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
    - **phase(캠페인) 계획**은 다른 층이다: `docs/phaseN/SPEC.md` + `WBS.md`(그 phase의 목표·수용 기준·작업 분해). `ROADMAP.md`의 phase는 제품 캠페인이지 SDD 단위가 아니다.
 2. **WBS (작업 분해).** 스펙을 PR 크기 작업으로 분해해 `docs/phaseN/WBS.md`에 의존 순서와 함께 관리한다. 각 작업 = 1 PR, 측정 가능한 완료 기준을 갖는다.
 3. **TDD (테스트 우선).** 구현 전에 실패하는 테스트를 먼저 쓴다(Red → Green → Refactor). 테스트 결과가 곧 실측 근거(E2)다.
+   - **거부 테스트의 첫 Red는 개수가 아니라 메시지를 읽는다**(`-- --nocapture`). 소스 토큰을 되뱉는 진단이 needle을 만족시켜 **규칙이 하나도 강제되지 않은 채 초록**이 될 수 있다. 기계적으로 막으려는 두 시도가 다 실패했으므로 절차로 둔다 — 실패한 이유와 실측은 STATUS §7-3.
 4. **Grok + 실측 (수행·검토 모두).** 각 작업의 수행과 검토를 Grok과 함께, 실측 데이터(테스트 결과·빌드 산출물·export 덤프·실행 로그) 기반으로 한다. PR 완료 전 `grok_build_verify` 필수.
 5. 절차: **SPEC → (사용자 확인) → WBS → 작업별 [실패 테스트 → 구현 → 통과 → Grok 검증] → PR → merge.**
 
@@ -118,6 +119,8 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 ## 산출물 규칙
 
 - 설계 변경은 해당 `docs/*.md`를 **먼저** 수정한다.
+- **소스 편집에 스크립트를 쓰지 않는다.** 이스케이프가 줄 연속 `\`를 먹으면 진단에 공백 뭉침이 되돌아오고 파일에 NUL 바이트가 들어간다 — 반복해서 일어났고, 그 실패를 재려고 쓴 스캐너까지 같은 이유로 헛돌았다. 불가피하면 백슬래시를 `chr(92)`로 구성한다. **여러 치환을 한 배치로 묶지 않는다** — 중간 실패가 앞선 성공까지 버린다(STATUS §7-3).
+- **docs만 바뀐 PR도 관련 가드는 돌린다**(`cargo test -p ml_oracle --test doc_claims`). 전체 스위트를 건너뛰는 것은 괜찮지만, 초 단위 확인을 분 단위 CI 왕복으로 미루지 않는다(STATUS §7-3).
 - 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트하며, **`hosts/c-host-link/`가 두 번째 소비 경로(헤더 + `.lib` 링크)를 닫는다**(2026-09-03). **`hosts/delphi-host/`는 2026-09-07에 처음 컴파일·실행됐고, 2026-09-09에 로컬 게이트가 됐다**(`MATHLESS_GATE_DELPHI` — `dcc64`가 거부하면 `bds.exe -b`로 IDE 빌드를 부른다). Free Pascal은 **CI 게이트**다(`MATHLESS_GATE_FPC`·`MATHLESS_GATE_FPC_HOST`) — 다만 `-Mdelphi`는 방언 에뮬레이션이라 **Delphi 게이트를 대신하지 못한다**. **CI에 도는 Delphi 게이트는 없다.**
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.

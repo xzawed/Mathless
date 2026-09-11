@@ -13,7 +13,7 @@
 //! compares the whole buffer byte by byte rather than trusting a status code.
 #![cfg(windows)]
 
-use ml_oracle::Module;
+use ml_oracle::{pe, Module};
 use mlc::abi::ML_ST_INSUFFICIENT_BUFFER;
 use mlc::emit::emit_artifacts;
 
@@ -317,4 +317,60 @@ fn a_scalar_export_beside_an_array_one_keeps_the_plain_d17_shape() {
         "month 7 of 7"
     );
     assert_eq!(canary, 0x5A5A_5A5A);
+}
+
+/// **D16 and Q12's core promise: the module does not allocate.** Measured, not assumed.
+///
+/// This slice writes into the host's buffer — a zero fill over `n` elements and then the
+/// author's own writes. Either could have lowered to a CRT call, and a `malloc` or a heap
+/// entry appearing here would mean the module had started owning memory it hands back, which
+/// is the exact thing D16 forbids and Q12 was designed around.
+///
+/// It was NOT measured when the slice landed. The string slice has the equivalent test
+/// (`string_input.rs`), and the array one simply did not — found by auditing the session's
+/// own output rather than by a guard (STATUS §7-3 (5): a guard's scope is a claim too).
+///
+/// **Stated as a COMPARISON, never as an absolute.** §7 records why: every cdylib carries the
+/// same DllMain scaffolding, so the baseline already imports `memcpy` and `memset` whether or
+/// not anything uses them. "This module imports no memset" would be false and "this feature
+/// adds no import" is what is true — so the baseline is a scalar module built the same way,
+/// and the two sets must be identical.
+#[test]
+fn an_array_return_adds_no_import_over_a_scalar_baseline() {
+    let out = std::env::temp_dir().join(format!("mlc_arr_imports_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+
+    let base = emit_artifacts(
+        "export fn f(x: f64) -> f64 { return x * 2.0 }",
+        "baseline",
+        &out,
+    )
+    .expect("baseline");
+    let baseline = pe::read_imports(&base.dll).expect("baseline imports");
+
+    // Both examples, because they exercise different element widths: `schedule` writes i32,
+    // `allocate` writes i32 AND the one-byte bool path.
+    for (src, name) in [
+        (include_str!("../../../examples/schedule.mls"), "schedule"),
+        (include_str!("../../../examples/allocate.mls"), "allocate"),
+    ] {
+        let arts = emit_artifacts(src, name, &out).unwrap_or_else(|e| panic!("emit {name}: {e}"));
+        let imports = pe::read_imports(&arts.dll).expect("imports");
+        println!("{name} imports = {imports:?}");
+        assert_eq!(
+            imports, baseline,
+            "{name} adds an import a scalar module does not have. The module must not \
+             allocate (D16), and the buffer protocol exists precisely so it never has to"
+        );
+        // Belt and braces, the way string_input.rs does it: name what is forbidden, so a
+        // change that moved the BASELINE too would still be caught.
+        for banned in ["malloc", "free", "calloc", "realloc", "HeapAlloc"] {
+            assert!(
+                !imports.iter().any(|i| i.ends_with(&format!("!{banned}"))),
+                "{name} imports {banned}: {imports:?}"
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(&out);
 }

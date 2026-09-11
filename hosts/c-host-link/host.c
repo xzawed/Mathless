@@ -25,6 +25,11 @@
 #include <stdlib.h>
 
 #include "discount.h"
+/* And a buffer-triple return, because a scalar one does not exercise the interesting half.
+ * Until 2026-09-11 this host linked ONE scalar module while the generated header told every
+ * reader the generator was verified "both ways a C host can consume it" -- true of the shape
+ * `discount` has, and never tested for the shape Q12 produces. Found by audit. */
+#include "schedule.h"
 
 int main(int argc, char **argv) {
     unsigned long expected_abi = (argc > 1) ? strtoul(argv[1], NULL, 10) : 1UL;
@@ -56,7 +61,37 @@ int main(int argc, char **argv) {
         return 4;
     }
 
+    /* The Q12 shape, through the linker. The declaration in schedule.h is the whole contract:
+     * five parameters, the last three of them the buffer triple, and getting any of them
+     * wrong is a COMPILE error here rather than a silently shifted argument. That is the
+     * property a dynamic host cannot have -- it rebuilds the signature by hand in a typedef.
+     *
+     * ml_cap and ml_needed count ELEMENTS for an array return, so the allocation carries the
+     * multiplication. Writing malloc(needed) here would promise four times the room actually
+     * present, and the module would believe it. */
+    int32_t needed = -1;
+    if (mlx_schedule(100000, 7, NULL, 0, &needed) >= 0 || needed != 7) {
+        printf("FAIL: probe gave status>=0 or needed=%d\n", needed);
+        return 4;
+    }
+    int32_t *parts = malloc((size_t)needed * sizeof *parts);
+    if (parts == NULL) {
+        return 4;
+    }
+    int32_t got = -1;
+    int32_t st = mlx_schedule(100000, 7, parts, needed, &got);
+    int32_t sum = 0;
+    for (int32_t i = 0; i < got; i++) {
+        sum += parts[i];
+    }
+    free(parts);
+    if (st != 0 || got != 7 || sum != 99995) {
+        printf("FAIL: schedule st=%d needed=%d sum=%d\n", st, got, sum);
+        return 4;
+    }
+
     printf("LINK_GATE_OK: bound by the linker, gate passed, "
-           "discount(100,true)=%.1f discount(100,false)=%.1f\n", vip, std);
+           "discount(100,true)=%.1f discount(100,false)=%.1f, "
+           "schedule sums to %d over %d elements\n", vip, std, sum, got);
     return 0;
 }

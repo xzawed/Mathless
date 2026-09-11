@@ -577,7 +577,10 @@ fn check_function(
     // ABI has not agreed.
     if let Type::Array(elem) = f.ret {
         return Err(TypeError::new(format!(
-            "function '{}' returns an array, which is not supported yet — the module has no              allocator, so a returned array needs the caller-allocates buffer protocol the              way `-> string!` does (Q12). Take `[{}]` as a PARAMETER instead, or return a              scalar",
+            "function '{}' returns an array, which is not supported yet — the module has no \
+             allocator, so a returned array needs the caller-allocates buffer protocol the \
+             way `-> string!` does (Q12). Take `[{}]` as a PARAMETER instead, or return a \
+             scalar",
             f.name,
             match elem {
                 ast::ArrayElem::F64 => "f64",
@@ -1359,13 +1362,15 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             };
             let IrType::Array(elem) = *ty else {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': '{name}' is {ty}, not an array — only an array                      parameter can be indexed"
+                    "function '{fname}': '{name}' is {ty}, not an array — only an array \
+                     parameter can be indexed"
                 )));
             };
             let index = check_expr(index, scope, fname, sigs)?;
             if index.ty != IrType::I32 {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': an array index must be i32, found {} — there is no                      implicit conversion (write `{} as i32` if that is what you mean)",
+                    "function '{fname}': an array index must be i32, found {} — there is no \
+                     implicit conversion (write `{} as i32` if that is what you mean)",
                     index.ty, index.ty
                 )));
             }
@@ -1381,14 +1386,16 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             // Polymorphic in the element type, so it cannot be a `Sig`; intercepted here.
             if args.len() != 1 {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': `{LEN_BUILTIN}` takes exactly one array argument,                      found {}",
+                    "function '{fname}': `{LEN_BUILTIN}` takes exactly one array argument, \
+                     found {}",
                     args.len()
                 )));
             }
             let arg = check_expr(&args[0], scope, fname, sigs)?;
             if !matches!(arg.ty, IrType::Array(_)) {
                 return Err(TypeError::new(format!(
-                    "function '{fname}': `{LEN_BUILTIN}` takes an array, found {} — it reads                      the length the host passed alongside the pointer",
+                    "function '{fname}': `{LEN_BUILTIN}` takes an array, found {} — it reads \
+                     the length the host passed alongside the pointer",
                     arg.ty
                 )));
             }

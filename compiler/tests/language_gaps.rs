@@ -27,7 +27,38 @@ fn rejected(label: &str, src: &str) {
             "'{label}' COMPILES now. If that was intended, remove this case and update \
              LANGUAGE.md's \"아직 아님\" block in the same change:\n{src}"
         ),
-        Err(e) => println!("  {label:<22} {e}"),
+        Err(e) => {
+            readable(label, &e.to_string());
+            println!("  {label:<22} {e}");
+        }
+    }
+}
+
+/// One formatting invariant every diagnostic must hold: **no run of three or more spaces.**
+///
+/// This is not a wording pin. The module doc above explains why the TEXT is printed rather
+/// than asserted — pinning it would make an improvement look like a failure. This checks the
+/// one property that is never an improvement, and it guards the EMITTED string rather than
+/// the source literal that builds it (STATUS section 7: "가드는 산출물을 지켜라").
+///
+/// It exists because nine shipped diagnostics had exactly this defect, all from one slice
+/// (#200). A multi-line Rust literal needs a trailing `\` on each line; without it the source
+/// indentation becomes part of the message, so users read
+/// "the module has no              allocator". Every array diagnostic was affected, and the
+/// tests were green throughout — nothing looked at what came out.
+///
+/// Three, not two: `{label:<22}` style padding and sentence spacing are legitimate, and no
+/// intended message aligns anything inside itself.
+fn readable(label: &str, msg: &str) {
+    let mut run = 0usize;
+    for ch in msg.chars() {
+        run = if ch == ' ' { run + 1 } else { 0 };
+        assert!(
+            run < 3,
+            "the diagnostic for '{label}' contains a run of 3+ spaces, which means a \
+             multi-line string literal is missing its trailing `\\` and the source \
+             indentation is being printed to the user:\n{msg}"
+        );
     }
 }
 
@@ -287,4 +318,77 @@ fn this_file_covers_the_language_md_gap_list() {
     // rest unpinned, which is how 부분문자열, option, and `bool` 변환 sat unpinned under a
     // guard that claimed to cover the list. They are pinned now; a NEW item still needs a
     // human to add its row above.
+}
+
+/// The diagnostics that were actually broken, held to the same invariant.
+///
+/// `rejected(...)` above only reaches cases that are LANGUAGE GAPS. Most of the nine
+/// malformed messages were not gaps at all — indexing a non-array, a `f64` index, assigning
+/// through an index — so the gap corpus could never have caught them, and did not for a
+/// whole slice. These are ordinary rejections a user meets while learning the array surface,
+/// which is exactly when a mangled message costs the most.
+///
+/// This asserts readability, never wording: each case must be refused, and what comes out
+/// must not print source indentation at the user.
+#[test]
+fn array_misuse_is_refused_with_a_readable_message() {
+    for (label, src) in [
+        (
+            "array of string",
+            "export fn f(xs: [string]) -> i32 { return 1 }",
+        ),
+        (
+            "nested array",
+            "export fn f(xs: [[i32]]) -> i32 { return 1 }",
+        ),
+        (
+            "C-style array type",
+            "export fn f(xs: i32[]) -> i32 { return 1 }",
+        ),
+        (
+            "array return",
+            "export fn f(xs: [i32]) -> [i32] { return xs }",
+        ),
+        (
+            "assign through index",
+            "export fn f(xs: [i32]) -> i32! { xs[0] = 1 return 1 }",
+        ),
+        (
+            "index a non-array",
+            "export fn f(a: i32) -> i32! { return a[0] }",
+        ),
+        (
+            "non-i32 index",
+            "export fn f(xs: [i32], k: f64) -> i32! { return xs[k] }",
+        ),
+        (
+            "len of a non-array",
+            "export fn f(a: i32) -> i32 { return len(a) }",
+        ),
+        (
+            "len of two arrays",
+            "export fn f(xs: [i32], ys: [i32]) -> i32 { return len(xs, ys) }",
+        ),
+    ] {
+        let e = compile_to_ir(src).err().unwrap_or_else(|| {
+            panic!(
+                "'{label}' compiles now:
+{src}"
+            )
+        });
+        let msg = e.to_string();
+        readable(label, &msg);
+        println!("  {label:<22} {msg}");
+    }
+
+    // What this does NOT do, stated here rather than discovered later: the check is an
+    // ALLOWLIST. A diagnostic no case in this file reaches can still leak its source
+    // indentation and stay green — which is precisely how all nine got out. Covering every
+    // message would need every rejection path to be reachable from a test, and they are not.
+    //
+    // A source-scanning guard was considered and rejected: it would flag the alignment in
+    // `header.rs`'s C comments and `codegen.rs`'s generated Rust, both of which are correct,
+    // and STATUS section 7 says to guard the artifact rather than the code that writes it.
+    // The honest position is that this catches the shape in the cases it runs, and a NEW
+    // diagnostic still needs a human to add a case here.
 }

@@ -300,7 +300,14 @@ fn error_provenance(module: &IrModule) -> HashMap<&str, Vec<String>> {
                 IrStmt::Fail(c) => codes.push(*c),
                 IrStmt::TryCall { callee, .. } => callees.push(callee.as_str()),
                 IrStmt::If { body, .. } | IrStmt::While { body, .. } => scan(body, codes, callees),
-                IrStmt::Return(_)
+                // Neither can fail or call: SPEC-array-return §2.4b refuses `fail` and `try`
+                // after `result`, and the index bound is checked by generated code rather than
+                // by a Mathless call. So they contribute no error code and no callee -- but
+                // they are listed rather than wildcarded, so a future form that CAN fail has
+                // to come back here and say so.
+                IrStmt::ResultLen(_)
+                | IrStmt::ResultSet { .. }
+                | IrStmt::Return(_)
                 | IrStmt::Let { .. }
                 | IrStmt::Assign { .. }
                 | IrStmt::AssignOut { .. } => {}

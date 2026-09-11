@@ -117,6 +117,14 @@ impl Rounder {
 /// which is checked beside theirs.
 pub const LEN_BUILTIN: &str = "len";
 
+/// The name that means "the array this function returns" (SPEC-array-return DP-R7).
+///
+/// **Not a keyword.** It follows `len` rather than `if`: the name only means the return buffer
+/// inside a function declared `-> [T]!`, so `let result = 0` stays legal everywhere else and
+/// no existing program breaks. The cost is that inside such a function the name is taken, and
+/// declaring a local called `result` there is refused with a message that says to rename it.
+pub const RESULT: &str = "result";
+
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
     let mut error_table: Scope2 = HashMap::new();
@@ -321,6 +329,13 @@ fn collect_calls(body: &[Stmt], out: &mut Vec<String>) {
             Stmt::If { cond, body } | Stmt::While { cond, body } => {
                 expr(cond, out);
                 collect_calls(body, out);
+            }
+            // A call can hide in any of these, and this walker is what the recursion check
+            // reads. Missing one would let `result[r(i)] = 1` recurse without being seen.
+            Stmt::ResultLen(e) => expr(e, out),
+            Stmt::ResultSet { index, value } => {
+                expr(index, out);
+                expr(value, out);
             }
             Stmt::Return(e) | Stmt::Let { value: e, .. } | Stmt::Assign { value: e, .. } => {
                 expr(e, out)
@@ -571,24 +586,35 @@ fn check_function(
     // means the module ALWAYS has a status to report — truncation is possible on every call.
     // So `!` is mandatory (DP-T1): the surface's one mark for "check the status" must not
     // come apart from the C-level `int32_t` return.
-    // An array RETURN would need somewhere for the elements to live, and the module has no
-    // allocator. Q12's caller-allocates buffer is the answer, and applying it to arrays is a
-    // separate slice (SPEC-array-input 5.1) — refuse it now rather than lower something the
-    // ABI has not agreed.
+    // An array RETURN uses that same Q12 buffer, so it carries the same two rules for the
+    // same reasons: `!` because truncation is possible on every call (DP-R2), and export-only
+    // because the buffer, its capacity and the needed length are a host-boundary protocol
+    // (DP-O5's reason). Where `result` may stand is a whole-body question -- see
+    // `check_result_placement`.
     if let Type::Array(elem) = f.ret {
-        return Err(TypeError::new(format!(
-            "function '{}' returns an array, which is not supported yet — the module has no \
-             allocator, so a returned array needs the caller-allocates buffer protocol the \
-             way `-> string!` does (Q12). Take `[{}]` as a PARAMETER instead, or return a \
-             scalar",
-            f.name,
-            match elem {
-                ast::ArrayElem::F64 => "f64",
-                ast::ArrayElem::Bool => "bool",
-                ast::ArrayElem::I32 => "i32",
-            }
-        )));
+        let elem = match elem {
+            ast::ArrayElem::F64 => "f64",
+            ast::ArrayElem::Bool => "bool",
+            ast::ArrayElem::I32 => "i32",
+        };
+        if !f.exported {
+            return Err(TypeError::new(format!(
+                "function '{}' returns an array, so it must be `export fn` -- the buffer, its \
+                 capacity and the needed length are a host-boundary protocol (Q12), and an \
+                 internal call has no host to give them",
+                f.name
+            )));
+        }
+        if !f.fallible {
+            return Err(TypeError::new(format!(
+                "function '{}' returns an array, so it must be declared `-> [{elem}]!` -- the \
+                 host's buffer may be too small on any call, and `!` is how the surface says \
+                 the status must be checked",
+                f.name
+            )));
+        }
     }
+    check_result_placement(f)?;
     if f.ret == Type::Str {
         if !f.fallible {
             return Err(TypeError::new(format!(
@@ -616,7 +642,12 @@ fn check_function(
     let body = check_block(&f.body, &scope, ret, &f.name, f.fallible, errors, sigs)?;
     // Every path must exit with a value (or `fail`); an `if` without `else` can fall through.
     // Caught here (frontend) as well as in codegen (backend safety net for directly-built IR).
-    if !block_always_returns(&body) {
+    // An array return has no `return` statement, and that is the design rather than an
+    // omission: the value IS the host's buffer, which the body fills through `result[i]`.
+    // The function's exit is generated after the body (the same shape `-> string!` uses),
+    // so demanding a terminator here would make every correct program fail to compile --
+    // which is exactly what the SPEC's own example did on its first run.
+    if !matches!(f.ret, Type::Array(_)) && !block_always_returns(&body) {
         return Err(TypeError::new(format!(
             "function '{}' may not return on all paths — end it with a `return`{}",
             f.name,
@@ -687,6 +718,10 @@ fn check_outs_assigned<'a>(
                     assigned.push(name.as_str());
                 }
             }
+            // Neither assigns a declared `out`, and neither leaves the function, so the
+            // walk simply continues past them. They are named rather than wildcarded so that
+            // a future statement which CAN complete a return path has to answer here.
+            IrStmt::ResultLen(_) | IrStmt::ResultSet { .. } => {}
             IrStmt::Return(_) => {
                 if let Some(missing) = outs.iter().find(|o| !assigned.contains(o)) {
                     return Err(TypeError::new(format!(
@@ -986,6 +1021,136 @@ fn check_try_call(
     })
 }
 
+/// Where `result` may appear, answered over the whole body (SPEC-array-return §2.4).
+///
+/// **This is the rule the slice exists to protect.** `result n` is where the capacity check
+/// is emitted, so it has to run before the first element write ON EVERY PATH. The draft SPEC
+/// said "exactly one, and before the writes", and the launch review showed that is not enough:
+///
+/// ```text
+/// if b { result n }      // exactly one, and it precedes the write
+/// result[0] = 1          // ...but when b is false, nothing checked the capacity
+/// ```
+///
+/// Dominance is the property actually needed. Rather than build a dataflow pass to compute it,
+/// `result` is confined to the function's top-level block, where dominance is immediate. That
+/// is a narrower rule than dominance — a `result` inside `if true { }` would be safe and is
+/// still refused — and the message says so, because being told the real rule is worth more
+/// than being allowed the odd extra program.
+///
+/// §2.4b (DP-R9 = a′) adds the other half: once `result` has run, `*ml_needed` is written and
+/// the buffer is zero-filled, so a later failure cannot leave them untouched the way Q12
+/// promises. The failures the compiler can see statically — `fail` and `try` — are refused
+/// after it, which keeps the protocol intact for every case except an out-of-range write.
+fn check_result_placement(f: &ast::Function) -> Result<(), TypeError> {
+    let returns_array = matches!(f.ret, Type::Array(_));
+
+    // Nested first, so the message names the real problem. Without this the `if b { result n }`
+    // program would be reported as "no result statement", which is true of the top level and
+    // useless to the author staring at the one they wrote.
+    fn nested(body: &[ast::Stmt], fname: &str) -> Result<(), TypeError> {
+        for s in body {
+            if let ast::Stmt::If { body, .. } | ast::Stmt::While { body, .. } = s {
+                for inner in body {
+                    if matches!(inner, ast::Stmt::ResultLen(_)) {
+                        return Err(TypeError::new(format!(
+                            "function '{fname}': `{RESULT} <n>` must be at the top level of the \
+                             function body. Inside an `if` or a `while` it may not run, and \
+                             then the module writes into the host's buffer without ever \
+                             checking its capacity"
+                        )));
+                    }
+                }
+                nested(body, fname)?;
+            }
+        }
+        Ok(())
+    }
+    nested(&f.body, &f.name)?;
+
+    let tops: Vec<usize> = f
+        .body
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s, ast::Stmt::ResultLen(_)))
+        .map(|(i, _)| i)
+        .collect();
+
+    if !returns_array {
+        // A scalar function that says `result n` gets the message from `check_stmt`; nothing
+        // to add here. The name stays free for locals (DP-R7).
+        return Ok(());
+    }
+
+    let at = match tops.as_slice() {
+        [] => {
+            return Err(TypeError::new(format!(
+                "function '{}' returns an array but never declares its length. Add `{RESULT} \
+                 <n>` at the top of the body: it is where the host's capacity is checked, and \
+                 nothing may be written before it",
+                f.name
+            )));
+        }
+        [i] => *i,
+        _ => {
+            return Err(TypeError::new(format!(
+                "function '{}': `{RESULT} <n>` may appear exactly one time. Two lengths mean \
+                 two capacity checks and an ambiguous `ml_needed` for the host",
+                f.name
+            )));
+        }
+    };
+
+    // Writes before the declaration are writes before the capacity check. Only the top level
+    // needs scanning for the "before" half: a write nested inside an `if` earlier in the body
+    // is still earlier, so the index comparison is done on the top-level position.
+    fn writes_before(body: &[ast::Stmt], upto: usize) -> bool {
+        body[..upto].iter().any(|s| match s {
+            ast::Stmt::ResultSet { .. } => true,
+            ast::Stmt::If { body, .. } | ast::Stmt::While { body, .. } => {
+                writes_before(body, body.len())
+            }
+            ast::Stmt::ResultLen(_)
+            | ast::Stmt::Return(_)
+            | ast::Stmt::Fail(_)
+            | ast::Stmt::Let { .. }
+            | ast::Stmt::Assign { .. }
+            | ast::Stmt::TryCall { .. } => false,
+        })
+    }
+    if writes_before(&f.body, at) {
+        return Err(TypeError::new(format!(
+            "function '{}': `{RESULT}[i] = …` appears before `{RESULT} <n>`. The length has to \
+             be declared first, because that is where the host's capacity is checked",
+            f.name
+        )));
+    }
+
+    // §2.4b — `fail` and `try` after the declaration would have to unwind a buffer that has
+    // already been zero-filled and an `ml_needed` that has already been written.
+    fn fails_after(body: &[ast::Stmt]) -> bool {
+        body.iter().any(|s| match s {
+            ast::Stmt::Fail(_) | ast::Stmt::TryCall { .. } => true,
+            ast::Stmt::If { body, .. } | ast::Stmt::While { body, .. } => fails_after(body),
+            ast::Stmt::ResultLen(_)
+            | ast::Stmt::ResultSet { .. }
+            | ast::Stmt::Return(_)
+            | ast::Stmt::Let { .. }
+            | ast::Stmt::Assign { .. } => false,
+        })
+    }
+    if fails_after(&f.body[at + 1..]) {
+        return Err(TypeError::new(format!(
+            "function '{}': a function may not `fail` or `try` after `{RESULT} <n>`. Declaring \
+             the length writes `ml_needed` and clears the host's buffer, so a failure after it \
+             cannot leave them untouched the way the protocol promises. Move the check before \
+             `{RESULT}`",
+            f.name
+        )));
+    }
+    Ok(())
+}
+
 fn check_stmt(
     s: &Stmt,
     scope: &mut Scope,
@@ -996,6 +1161,54 @@ fn check_stmt(
     sigs: &Sigs,
 ) -> Result<IrStmt, TypeError> {
     match s {
+        // `result <len>` — SPEC-array-return §2.4. WHERE it may appear is a question about the
+        // whole body, not about this statement, so `check_result_placement` answers it before
+        // any of this runs. Here we only check the pieces: the function returns an array, and
+        // the length is an `i32`.
+        Stmt::ResultLen(n) => {
+            let IrType::Array(_) = ret else {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{RESULT}` is the array this function returns, so it \
+                     only exists in a function declared `-> [T]!`. This one returns {ret}"
+                )));
+            };
+            let n = check_expr(n, scope, fname, sigs)?;
+            if n.ty != IrType::I32 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': the length in `{RESULT} <n>` must be i32, found {} — \
+                     it is a count of elements, and there is no implicit conversion",
+                    n.ty
+                )));
+            }
+            Ok(IrStmt::ResultLen(n))
+        }
+        // `result[i] = v` — write one element.
+        Stmt::ResultSet { index, value } => {
+            let IrType::Array(elem) = ret else {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{RESULT}` is the array this function returns, so it \
+                     only exists in a function declared `-> [T]!`. This one returns {ret}"
+                )));
+            };
+            let index = check_expr(index, scope, fname, sigs)?;
+            if index.ty != IrType::I32 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': an array index must be i32, found {} — there is no \
+                     implicit conversion (write `{} as i32` if that is what you mean)",
+                    index.ty, index.ty
+                )));
+            }
+            let value = check_expr(value, scope, fname, sigs)?;
+            let want = elem.scalar();
+            if value.ty != want {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{RESULT}` has elements of type {want}, but this \
+                     writes {}. There is no implicit conversion",
+                    value.ty
+                )));
+            }
+            Ok(IrStmt::ResultSet { index, value })
+        }
         Stmt::If { cond, body } => {
             let cond = check_expr(cond, scope, fname, sigs)?;
             if cond.ty != IrType::Bool {
@@ -1346,6 +1559,14 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                 ty,
                 kind: IrExprKind::Var(name.clone()),
             }),
+            // `result` reaching a variable lookup means the author tried to READ it. Saying
+            // "unknown variable" would be true and useless: the name exists here, it is just
+            // write-only, for the same reason an `out` parameter is -- it is the host's
+            // buffer, and the module has no business reading what the host left in it.
+            None if name == RESULT => Err(TypeError::new(format!(
+                "function '{fname}': `{RESULT}` is write-only -- it is the host's buffer, and \
+                 the module never reads it back. Keep the value in a local if you need it"
+            ))),
             None => Err(TypeError::new(format!(
                 "function '{fname}': unknown variable '{name}'"
             ))),
@@ -1355,6 +1576,17 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
         // later pass, because this one cannot see the signature) that the enclosing function
         // is fallible so the check has somewhere to fail to.
         Expr::Index { name, index } => {
+            // `result[i]` on the READ side. The statement form `result[i] = v` is parsed
+            // before it ever reaches an expression, so arriving here means the author read
+            // it -- same answer as reading `result` bare, and it has to be given here too
+            // because the index path does its own name lookup.
+            if name == RESULT {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{RESULT}` is write-only -- it is the host's buffer, \
+                     and the module never reads it back. Keep the value in a local if you \
+                     need it"
+                )));
+            }
             let Some((ty, _binding)) = scope.get(name) else {
                 return Err(TypeError::new(format!(
                     "function '{fname}': unknown name '{name}'"

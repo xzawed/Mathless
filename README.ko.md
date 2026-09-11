@@ -94,11 +94,11 @@ export를 찾습니다. 그리고 두 번째 C 호스트는 **평범한 방식**
 (`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash`)만 export합니다. 이 개수는
 `dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지 않습니다.
 
-**Delphi는 한 번 재 봤고, 게이트는 없습니다.** 2026-09-07에 `dcc64`로 빌드한 Delphi 64비트
-호스트가 생성 유닛을 컴파일해 C ABI 너머로 모듈을 호출했습니다 — 14개 검사, `GATE_DELPHI_OK`.
-**손으로 돌렸습니다**: 가지고 있는 에디션이 명령줄 빌드를 거부해서 `MATHLESS_GATE_DELPHI`는
-여전히 실행되지 않고, 그 실행을 반복하는 것도 없습니다. 수용 D는 C 쪽만 닫았고, D14의
-Delphi 절반은 게이트 없이 남습니다.
+**Delphi에는 게이트가 있습니다 — 단 CI에는 없습니다.** `MATHLESS_GATE_DELPHI`가
+`hosts/delphi-host`를 `dcc64`로 빌드해 C ABI 너머로 모듈을 호출합니다. 가지고 있는 에디션이
+명령줄 빌드를 거부하므로 게이트는 IDE(`bds.exe -b`)를 부르고, 그것은 허용됩니다. 이 게이트는
+**개발 머신에서만** 돕니다 — CI 러너에는 Delphi도 대화형 세션도 없습니다. 그래서 D14의 공식
+호스트 둘 중 **매 푸시마다 검사되는 쪽은 C입니다**.
 
 현재 수치와 열린 결정, 다음 작업은 [docs/STATUS.md](docs/STATUS.md)에 있습니다.
 
@@ -116,7 +116,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 mlc build discount.mls -o out/
 #  out/discount.dll   네이티브 모듈 — export: mlx_discount + ml_module_abi_version + ml_iface_hash
 #  out/discount.h     C 헤더
-#  out/discount.pas   Delphi import unit (Delphi: verified once by hand 2026-09-07, not gated)
+#  out/discount.pas   Delphi import unit (Delphi: checked by MATHLESS_GATE_DELPHI, which does not run in CI)
 #  out/discount.lib   MSVC 임포트 라이브러리 (링크 타임 바인딩)
 ```
 

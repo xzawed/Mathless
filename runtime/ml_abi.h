@@ -10,12 +10,12 @@
  * module's own `mlx_*` functions and repeats the reserved declarations below so it stands
  * alone; the definitions here use the same `#ifndef` shape, so including both is safe.
  *
- * STATUS: the C binding IS verified - a C11 host built with MSVC loads a module and calls
- * it (acceptance D, hosts/c-host). The DELPHI binding is still unverified: there is no
- * dcc64 that can build from a command line here. A generated .pas WAS compiled and called
- * once by a Delphi IDE build (2026-09-07, STATUS 9-15), but nothing repeats it. Treat the
- * Delphi-facing details
- * as unconfirmed (SPEC section 3-D).
+ * STATUS: the C binding IS verified in CI - a C11 host built with MSVC loads a module and
+ * calls it (acceptance D, hosts/c-host). The DELPHI binding is verified too, but only on a
+ * developer machine: MATHLESS_GATE_DELPHI builds hosts/delphi-host with dcc64 through the
+ * IDE (bds.exe -b, since the edition here refuses command-line builds) and calls the
+ * modules. That gate cannot run in CI - no Delphi, no interactive session - so the
+ * Delphi-facing details are checked, but not on every push (SPEC section 3-D).
  */
 #ifndef ML_ABI_H
 #define ML_ABI_H

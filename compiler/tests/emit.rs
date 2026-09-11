@@ -3,9 +3,9 @@
 //!
 //! What this test asserts is E2: the files exist, the `.dll` is a real PE, and the
 //! `.h`/`.pas` match the text contract. It does NOT itself compile or load them. A real C
-//! host does that in `hosts/rust-oracle/tests/c_host.rs` (acceptance D); the `.pas` has
-//! not gated by Delphi -- an IDE build compiled and called one once (9-15), and the
-//! edition here refuses command-line builds. Building the DLL needs `cargo`,
+//! host does that in `hosts/rust-oracle/tests/c_host.rs` (acceptance D), and a real Delphi
+//! host does it in `hosts/rust-oracle/tests/delphi_host.rs` -- a gate that runs where a
+//! Delphi is installed, never in CI. Building the DLL needs `cargo`,
 //! so the test is Windows-gated like the other acceptance tests.
 #![cfg(windows)]
 
@@ -72,17 +72,35 @@ fn emit_artifacts_writes_the_four_consumable_files() {
     );
 
     // .pas text contract: matching unit name (Delphi requires file stem == unit), the cdecl
-    // external import, and the not-gated note — which must STAY. A Delphi host did compile and
-    // run these units once (9-14), and that is exactly why the wording has to keep saying it
-    // was by hand: the edition available refuses command-line builds, so nothing repeats it.
+    // external import, and the note about what verifies this generator — which must stay TRUE,
+    // not merely stay put. This guard demanded "BY HAND AND NOT GATED" until 2026-09-11, and
+    // by then that was false: 9-20 made `MATHLESS_GATE_DELPHI` run by falling back to
+    // `bds.exe -b`, so the run DOES repeat. The guard was pinning a lie into every shipped
+    // unit, which is worse than having no guard -- it made the lie load-bearing.
+    //
+    // So the two halves are asserted SEPARATELY and by their meaning:
+    //   1. the unit names the gate that checks it, and
+    //   2. the unit says that gate does not run in CI.
+    // Asserting a phrase like "NOT GATED in CI" instead would keep the old substring green
+    // while proving neither half.
     let pas = std::fs::read_to_string(&arts.delphi_unit).unwrap();
     assert!(pas.contains("unit discount;"), "{pas}");
     assert!(pas.contains("function mlx_discount"), "{pas}");
     assert!(pas.contains("external ML_MODULE"), "{pas}");
     assert!(
-        pas.contains("BY HAND AND NOT GATED"),
-        "the Delphi unit must keep saying the verification was a one-off: a Delphi host did \r
-         build and run it (9-14), but nothing repeats that, and the unit is what a user reads: {pas}"
+        pas.contains("MATHLESS_GATE_DELPHI"),
+        "the Delphi unit must name the gate that verifies this generator, so a reader can \
+         run it. The gate exists since 9-20 and passes on a developer machine: {pas}"
+    );
+    assert!(
+        pas.contains("not in CI"),
+        "the Delphi unit must say the gate does NOT run in CI -- the runner has neither \
+         Delphi nor an interactive session, so CI cannot catch a broken generator: {pas}"
+    );
+    assert!(
+        !pas.contains("nothing repeats"),
+        "the Delphi unit still claims the Delphi verification does not repeat. It does: \
+         `MATHLESS_GATE_DELPHI=require` passes locally (9-20): {pas}"
     );
     assert!(
         pas.is_ascii(),

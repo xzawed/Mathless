@@ -71,6 +71,32 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
         "module must export only ml_iface_hash + ml_module_abi_version + mlx_discount"
     );
 
+    // ...and the documents have to state the number this just measured.
+    //
+    // The assertion above pins the FACT; it does not pin what the documents say about it.
+    // `SECURITY.md` publishes "정확히 3개" as a P0 protection proxy and `STATUS.md` repeats it,
+    // and neither was derived from anything — exactly the shape that let "로드하는 모듈 15개"
+    // survive in STATUS while the C host gated 18 (found 2026-09-11, by audit rather than by a
+    // guard). The export set moved 2 → 3 once already, when the fingerprint slice landed.
+    //
+    // Tied here rather than in `doc_claims.rs` because this is where the number is MEASURED:
+    // reading it needs a built module, and `doc_claims` runs on ubuntu too.
+    let stated = format!("정확히 {}개", exports.len());
+    for doc in ["docs/SECURITY.md", "docs/STATUS.md"] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join(doc);
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{doc}: {e}"));
+        assert!(
+            text.contains(&stated),
+            "{doc} does not say '{stated}'. The module exports {:?}, and that count is \
+             published there as a protection proxy — a document naming a different number \
+             is a measurement nothing produces",
+            exports
+        );
+    }
+
     // Analysis-cost proxies (measured/reported, not a reversing-difficulty claim).
     let bytes = std::fs::read(&dll).unwrap();
     let size = bytes.len();

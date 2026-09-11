@@ -60,7 +60,21 @@ fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
          shape changed? This test recognises modules by `load(dir, \"`"
     );
 
-    for doc in ["docs/SECURITY.md", "docs/HOST_ABI.md"] {
+    // STATUS.md was NOT in this list until 2026-09-11, and the gap did exactly what a gap
+    // does: it said "로드하는 모듈 15개" while `host.c` loaded 18, and went on saying it
+    // through the slice that changed the number. The other two documents were corrected the
+    // same day BY THIS GUARD; the one outside it simply kept lying.
+    //
+    // That is the shape worth remembering: a guard's SCOPE is a claim too. This one asserted
+    // "the documents agree with host.c" while checking two of the three that make the claim.
+    //
+    // One consequence, learned immediately: this cannot tell a CLAIM from a QUOTATION of an
+    // old claim. Writing "it used to say 로드하는 모듈 15개" in one of these files fails the
+    // guard — which happened while documenting this very fix. Teaching it about blockquotes
+    // would trade a loud, obvious failure for a silent exemption, so the rule is the other
+    // way round: when recounting a superseded number in these files, do not spell it with
+    // this prefix.
+    for doc in ["docs/SECURITY.md", "docs/HOST_ABI.md", "docs/STATUS.md"] {
         let text = read(doc);
         let stated = numbers_between(&text, "로드하는 모듈 ", "개");
         assert!(

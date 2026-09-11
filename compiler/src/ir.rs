@@ -105,6 +105,17 @@ pub enum IrStmt {
         body: Vec<IrStmt>,
     },
     Return(IrExpr),
+    /// `result <len>` — declare the length of an array return (SPEC-array-return §2.4).
+    ///
+    /// Lowers to the capacity check: write `*ml_needed`, and return the truncation status if
+    /// the declared length exceeds `ml_cap`. It has to come before any element write, which is
+    /// why typeck only accepts it in the function's top-level block.
+    ResultLen(IrExpr),
+    /// `result[<index>] = <value>` — write one element of an array return.
+    ResultSet {
+        index: IrExpr,
+        value: IrExpr,
+    },
     /// `fail` with the resolved positive error code (only in a fallible function).
     Fail(i32),
     /// `let <name> = <value>` — a local binding; `mutable` lowers to Rust `let mut`.
@@ -159,6 +170,10 @@ impl IrStmt {
                 IrTryDest::Return => true,
                 IrTryDest::Let { .. } | IrTryDest::Assign(_) | IrTryDest::AssignOut(_) => false,
             },
+            // Neither `result n` nor `result[i] = v` ends a block: the first declares the
+            // length and falls through to the writes, and the second is an assignment. The
+            // function's exit is generated after the body, the way `-> string!` already works.
+            IrStmt::ResultLen(_) | IrStmt::ResultSet { .. } => false,
             // `while` may run zero times and an `if` without an `else` can fall through, so
             // neither ends a block however its body ends (SPEC-while DP-W2).
             IrStmt::If { .. }
@@ -311,7 +326,11 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
         IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
             in_expr(cond).or_else(|| first_index(body))
         }
-        IrStmt::Return(e)
+        // The INDEX is searched first and on purpose: `result[xs[i]] = v` indexes an input
+        // array inside the subscript, and that is the one this scan is looking for.
+        IrStmt::ResultSet { index, value } => in_expr(index).or_else(|| in_expr(value)),
+        IrStmt::ResultLen(e)
+        | IrStmt::Return(e)
         | IrStmt::Let { value: e, .. }
         | IrStmt::Assign { value: e, .. }
         | IrStmt::AssignOut { value: e, .. } => in_expr(e),

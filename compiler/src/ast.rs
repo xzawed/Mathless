@@ -105,6 +105,25 @@ pub enum Stmt {
     /// `<NAME> = <EXPR>` — reassign a mutable local. A statement, never an expression
     /// (DP-M3), so `a = b = c` does not parse and assignment produces no value.
     Assign { name: String, value: Expr },
+    /// `result <expr>` — declare the length of an array return (SPEC-array-return §2.4).
+    ///
+    /// **This is where the capacity check happens, and that is the whole reason the statement
+    /// exists.** Q12 promises that a truncated call writes nothing, and string return kept
+    /// that promise with a two-pass count-then-copy. Array elements have to be COMPUTED, so
+    /// they cannot be walked twice — writing as you go would leave partial writes behind on
+    /// truncation and break the protocol. Declaring the length first moves the check ahead of
+    /// the first write, which is the only shape that keeps Q12 intact (§2.4's rejected table).
+    ///
+    /// It must DOMINATE every [`Stmt::ResultSet`], not merely precede one in source order:
+    /// `if b { result n }` satisfies "exactly one, first" and still skips the check when `b`
+    /// is false. Typeck enforces that by allowing it only in the function's top-level block.
+    ResultLen(Expr),
+    /// `result[<index>] = <value>` — write one element of an array return.
+    ///
+    /// Write-only, like an `out` parameter and for the same reason: it is the host's buffer.
+    /// The index is bounds-checked against the declared length, and a violation is
+    /// `ML_ST_INDEX_OUT_OF_RANGE` — the same reserved negative array INPUT uses, not a new one.
+    ResultSet { index: Expr, value: Expr },
     /// `<dest> = try <callee>(<args>)` — call a fallible function, propagating its status.
     ///
     /// Deliberately a STATEMENT and not an expression (DP-F2). There is no try-call node in

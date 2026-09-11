@@ -61,6 +61,7 @@
 use crate::ast::*;
 use crate::error::ParseError;
 use crate::lexer::{Spanned, Token};
+use crate::typeck::RESULT;
 
 pub fn parse(tokens: Vec<Spanned>) -> Result<Module, ParseError> {
     Parser::new(tokens).parse_module()
@@ -92,8 +93,16 @@ fn tree_depth(body: &[Stmt]) -> u32 {
                     work.push((Node::E(cond), d + 1));
                     work.extend(body.iter().map(|s| (Node::S(s), d + 1)));
                 }
-                Stmt::Return(e) | Stmt::Let { value: e, .. } | Stmt::Assign { value: e, .. } => {
-                    work.push((Node::E(e), d + 1))
+                Stmt::Return(e)
+                | Stmt::Let { value: e, .. }
+                | Stmt::Assign { value: e, .. }
+                | Stmt::ResultLen(e) => work.push((Node::E(e), d + 1)),
+                // Both subtrees count: `result[f(g(x))] = h(y)` nests on either side, and a
+                // depth walker that looked at only one of them would under-report exactly the
+                // input designed to blow the stack.
+                Stmt::ResultSet { index, value } => {
+                    work.push((Node::E(index), d + 1));
+                    work.push((Node::E(value), d + 1));
                 }
                 Stmt::TryCall { args, .. } => work.extend(args.iter().map(|a| (Node::E(a), d + 1))),
                 Stmt::Fail(_) => {}
@@ -617,6 +626,38 @@ impl Parser {
                     "{gap} are not in Mathless yet — a statement is if, while, return, fail, \
                      let, or an assignment"
                 ))
+            }
+            // `result[i] = v` — write one element of an array return (SPEC-array-return §2.4).
+            //
+            // This arm sits BEFORE the borrowed-array arm below, which would otherwise claim
+            // it: that arm fires on `Ident LBracket` and would tell the author `result` is a
+            // read-only parameter, which is a true sentence about the wrong thing.
+            //
+            // `result` is matched here as an ordinary identifier, not a keyword (DP-R7), so
+            // `let result = 0` keeps working in a function that returns a scalar. Whether the
+            // name means the return buffer is a question about the RETURN TYPE, and the parser
+            // does not know types — typeck answers it.
+            Token::Ident(name) if name == RESULT && self.peek_at(1) == &Token::LBracket => {
+                self.pos += 2;
+                let index = self.parse_expr()?;
+                self.eat(&Token::RBracket, "`]` after the index of `result[i]`")?;
+                self.eat(&Token::Assign, "`=` — `result[i]` is written, never read")?;
+                let value = self.parse_expr()?;
+                Ok(Stmt::ResultSet { index, value })
+            }
+            // `result <expr>` — declare the length of an array return.
+            //
+            // The guard is what keeps `result` a normal name: a following `=` means this is an
+            // ordinary assignment to a local called `result`, and a following `[` was handled
+            // above. Anything else starts an expression, so the author wrote the declaration.
+            Token::Ident(name)
+                if name == RESULT
+                    && self.peek_at(1) != &Token::Assign
+                    && self.peek_at(1) != &Token::LBracket =>
+            {
+                self.pos += 1;
+                let n = self.parse_expr()?;
+                Ok(Stmt::ResultLen(n))
             }
             // `xs[i] = v`. It parses this far and then falls off the end of the statement
             // forms, so without this arm the user is told a statement was expected where they

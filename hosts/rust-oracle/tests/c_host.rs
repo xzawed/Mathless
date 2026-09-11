@@ -616,6 +616,15 @@ fn a_c_host_that_links_against_the_import_library() {
         &work,
     )
     .expect("emit discount");
+    // The buffer-triple shape had never been consumed through the LINK path: this host bound
+    // one scalar module, while the generated header tells every reader that the generator is
+    // verified BOTH ways a C host can consume it. Scope of a claim, again (STATUS 7-3 (5)).
+    let schedule = emit_artifacts(
+        include_str!("../../../examples/schedule.mls"),
+        "schedule",
+        &work,
+    )
+    .expect("emit schedule");
 
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -630,10 +639,11 @@ fn a_c_host_that_links_against_the_import_library() {
         &work,
         &format!(
             "cl /nologo /W4 /WX /std:c11 /I\"{}\" \"{}\" /Fe:host_link.exe /Fo:host_link.obj \
-             /link \"{}\"",
+             /link \"{}\" \"{}\"",
             work.display(),
             host_c.display(),
-            arts.import_lib.display()
+            arts.import_lib.display(),
+            schedule.import_lib.display()
         ),
     );
     assert!(
@@ -675,6 +685,12 @@ fn a_c_host_that_links_against_the_import_library() {
     std::fs::create_dir_all(&drift_run).expect("create drift run dir");
     std::fs::copy(&exe, drift_run.join("host_link.exe")).expect("copy exe");
     std::fs::copy(&drifted.dll, drift_run.join("discount.dll")).expect("copy drifted dll");
+    // The UNDRIFTED second module has to be here too, and forgetting it is instructive: a
+    // linked host binds every module at process start, so a missing one is 0xC0000135 before
+    // `main` runs and the drift check never happens. Measured when `schedule` was added to
+    // this host — the assertion failed with STATUS_DLL_NOT_FOUND rather than the exit code
+    // it was looking for, which is exactly the coupling this host's header describes.
+    std::fs::copy(&schedule.dll, drift_run.join("schedule.dll")).expect("copy schedule dll");
 
     let refused = run_in_msvc_env(
         &vcvars,
@@ -867,5 +883,112 @@ fn the_liveness_deadline_actually_kills_a_child_that_never_returns() {
         String::from_utf8_lossy(&out.stdout).contains("alive"),
         "and its stdout must survive the reader threads: {:?}",
         String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+/// **A linked host can check ONE module's fingerprint, and the linker picks which.**
+///
+/// Measured 2026-09-11, by audit rather than by a guard. Every module exports the SAME
+/// unqualified names — `ml_iface_hash` and `ml_module_abi_version` — so a host that links two
+/// of them gets one binding for both, chosen at link time, with no warning:
+///
+/// ```text
+/// ml_iface_hash()        = 05697A6FAFD68344
+/// ML_DISCOUNT_IFACE_HASH = 05697A6FAFD68344  <== MATCH
+/// ML_SCHEDULE_IFACE_HASH = 85A56496B143C25C
+/// ```
+///
+/// The second module's fingerprint is **unreachable by name**. It is called with no interface
+/// check at all, and nothing says so: `cl /W4` emitted no diagnostic.
+///
+/// **STATUS §9-14 recorded this trap in Delphi** — `uses` bound the unqualified name to the
+/// last unit — and concluded "C 호스트는 모듈 핸들마다 해석하므로 이 함정을 만날 수 없다". That
+/// is true of the DYNAMIC host, which resolves per `HMODULE`. It is false of the LINKED one,
+/// and nobody had linked two modules until this audit.
+///
+/// This test PINS the trap rather than fixing it: the fix is a naming decision about the ABI
+/// (per-module symbol names), which is not a test's call to make. If it is fixed, this test
+/// fails and whoever fixed it deletes it deliberately — the same shape as AR1's seam test.
+#[test]
+fn linking_two_modules_binds_one_fingerprint_and_the_linker_chooses() {
+    let Some(vcvars) = vcvars64() else {
+        println!("GATE_LINK_DUP_SKIPPED: no MSVC toolchain found.");
+        return;
+    };
+    let work = common::TempOut::new("link_dup");
+    let a = emit_artifacts(
+        include_str!("../../../examples/discount.mls"),
+        "discount",
+        &work,
+    )
+    .expect("emit discount");
+    let b = emit_artifacts(
+        include_str!("../../../examples/schedule.mls"),
+        "schedule",
+        &work,
+    )
+    .expect("emit schedule");
+
+    let src = work.join("dup_probe.c");
+    std::fs::write(
+        &src,
+        // A raw string on purpose. The first version escaped this C source into an ordinary
+        // Rust literal, and printf's `\n` came out as a REAL newline in the .c file --
+        // `error C2001: newline in constant`. One layer of escaping too few, which is the
+        // failure STATUS section 7-3 (2) is about, arriving in a Rust literal this time
+        // rather than in a shell script.
+        r#"#include <stdio.h>
+#include <stdint.h>
+#include "discount.h"
+#include "schedule.h"
+int main(void) {
+    uint64_t h = ml_iface_hash();
+    printf("%d %d\n", h == ML_DISCOUNT_IFACE_HASH, h == ML_SCHEDULE_IFACE_HASH);
+    return 0;
+}
+"#,
+    )
+    .expect("write probe");
+
+    let compile = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /W4 /std:c11 /I\"{}\" \"{}\" /Fe:dup_probe.exe /Fo:dup_probe.obj \
+             /link \"{}\" \"{}\"",
+            work.display(),
+            src.display(),
+            a.import_lib.display(),
+            b.import_lib.display()
+        ),
+    );
+    assert!(
+        compile.status.success(),
+        "linking two modules must at least BUILD -- the duplicate export names are not a link \
+         error, which is half of why this is a trap:\n{}",
+        String::from_utf8_lossy(&compile.stdout)
+    );
+
+    let run = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!("\"{}\"", work.join("dup_probe.exe").display()),
+    );
+    let out = String::from_utf8_lossy(&run.stdout);
+    let answer = out.trim();
+    println!("linked two modules; (matches discount, matches schedule) = {answer}");
+    // EXACTLY ONE reachable -- not "discount's is the one". Which module wins is decided by
+    // link order, so pinning `"1 0"` would turn a reordered link line into a failure that
+    // reported the wrong thing: the trap would be unchanged and the message would say it had
+    // changed. Verification review caught that; the property is the count, not the winner.
+    //
+    // The other two answers are different defects and must stay loud:
+    //   "1 1" -- the two fingerprints COLLIDE, which is a hash defect, not a linkage one.
+    //   "0 0" -- neither is bound, so the probe is measuring nothing.
+    assert!(
+        answer == "1 0" || answer == "0 1",
+        "expected exactly ONE fingerprint to be reachable, got {answer:?}. \"1 1\" would mean \
+         the two fingerprints collided (a hash defect); \"0 0\" would mean neither is bound \
+         (the probe measures nothing). Both are different defects from the one pinned here"
     );
 }

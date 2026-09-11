@@ -181,3 +181,49 @@ fn a_bool_array_is_one_byte_per_element() {
     drop(m);
     let _ = std::fs::remove_dir_all(out);
 }
+
+/// **The borrowed pointer must not have pulled anything in.** Measured, not assumed.
+///
+/// Indexing lowers to a bounds check and a raw read. Either could in principle have become a
+/// CRT call, and this slice had no import measurement at all — the string slices have one
+/// (`string_input.rs`), the array one did not. Found by auditing rather than by a guard
+/// (STATUS §7-3 (5)).
+///
+/// **A comparison, never an absolute** (§7): every cdylib already imports `memcpy`/`memset`
+/// through the DllMain scaffolding, so "imports no memset" would be false while "adds no
+/// import" is the true and useful claim. The baseline is a scalar module built the same way.
+#[test]
+fn an_array_parameter_adds_no_import_over_a_scalar_baseline() {
+    use ml_oracle::pe;
+
+    let out = std::env::temp_dir().join(format!("mlc_arrin_imports_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+
+    let base = mlc::emit::emit_artifacts(
+        "export fn f(x: f64) -> f64 { return x * 2.0 }",
+        "baseline",
+        &out,
+    )
+    .expect("baseline");
+    let baseline = pe::read_imports(&base.dll).expect("baseline imports");
+
+    let arts =
+        mlc::emit::emit_artifacts(include_str!("../../../examples/basket.mls"), "basket", &out)
+            .expect("emit basket");
+    let imports = pe::read_imports(&arts.dll).expect("imports");
+    println!("basket imports = {imports:?}");
+
+    assert_eq!(
+        imports, baseline,
+        "an array parameter must add no import: the module borrows the host's memory for the \
+         call and neither copies nor owns it (D16 rule 1)"
+    );
+    for banned in ["malloc", "free", "memmove", "HeapAlloc"] {
+        assert!(
+            !imports.iter().any(|i| i.ends_with(&format!("!{banned}"))),
+            "{banned} must not be imported: {imports:?}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&out);
+}

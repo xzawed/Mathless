@@ -41,7 +41,8 @@ end.
   Boolean is 1 byte to match the module ABI; do not use LongBool.
 
   An array parameter is TWO parameters here: the pointer, then the length
-  in ELEMENTS -- not bytes; ml_cap and ml_needed are bytes and these are not. The
+  in ELEMENTS. So are ml_cap and ml_needed on an ARRAY return; on a
+  STRING return they are bytes. Check which one you are calling.
   module borrows the memory for the call, never writes to it, never keeps it.
   The length must be TRUE: the bounds check tests the number YOU pass, so a
   length larger than the array reads past its end. That is undefined and the

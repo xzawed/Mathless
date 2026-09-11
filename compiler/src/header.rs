@@ -203,6 +203,32 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
         let _ = writeln!(s, "#endif");
         s.push('\n');
     }
+    // An array return uses the same protocol with ONE difference, and it is the difference a
+    // host gets wrong by doing the obvious thing. SPEC-array-return 2.2 wrote the cost down
+    // rather than hiding it, so the header states the unit AND shows the multiplication --
+    // this is the only place that can, because ml_cap is the host's promise and the module
+    // has no way to check it.
+    if module
+        .functions
+        .iter()
+        .any(|f| f.exported && matches!(f.ret, IrType::Array(_)))
+    {
+        for line in [
+            "/* Q12 for an ARRAY return: ml_cap and *ml_needed count ELEMENTS,",
+            " * not bytes. A string return counts bytes; these do not, so the",
+            " * usual retry is NOT malloc(*ml_needed) - it is",
+            " *     buf = malloc((size_t)n * sizeof *buf);  ml_cap = n;",
+            " * Passing a byte count as ml_cap promises more room than you",
+            " * allocated, and the module writes on that promise. Truncation is",
+            " * still a FAILURE, and nothing is written when it happens. */",
+            "#ifndef ML_ST_INSUFFICIENT_BUFFER",
+            "#define ML_ST_INSUFFICIENT_BUFFER (-1)",
+            "#endif",
+        ] {
+            let _ = writeln!(s, "{line}");
+        }
+        s.push('\n');
+    }
 
     // The other reserved negative (SPEC-array-input DP-A7), on the same terms as the one
     // above: a runtime-wide band OUTSIDE the module's error namespace, `#ifndef`-guarded so
@@ -417,6 +443,23 @@ fn c_signature(f: &IrFunction) -> String {
             ));
         }
     }
+    if let IrType::Array(elem) = f.ret {
+        // The same Q12 triple the string return uses, in the SAME position (last, after any
+        // declared out -- DP-O1 unchanged). One thing differs and it is the one that bites:
+        // ml_cap and *ml_needed count ELEMENTS here, not bytes.
+        //
+        // SPEC-array-return 2.2 chose that for consistency with array INPUT, whose companion
+        // length is also elements, and wrote down what it costs: a host that copies the
+        // string retry idiom -- malloc(*ml_needed); ml_cap = *ml_needed -- allocates BYTES
+        // and promises ELEMENTS, which for [f64] is eight times the room it has. The module
+        // cannot detect that; ml_cap is the host's promise. So the comment carries the unit
+        // AND the multiplication, and the example hosts do it in code.
+        let ptr = c_type(elem.scalar());
+        parts.push(format!("{ptr}* ml_buf"));
+        parts.push("int32_t ml_cap".to_string());
+        parts.push("int32_t* ml_needed".to_string());
+        return format!("int32_t mlx_{}({});", f.name, join_c_params(parts));
+    }
     if f.ret == IrType::Str {
         // SPEC-string-return DP-T1/T4: the Q12 triple IS the return value, so it comes last
         // (DP-O1 unchanged). `ml_cap` and `*ml_needed` are total bytes INCLUDING the NUL, on
@@ -490,6 +533,25 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
     // Only when the module takes an array, for the same reason the string note is conditional.
     //
     // MEASURED 2026-09-10 in hosts/delphi-host/host.dpr, which does both of these on purpose.
+    // The RETURN side of the same unit question, and it is the one a host gets wrong by
+    // copying the string idiom: GetMem(P, Needed) allocates BYTES while ml_cap promises
+    // ELEMENTS. For [f64] that is eight times the room actually there, and the module writes
+    // on the promise. MEASURED nowhere yet -- AR5 makes the Delphi host do it on purpose.
+    if module
+        .functions
+        .iter()
+        .any(|f| f.exported && matches!(f.ret, IrType::Array(_)))
+    {
+        let _ = writeln!(
+            s,
+            "\n  An ARRAY return uses ml_buf/ml_cap/ml_needed, and here they count\n  \
+             ELEMENTS -- not bytes. A STRING return counts bytes, so do not reuse that\n  \
+             retry. Allocate as:\n    \
+             SetLength(Arr, Needed);  P := @Arr[0];  Cap := Length(Arr);\n  \
+             Passing a byte count as ml_cap promises more room than you have.\n  \
+             Truncation is a FAILURE and writes nothing; check the status first."
+        );
+    }
     if module
         .functions
         .iter()
@@ -498,7 +560,8 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
         let _ = writeln!(
             s,
             "\n  An array parameter is TWO parameters here: the pointer, then the length\n  \
-             in ELEMENTS -- not bytes; ml_cap and ml_needed are bytes and these are not. The\n  \
+             in ELEMENTS. So are ml_cap and ml_needed on an ARRAY return; on a\n  \
+             STRING return they are bytes. Check which one you are calling.\n  \
              module borrows the memory for the call, never writes to it, never keeps it.\n  \
              The length must be TRUE: the bounds check tests the number YOU pass, so a\n  \
              length larger than the array reads past its end. That is undefined and the\n  \
@@ -649,6 +712,21 @@ fn delphi_signature(f: &IrFunction) -> String {
         if matches!(p.ty, IrType::Array(_)) {
             parts.push(format!("{}_len: Integer", p.name));
         }
+    }
+    if let IrType::Array(elem) = f.ret {
+        // The element type reaches the pointer, the way it does for an array PARAMETER:
+        // PInteger / PDouble / PBoolean, and PBoolean points at a ONE-BYTE Boolean, which is
+        // the width the module writes. Declaring the host's array as LongBool would read four
+        // bytes per element off a one-byte stride -- the same trap the unit header already
+        // warns about for scalars, arriving here in the other direction.
+        //
+        // `ml_buf` is a VALUE parameter for the same reason it is on the string return: `out`
+        // would pass a pointer-to-pointer and the module would overwrite the host's variable.
+        parts.push(format!("ml_buf: {}", delphi_type(f.ret)));
+        parts.push("ml_cap: Integer".to_string());
+        parts.push("out ml_needed: Integer".to_string());
+        let _ = elem;
+        return format!("function mlx_{}({}): Integer;", f.name, parts.join("; "));
     }
     if f.ret == IrType::Str {
         // DP-T3: `PByte`, deliberately NOT `PAnsiChar`. Both silent Delphi misspellings that

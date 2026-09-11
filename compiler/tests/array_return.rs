@@ -323,3 +323,131 @@ fn the_backend_refuses_by_name_until_ar3_lands() {
         "that is the all-paths safety net firing -- a true sentence about the wrong thing          (§9-12). The guard in codegen::emit exists to get ahead of it: {msg}"
     );
 }
+
+// ---------------------------------------------------------------------------- AR3, the ABI
+
+/// SPEC §2.1 and §2.2 — the Q12 triple, with the element unit.
+///
+/// The triple comes LAST (DP-O1 unchanged): declared `out` parameters first, the return value
+/// after them. `ml_cap` and `*ml_needed` count ELEMENTS here, which is NOT the unit the string
+/// return uses — that one counts bytes, NUL included. §2.2 chose consistency with array input
+/// over consistency with string return, and wrote down what that costs.
+#[test]
+fn an_array_return_lowers_to_the_q12_triple() {
+    let h = mlc::header::emit_c_header(
+        &compile_to_ir(
+            "export fn schedule(principal: i32, months: i32) -> [i32]! {
+               result months
+               result[0] = principal
+             }",
+        )
+        .expect("compile"),
+        "schedule",
+    );
+    let decl = h
+        .lines()
+        .find(|l| l.contains("mlx_schedule"))
+        .unwrap_or_else(|| {
+            panic!(
+                "no declaration in:
+{h}"
+            )
+        });
+    // Built by concatenation rather than a continued literal. Twice now a `\`-continued
+    // string in this work has silently kept its source indentation (#204, and again while
+    // writing AR1's messages), and an expected value carrying that defect fails for a reason
+    // that has nothing to do with the code under test.
+    // The author's parameter NAMES are commented out on purpose (see `c_param_name`): a name
+    // this project does not control must not sit where a preprocessor macro could eat it. The
+    // triple's names are not -- those are ours, and the header documents them.
+    let want = String::new()
+        + "int32_t mlx_schedule(int32_t /* principal */, int32_t /* months */, "
+        + "int32_t* ml_buf, int32_t ml_cap, int32_t* ml_needed);";
+    assert_eq!(
+        decl.trim(),
+        want,
+        "the triple must be int32_t* for an [i32] return, and it must come last"
+    );
+}
+
+/// §2.2 — the element type reaches the buffer pointer, so `[f64]` is `double*`.
+///
+/// This is the case where the unit choice bites: a host that allocates `*ml_needed` BYTES and
+/// passes that as `ml_cap` promises eight times the room it has. The header has to say so.
+#[test]
+fn the_buffer_pointer_carries_the_element_type() {
+    for (elem, ctype) in [("i32", "int32_t"), ("f64", "double"), ("bool", "bool")] {
+        let src = format!(
+            "export fn f(n: i32) -> [{elem}]! {{
+               result n
+             }}"
+        );
+        let h = mlc::header::emit_c_header(&compile_to_ir(&src).expect("compile"), "m");
+        let decl = h.lines().find(|l| l.contains("mlx_f")).expect("decl");
+        assert!(
+            decl.contains(&format!("{ctype}* ml_buf")),
+            "[{elem}] must hand back a {ctype}* buffer: {decl}"
+        );
+    }
+}
+
+/// §2.2 — the unit difference is a trap, so the header says it in words AND shows the
+/// multiplication a host has to do. A comment is the only place this can live: `ml_cap` is the
+/// host's promise, and the module has no way to check it.
+#[test]
+fn the_header_states_the_element_unit_and_the_allocation_size() {
+    let h = mlc::header::emit_c_header(
+        &compile_to_ir("export fn f(n: i32) -> [f64]! { result n }").expect("compile"),
+        "m",
+    );
+    let low = h.to_lowercase();
+    assert!(
+        low.contains("element"),
+        "the header must say ml_cap counts ELEMENTS:
+{h}"
+    );
+    assert!(
+        h.contains("sizeof"),
+        "and it must show the allocation size, because copying the string idiom          (malloc(*ml_needed)) under-allocates by sizeof(T):
+{h}"
+    );
+}
+
+/// §2.3 — a declared `out` still precedes the return triple (DP-O1).
+#[test]
+fn a_declared_out_precedes_the_return_triple() {
+    let h = mlc::header::emit_c_header(
+        &compile_to_ir(
+            "export fn f(n: i32, out count: i32) -> [i32]! {
+               result n
+               count = n
+             }",
+        )
+        .expect("compile"),
+        "m",
+    );
+    let decl = h.lines().find(|l| l.contains("mlx_f")).expect("decl");
+    let out_at = decl.find("count").expect("the declared out");
+    let buf_at = decl.find("ml_buf").expect("the buffer");
+    assert!(
+        out_at < buf_at,
+        "the declared out must come before the return triple: {decl}"
+    );
+}
+
+/// §2.2 — the Delphi unit has to carry the same two facts, in its own spelling.
+#[test]
+fn the_delphi_unit_declares_the_triple() {
+    let unit = mlc::header::emit_delphi_unit(
+        &compile_to_ir("export fn f(n: i32) -> [i32]! { result n }").expect("compile"),
+        "m",
+    );
+    assert!(unit.contains("ml_buf"), "{unit}");
+    assert!(unit.contains("ml_cap"), "{unit}");
+    assert!(unit.contains("ml_needed"), "{unit}");
+    assert!(
+        unit.to_lowercase().contains("element"),
+        "the unit must state the element unit too -- a Delphi host allocating by bytes          over-promises exactly as a C one does:
+{unit}"
+    );
+}

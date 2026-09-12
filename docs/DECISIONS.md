@@ -83,9 +83,13 @@
     이것은 E2 실측이다**(두 모듈 링크 호스트의 `dumpbin /imports`, 한쪽 DLL만 제공자).
     **(나) 그래서 다른 컴파일러 버전을 섞으면 틀린 답이 된다 — 이것은 논증이지 실측이 아니다**
     (컴파일러 두 벌이 필요하고 이 저장소엔 하나뿐이다). 처음 적을 때 (가)까지 미실측으로 적었고,
-    감사가 그것을 바로잡았다. 고칠지 말지는 열린 슬라이스다 —
-    `slices/SPEC-qualified-abi-version.md`. 세부는 `slices/SPEC-qualified-iface-hash.md`와
-    `STATUS.md` §9-30·§9-31·§9-33.
+    감사가 그것을 바로잡았다. **고치지 않기로 했다(2026-09-12, 사용자 수용 — (A))** —
+    `slices/SPEC-qualified-abi-version.md`. 지문 개명을 고른 이유는 대가가 **0으로 측정**됐기
+    때문인데(export 3개·9,728 B 무변경) 여기서는 **0이 아니다**(export 3→4, 그리고 그 수는
+    대외 문구다). **그 결정은 논증이 아니라 측정 위에 서 있다**: (가)의 메커니즘이 가드로
+    고정돼 있어(`linking_two_modules_binds_one_abi_version_and_the_linker_chooses`) 전제가
+    무너지면 빨개진다. 재검토 조건 둘은 그 SPEC §5에 있고, **그 전에는 다시 열지 않는다.**
+    세부는 `slices/SPEC-qualified-iface-hash.md`와 `STATUS.md` §9-30·§9-31·§9-33·§9-34.
   - **현재 산출은 `.dll`뿐이다(2026-09-02 추가, 사용자 승인).** 결정 자체는 바뀌지 않는다 — "표준 DLL/SO"는 **포맷 선택**이지 오늘 나오는 산출물 목록이 아니다. `mlc build`는 `.dll`·`.h`·`.pas`·`.lib`을 낸다(`.lib`은 2026-09-03, #124). `.so`/ELF 개시는 **미결**이고(`STATUS.md` §4-7), `ubuntu-latest` CI 잡은 프런트엔드 보험이지 D22가 아니다. `dlsym` 경로도 ⏳ 미구현이다(`HOST_ABI.md` "버전"). 이 줄은 저장소가 공개된 뒤 이 결정이 **"`.so`가 이미 나온다"로 읽히는 것**을 막기 위한 것이다.
 
 Phase 1 툴체인(2026-08-28, 실측 근거로 사용자 승인). 근거: rustc/cargo 설치·동작, C 컴파일러·Delphi CLI 미설치, cdylib 빌드+kernel32 로드·호출 스모크 E2 통과.

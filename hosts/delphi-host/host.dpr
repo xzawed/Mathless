@@ -64,7 +64,12 @@ uses
   safe_div,
   carrier,
   shapes,
-  basket;
+  basket,
+  { SPEC-array-return acceptance E. `in_stock` returns `[bool]`, and the element WIDTH is
+    the hazard that slice added: the module writes ONE byte per element, and a host that
+    holds `array of LongBool` reads a stride that does not exist. Measured below, not
+    warned about. }
+  allocate;
 
 var
   Failures: Integer = 0;
@@ -152,6 +157,17 @@ begin
   if not OneModule('shapes', shapes.ml_module_abi_version,
                    shapes.ml_iface_hash_shapes, ML_SHAPES_IFACE_HASH) then
     Result := False;
+  { `basket` was USED and not gated, for the whole of two slices, while the paragraph above
+    said "the gate now covers every module used, not one". A guard's SCOPE is a claim too,
+    and that one had quietly stopped being true the day the unit was added. Both of the
+    stragglers are here now, and `the_delphi_host_gates_every_unit_it_uses` derives the list
+    from the `uses` clause so the next unit cannot be forgotten the same way. }
+  if not OneModule('basket', basket.ml_module_abi_version,
+                   basket.ml_iface_hash_basket, ML_BASKET_IFACE_HASH) then
+    Result := False;
+  if not OneModule('allocate', allocate.ml_module_abi_version,
+                   allocate.ml_iface_hash_allocate, ML_ALLOCATE_IFACE_HASH) then
+    Result := False;
 end;
 
 var
@@ -183,6 +199,14 @@ var
   DblOut: Double;
   BoolOut: Boolean;
   ElemsP: PInteger;
+  { Array RETURN of `[bool]` (SPEC-array-return acceptance E). `Stock` is the input;
+    `Flags1` is the correct 1-byte reading; `Flags4` is the same bytes read through
+    four-byte booleans, which is the mistake being measured. `Flags4Bytes` is the storage
+    they share, so the transcript can print what the module actually wrote. }
+  Stock: array of Integer;
+  Flags1: array of Boolean;
+  Flags4: array of LongBool;
+  Wrote: string;
 begin
   if ParamCount < 1 then
   begin
@@ -419,6 +443,65 @@ begin
   BoolOut := False;
   Status := mlx_any_set(@Flags[0], Length(Flags), BoolOut);
   Check((Status = 0) and BoolOut, 'the fourth Boolean is set, and it is one byte along');
+
+  { ---- Array RETURN, and the element WIDTH (SPEC-array-return acceptance E). ----
+
+    Array input proved the module READS one byte per Boolean. A return is the other
+    direction: the module WRITES one byte per element into the host's buffer, and the host
+    decides what stride to read it back with. Only a Pascal host can get that wrong in an
+    interesting way -- the C header says `bool`, which C sizes for itself, while Pascal
+    offers both a 1-byte `Boolean` and a 4-byte `LongBool` and lets you point either at the
+    same memory. The generated unit says "do not use LongBool"; this is the measurement
+    behind that sentence.
+
+    Probe first, because ml_cap/ml_needed count ELEMENTS here and the retry is SetLength,
+    never a byte count. }
+  SetLength(Stock, 4);
+  Stock[0] := 5;  Stock[1] := 2;  Stock[2] := 0;  Stock[3] := 7;
+
+  Needed := -1;
+  Status := mlx_in_stock(@Stock[0], Length(Stock), PBoolean(nil), 0, Needed);
+  Check(Status = allocate.ML_ST_INSUFFICIENT_BUFFER,
+    'a cap of 0 truncates, and the status is a constant the UNIT declares -- ' +
+    'it did not declare it for an array-only module until this gate was written');
+  Check(Needed = 4, 'and ml_needed is the length in ELEMENTS: ' + IntToStr(Needed));
+
+  { The correct reading: one byte per element, which is what SizeOf(Boolean) already is. }
+  SetLength(Flags1, Needed);
+  Needed := -1;
+  Status := mlx_in_stock(@Stock[0], Length(Stock), @Flags1[0], Length(Flags1), Needed);
+  Check((Status = 0) and (Needed = 4), 'in_stock answers for four warehouses in ONE call');
+  Check(Flags1[0] and Flags1[1] and (not Flags1[2]) and Flags1[3],
+    'stock 5,2,0,7 -> in stock TRUE,TRUE,FALSE,TRUE, read as 1-byte Booleans');
+
+  { Now step on it DELIBERATELY. `Flags4` is `array of LongBool`, four bytes per element.
+    The module still writes FOUR BYTES IN TOTAL -- one per element, ml_cap elements -- so
+    nothing is overrun and nothing raises: the host simply reads them at the wrong stride.
+
+    The array is zero-filled by SetLength, so what the wrong reading returns is determined,
+    not whatever happened to be on the heap. Element 0 covers the module's four written
+    bytes 01 01 00 01, which is a NONZERO LongBool, i.e. True; elements 1..3 cover bytes the
+    module never touched, i.e. False. So the host that gets the width wrong is told
+    TRUE,FALSE,FALSE,FALSE where the module said TRUE,TRUE,FALSE,TRUE.
+
+    No crash, no status, no warning -- a wrong answer. That is the whole point of measuring
+    it instead of writing "do not use LongBool" and hoping. }
+  SetLength(Flags4, Needed);
+  Needed := -1;
+  Status := mlx_in_stock(@Stock[0], Length(Stock), PBoolean(@Flags4[0]), Length(Flags4),
+                         Needed);
+  Check((Status = 0) and (Needed = 4),
+    'the wrong-width call SUCCEEDS -- the module cannot see the host''s stride');
+
+  Wrote := '';
+  for I := 0 to Length(Flags4) - 1 do
+    if Flags4[I] then Wrote := Wrote + 'T' else Wrote := Wrote + 'F';
+  Writeln('  MEASURED [bool] return read as LongBool: ', Wrote,
+          '   (1-byte Boolean reads TTFT)');
+  Check(Wrote = 'TFFF',
+    'LongBool reads TFFF where the module wrote TTFT: the first element swallows all four ' +
+    'bytes and the rest read storage the module never wrote. Recorded, not warned about');
+  Check(SizeOf(LongBool) = 4, 'control: LongBool really is four bytes here');
 
   if Failures = 0 then
   begin

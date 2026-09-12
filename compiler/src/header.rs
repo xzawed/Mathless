@@ -682,17 +682,36 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
     // here"). No `#ifndef` equivalent is needed or possible: a Pascal unit has its own
     // namespace, so two generated units in one program do not collide the way two included
     // headers would.
-    if module
+    // A STRING return or an ARRAY return — both can truncate, and both compare against this
+    // status. The C header has emitted it for both since the array-return slice; the unit
+    // asked only about `Str`, so `examples/allocate.mls` (arrays, no strings) shipped a `.h`
+    // that declared the constant beside a `.pas` that did not, and a Delphi host of that
+    // module had to retype `-1` after all. Found while writing acceptance E.
+    //
+    // ONE declaration for a module that returns both shapes: a Pascal const block that
+    // declares the same identifier twice does not compile.
+    let returns_str = module
         .functions
         .iter()
-        .any(|f| f.exported && f.ret == IrType::Str)
-    {
+        .any(|f| f.exported && f.ret == IrType::Str);
+    let returns_array = module
+        .functions
+        .iter()
+        .any(|f| f.exported && matches!(f.ret, IrType::Array(_)));
+    if returns_str || returns_array {
         let _ = writeln!(
             s,
             "  {{ Q12 caller-allocates protocol: the buffer was too small to hold the result,\n    \
              NUL included. Truncation is a FAILURE, not a short success - nothing is written,\n    \
              and ml_needed is the exact size to allocate, in the same unit as ml_cap. }}"
         );
+        if returns_array {
+            let _ = writeln!(
+                s,
+                "  {{ For an ARRAY return ml_cap and ml_needed count ELEMENTS, not bytes, so the\n    \
+                 retry is SetLength(Arr, Needed) and Cap := Length(Arr) - never a byte count. }}"
+            );
+        }
         let _ = writeln!(s, "  ML_ST_INSUFFICIENT_BUFFER = -1;");
     }
     if module

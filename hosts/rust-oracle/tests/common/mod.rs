@@ -259,6 +259,12 @@ uses",
         .unwrap_or_else(|| panic!("unterminated `uses` clause in {}", dpr.display()))
         .0;
 
+    // `{ … }` comments are legal INSIDE a uses clause, and host.dpr has one explaining why a
+    // unit is there. Without this the comment's own words were split on their commas and
+    // became "units": the gate then failed with `examples/{ SPEC-array-return acceptance
+    // E.mls could not be read` — loud, but a true message about the wrong thing.
+    let clause = strip_pascal_comments(clause);
+
     let units: Vec<String> = clause
         .split(',')
         .map(|u| u.trim().to_string())
@@ -271,4 +277,24 @@ uses",
         dpr.display()
     );
     units
+}
+
+/// Object Pascal source with `{ … }` comments removed.
+///
+/// Deliberately only the brace form: that is the one this repository's Pascal actually uses,
+/// and `(* … *)` would be over-building for the one clause this reads. Nesting is not
+/// handled either — Delphi does not nest `{ }` comments.
+#[allow(dead_code)]
+pub fn strip_pascal_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut depth = 0usize;
+    for c in src.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
 }

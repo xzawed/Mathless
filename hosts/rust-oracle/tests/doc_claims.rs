@@ -1105,3 +1105,64 @@ fn the_hand_written_c_sources_are_pure_ascii() {
         sources.iter().map(|(r, _)| r).collect::<Vec<_>>()
     );
 }
+
+/// **The reference dynamic host must be able to gate every module name the compiler accepts.**
+///
+/// Two numbers in two languages that have to agree: `ML_MAX_MODULE_NAME` in
+/// `compiler/src/abi.rs`, and the `#define` of the same name in `hosts/c-host/host.c` that
+/// sizes the buffer `gate()` builds `ml_iface_hash_<module>` into. C cannot read the Rust
+/// constant, so the host carries a copy — and a copy that nothing checks is how the two drift.
+///
+/// They HAD drifted, in the only direction that matters: the host's buffer was an
+/// independently chosen `80`, which gated 65 characters and refused at 66, while the compiler
+/// had no bound at all and `mlc build` produced a 70-character module at exit 0. The
+/// compiler shipped modules its own reference host could not gate
+/// (`SPEC-module-name-length` §0.1).
+///
+/// This reads both sources rather than running anything, so unlike the acceptance-D gates it
+/// needs no MSVC and runs on **both** CI jobs — which is the point, because the Windows job
+/// is the only one that would otherwise notice, and only if a long name were in the corpus.
+#[test]
+fn the_c_host_can_gate_every_module_name_the_compiler_accepts() {
+    let abi = read("compiler/src/abi.rs");
+    let compiler_bound: usize =
+        numbers_between(&abi, "pub const ML_MAX_MODULE_NAME: usize = ", ";")
+            .first()
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "compiler/src/abi.rs no longer declares ML_MAX_MODULE_NAME — either put it \
+                 back or drop this guard, but do not leave the host's copy unchecked"
+                )
+            });
+
+    let host = read("hosts/c-host/host.c");
+    // Empty suffix on purpose: the number ends the line, and this working tree checks C
+    // sources out with CRLF, so a `"\n"` suffix matched nothing and the guard failed for a
+    // reason that had nothing to do with the bound.
+    let host_bound: usize = numbers_between(&host, "#define ML_MAX_MODULE_NAME ", "")
+        .first()
+        .copied()
+        .unwrap_or_else(|| {
+            panic!(
+                "hosts/c-host/host.c no longer defines ML_MAX_MODULE_NAME — gate() sizes its \
+                 symbol buffer from it"
+            )
+        });
+
+    assert!(
+        host_bound >= compiler_bound,
+        "the C host's ML_MAX_MODULE_NAME is {host_bound} but the compiler accepts names up \
+         to {compiler_bound}. A module with a name between the two compiles, links and \
+         loads, and is then REFUSED by the reference dynamic host with `module name too \
+         long to form its fingerprint symbol` — far from the cause. The compiler sets the \
+         bound; the host follows it"
+    );
+
+    // And the buffer really is derived from that define rather than a number beside it.
+    assert!(
+        host.contains("char symbol[sizeof \"ml_iface_hash_\" + ML_MAX_MODULE_NAME]"),
+        "hosts/c-host/host.c must size gate()'s buffer from ML_MAX_MODULE_NAME and the \
+         prefix, or this guard checks a constant nothing uses"
+    );
+}

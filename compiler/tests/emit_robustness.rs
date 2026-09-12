@@ -423,3 +423,60 @@ fn a_build_ignores_whatever_cargo_variables_are_already_set() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A module name has a maximum length, and the boundary is checked from both sides.
+///
+/// The name becomes the suffix of a reserved export (`ml_iface_hash_<module>`) since
+/// `SPEC-qualified-iface-hash`, so a DYNAMIC host has to BUILD that symbol name and needs a
+/// buffer for it. Measured before `ML_MAX_MODULE_NAME` existed: `hosts/c-host/host.c` could
+/// gate a 65-character name and refused at 66, while `mlc build` accepted 70 and exited 0 —
+/// the compiler happily produced a module its own reference host could not gate.
+///
+/// Refusing here is what moves the failure to where the diagnostic is good.
+#[test]
+fn rejects_a_module_name_longer_than_the_abi_bound() {
+    let out = fresh_out("toolong");
+    let max = mlc::abi::ML_MAX_MODULE_NAME;
+
+    // Both sides of the edge, or this passes while the bound is off by one.
+    //
+    // The accepted side asserts that the name is not refused AS A NAME, rather than that the
+    // whole build succeeds. `check_module_name` runs first — cheapest check first, by its own
+    // comment — so that is the property this test owns, and it is the same on every platform.
+    //
+    // Demanding a finished artifact here was wrong and CI said so: on Linux `build_cdylib`
+    // looks for `<name>.dll` while cargo writes `lib<name>.so`, which is the D22 gap
+    // `generated_crate_output.rs` already documents and deliberately leaves unstarted. The
+    // ubuntu insurance job caught it; a Windows-only run cannot.
+    //
+    // The end-to-end build at the bound is not lost — acceptance C of
+    // `SPEC-module-name-length` builds a module with this exact name and has the reference C
+    // host gate it (`hosts/rust-oracle/tests/c_host.rs`, Windows).
+    let at_bound = "m".repeat(max);
+    if let Err(e) = emit_artifacts(SRC, &at_bound, &out) {
+        let msg = e.to_string();
+        assert!(
+            !msg.to_lowercase().contains("module name"),
+            "a name of exactly {max} characters must not be refused as a module name: {msg}"
+        );
+    }
+
+    let over = "m".repeat(max + 1);
+    let err = emit_artifacts(SRC, &over, &out).unwrap_err().to_string();
+    assert!(
+        err.to_lowercase().contains("module name"),
+        "a name of {} characters must be refused as a module name, got: {err}",
+        max + 1
+    );
+    // The refusal says the limit and why there is one — the same standard as the other
+    // module-name refusals, which name the target that reserves the word.
+    assert!(
+        err.contains(&max.to_string()),
+        "the refusal must state the limit so the author can act on it: {err}"
+    );
+    assert!(
+        err.contains("ml_iface_hash_"),
+        "the refusal must say WHY a module name is bounded — it becomes a reserved export \
+         symbol a dynamic host has to build: {err}"
+    );
+}

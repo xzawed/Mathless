@@ -315,6 +315,26 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
     let drift = emit_artifacts(drifted_pack, "pack_drift", &work).expect("emit drifted pack");
     assert!(drift.dll.exists());
 
+    // A module whose name is EXACTLY the longest the compiler accepts
+    // (`SPEC-module-name-length`). Built here rather than added to `examples/`, because a
+    // 64-character example would be pulled into the golden snapshots, the FPC gate and the
+    // export-surface measurement — none of which is what this measures.
+    //
+    // The name is the point: its fingerprint export is `ml_iface_hash_` + 64 characters, the
+    // widest symbol `gate()` will ever have to build. `doc_claims` checks the compiler's
+    // bound and the host's copy agree; only running it can catch an off-by-one in the
+    // strcspn/snprintf pair at the edge.
+    let longest_name = "m".repeat(mlc::abi::ML_MAX_MODULE_NAME);
+    let longest = emit_artifacts(
+        "export fn ping(x: i32) -> i32 { return x }\n",
+        &longest_name,
+        &work,
+    )
+    .unwrap_or_else(|e| {
+        panic!("a name of exactly ML_MAX_MODULE_NAME characters must compile: {e}")
+    });
+    assert!(longest.dll.exists());
+
     let host_c = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("c-host")
@@ -491,7 +511,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &vcvars,
         &work,
         &format!(
-            "\"{}\" \"{}\" {} pack_drift.dll",
+            "\"{}\" \"{}\" {} pack_drift.dll {longest_name}.dll",
             work.join("host.exe").display(),
             work.display(),
             mlc::ML_MODULE_ABI_VERSION
@@ -525,6 +545,32 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         "the drift refusal must be the fingerprint comparison, not a symbol the host failed \
          to resolve — `refuse …: a reserved symbol is missing` would satisfy the gate check \
          above while proving nothing about the fingerprint:\n{stdout}"
+    );
+    // Acceptance C of SPEC-module-name-length: the boundary is RUN, not argued. The marker
+    // is asserted for the same reason the drift one is — the block is behind an argc test,
+    // so a harness that stopped passing the module would otherwise go on passing.
+    //
+    // The marker means "the block RAN", never "the block passed": `check()` counts a failure
+    // and carries on, so this line prints either way (Grok raised it). What makes a failure
+    // red is the `GATE_D_OK` assertion above — the host only prints that with `failures == 0`
+    // — and the two `ok   …` assertions below, which read the checks themselves.
+    assert!(
+        stdout.contains("GATE_D_NAMEBOUND_CHECKED"),
+        "the C host never exercised the module-name bound — it printed \
+         GATE_D_NAMEBOUND_SKIPPED, so the longest legal name was not passed:\n{stdout}"
+    );
+    // The host's own words for the property, not `load()`'s line: this module is gated
+    // DIRECTLY (like the drifted one) rather than through `load(dir, "…")`, so the count
+    // `doc_claims` ties to three documents does not move for a test fixture.
+    assert!(
+        stdout.contains("ok   the fingerprint symbol of a longest-legal-named module resolves"),
+        "the fingerprint symbol must RESOLVE at the bound — that is the half a \
+         source-reading guard cannot check:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("ok   and the gate PASSES it"),
+        "a module named with the longest name the compiler accepts must PASS the gate, not \
+         be refused — that is the contract ML_MAX_MODULE_NAME exists to keep:\n{stdout}"
     );
 
     // Cross-check our own PE reader against Microsoft's dumpbin on the same file: until now

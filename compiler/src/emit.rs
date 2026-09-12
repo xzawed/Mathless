@@ -136,6 +136,26 @@ fn check_module_name(name: &str) -> Result<(), EmitError> {
              digits and `_`, not starting with a digit"
         )));
     }
+    // Length, checked right after shape and before anything expensive. A module name is
+    // also the SUFFIX OF A RESERVED EXPORT (`ml_iface_hash_<module>`), and a dynamic host
+    // has to build that symbol name from the module it is loading — which means a buffer,
+    // which means an edge. Measured before this check existed: `hosts/c-host/host.c` gated
+    // a 65-character name and refused at 66, while this function accepted 70 and `mlc build`
+    // exited 0. The compiler produced a module its own reference host could not gate.
+    //
+    // The bound belongs HERE rather than in the host because the compiler defines what a
+    // module name is; the host sizes its buffer from `ML_MAX_MODULE_NAME` and `doc_claims`
+    // fails if the two disagree. `name.len()` is the character count too — the identifier
+    // check above already restricted this to ASCII.
+    if name.len() > crate::abi::ML_MAX_MODULE_NAME {
+        return Err(EmitError::InvalidModuleName(format!(
+            "invalid module name '{name}' — {} characters, and a module name may be at most \
+             {}; it becomes the reserved export `ml_iface_hash_<module>`, which a dynamic \
+             host builds by name into a fixed buffer",
+            name.len(),
+            crate::abi::ML_MAX_MODULE_NAME
+        )));
+    }
     // Same policy as parameter and local names: safe in every codegen target at once.
     let targets = crate::reserved::reserving_targets(name);
     if !targets.is_empty() {

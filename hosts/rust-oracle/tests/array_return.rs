@@ -17,19 +17,32 @@ use ml_oracle::{pe, Module};
 use mlc::abi::ML_ST_INSUFFICIENT_BUFFER;
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 /// A byte that is neither NUL nor plausible data, so "written" and "not written" are both
 /// visible. The string-return slice built this habit and it is reused verbatim here.
 const CANARY: u8 = 0xAA;
 
-fn build(name: &str, tag: &str) -> (std::path::PathBuf, Module) {
+/// Build an example into a temp tree that **removes itself**.
+///
+/// `common::TempOut` rather than a bare `temp_dir()` path, and that is not style. This helper
+/// used to clear its directory on ENTRY only, and the name carries the process id — so the
+/// next run picked a different name and the old tree stayed forever. Measured 2026-09-12:
+/// 72 leftover `mlc_arr_ret_*` directories from six hours of work, and **every leaked tree on
+/// this machine came from this one file**; its siblings (`array_input.rs`, `rounding.rs`,
+/// `out_params.rs`) remove at the end of each test and leaked nothing.
+///
+/// That entry-only pattern is exactly what `STATUS.md` §5-5.7 diagnosed and fixed across four
+/// files. This file was written afterwards and reintroduced it, which is why the fix here is
+/// the RAII guard nine other test files already use: a convention that cannot be forgotten
+/// at the end of a test, because there is no end-of-test step to forget.
+fn build(name: &str, tag: &str) -> (common::TempOut, Module) {
     let src = match name {
         "schedule" => include_str!("../../../examples/schedule.mls"),
         "allocate" => include_str!("../../../examples/allocate.mls"),
         other => panic!("no such example: {other}"),
     };
-    let out = std::env::temp_dir().join(format!("mlc_arr_ret_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("arr_ret_{tag}"));
     let arts = emit_artifacts(src, name, &out).unwrap_or_else(|e| panic!("emit {name}: {e}"));
     let m = Module::load(arts.dll.to_str().unwrap()).unwrap_or_else(|e| panic!("load: {e}"));
     (out, m)
@@ -337,9 +350,11 @@ fn a_scalar_export_beside_an_array_one_keeps_the_plain_d17_shape() {
 /// and the two sets must be identical.
 #[test]
 fn an_array_return_adds_no_import_over_a_scalar_baseline() {
-    let out = std::env::temp_dir().join(format!("mlc_arr_imports_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    // `TempOut` here too, for the reason the helper above records. This one DID remove at the
+    // end, so it never leaked on a green run — but an end-of-test line is skipped by a panic,
+    // and this file now says the RAII guard is the convention. Leaving one raw `temp_dir()`
+    // behind would make that sentence false in its own file (review raised it).
+    let out = common::TempOut::new("arr_imports");
 
     let base = emit_artifacts(
         "export fn f(x: f64) -> f64 { return x * 2.0 }",
@@ -372,5 +387,4 @@ fn an_array_return_adds_no_import_over_a_scalar_baseline() {
             );
         }
     }
-    let _ = std::fs::remove_dir_all(&out);
 }

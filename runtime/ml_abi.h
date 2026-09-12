@@ -82,10 +82,19 @@ extern "C" {
  * a linker binding one module's copy for all of them returns the right answer anyway. And
  * it is D18's bootstrap: resolving this symbol is the only way a host can ask a module
  * which ABI it speaks, so a host that had to know the module name first would have nothing
- * left to negotiate with. The cost is recorded rather than hidden: modules built by two
- * DIFFERENT compiler versions and linked together would bind one version symbol and skip
- * the other's. That is outside the one-compiler premise, it is an argument and not a
- * measurement, and no slice fixes it today. */
+ * left to negotiate with.
+ *
+ * The cost is recorded rather than hidden, and it has TWO halves that carry different
+ * evidence. Do not merge them again:
+ *
+ *   MEASURED (2026-09-12, `dumpbin /imports` on a host linking two modules): a linked host
+ *   imports this symbol from EXACTLY ONE module, chosen by the linker, and the other
+ *   module contributes no version import at all. Pinned by
+ *   `linking_two_modules_binds_one_abi_version_and_the_linker_chooses`.
+ *
+ *   AN ARGUMENT, NOT A MEASUREMENT: that this would produce a WRONG answer for modules
+ *   built by two DIFFERENT compiler versions. Measuring it needs two compilers and this
+ *   repository has one. It is outside the one-compiler premise, and no slice fixes it. */
 uint32_t ml_module_abi_version(void);
 
 /* A fingerprint of the module's host-visible interface - the exported signatures including

@@ -56,6 +56,23 @@ fn the_wrapper_refactor_did_not_grow_the_export_surface() {
         })
         .collect();
     names.sort();
+    // The corpus has to be THERE, or everything below is a loop that never runs and this
+    // test is green having measured nothing. That is not hypothetical here: `.mls` is a
+    // 가칭 (CLAUDE.md), so the extension this filter matches is expected to change one day,
+    // and the read is by path from CARGO_MANIFEST_DIR — a moved directory has the same
+    // effect. `fpc_units.rs` already asserts `compiled > 0` for exactly this reason; this
+    // file, which is the ONLY place that checks every example for a leaked `#[no_mangle]`
+    // body and for exporting its OWN fingerprint, did not (audit 2026-09-12).
+    //
+    // A floor rather than the exact count: adding an example must not need a test edit,
+    // but silently dropping most of the corpus must fail.
+    assert!(
+        names.len() >= 20,
+        "found only {} example(s) under {} — this test measures the export surface of the \
+         WHOLE corpus, so a near-empty read makes it pass while proving nothing: {names:?}",
+        names.len(),
+        dir.display()
+    );
 
     for name in names {
         let src = std::fs::read_to_string(dir.join(format!("{name}.mls"))).unwrap();

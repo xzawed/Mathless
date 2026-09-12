@@ -984,8 +984,10 @@ fn the_liveness_deadline_actually_kills_a_child_that_never_returns() {
 /// **Acceptance A of `SPEC-qualified-iface-hash`: every linked module's fingerprint is
 /// reachable by name.**
 ///
-/// The same probe as the trap above, asking the opposite question. The trap existed because
-/// two modules exported the same unqualified `ml_iface_hash`, so the linker bound one and the
+/// This is the trap test `linking_two_modules_binds_one_fingerprint_and_the_linker_chooses`
+/// inverted — that one pinned the defect until the fix landed and was then deleted, which is
+/// what its own doc comment said would happen (STATUS §9-31). The trap existed because two
+/// modules exported the same unqualified `ml_iface_hash`, so the linker bound one and the
 /// other was called with no interface check at all. With the symbol qualified
 /// (`ml_iface_hash_<module>`) the two names cannot collide, and the answer that used to be
 /// "exactly one reachable" must become **both**.
@@ -1070,5 +1072,143 @@ int main(void) {
         "both fingerprints must be reachable by name. \"1 0\"/\"0 1\" is the collision this \
          slice removes — one module bound, the other called unchecked; \"0 0\" would mean \
          neither symbol is bound and the probe measures nothing"
+    );
+}
+
+/// **A linked host asks ONE module for its ABI version, and the linker picks which.**
+///
+/// This is the cost DP-Q2 accepted when `ml_iface_hash` was qualified per module and
+/// `ml_module_abi_version` was deliberately left bare (`SPEC-qualified-iface-hash` §2.2).
+/// The reasoning is sound — the value is a compiler constant, so every module answers the
+/// same number and the collision is harmless under the one-compiler premise, and the bare
+/// name is D18's bootstrap: it is how a host asks a module which ABI it speaks at all.
+///
+/// What was NOT sound was calling the cost unmeasured. Three documents said the mixed-version
+/// consequence was "an argument, not a measurement", which is true of the HARM and false of
+/// the MECHANISM. Measured 2026-09-12 with `dumpbin /imports` on a host linking two modules:
+///
+/// ```text
+/// discount.dll
+///     ml_iface_hash_discount
+///     ml_module_abi_version      <-- bound here
+/// schedule.dll
+///     ml_iface_hash_schedule     <-- and schedule contributes no version import at all
+/// ```
+///
+/// So this pins the mechanism, and its control pins the contrast in the same run: the
+/// FINGERPRINT is provided by both modules, which is exactly what the rename bought.
+///
+/// The import table is the only instrument that can tell these apart. Calling the function
+/// cannot: with one compiler, "one binding" and "two bindings that agree" return the same
+/// constant (Grok confirmed this while the guard was being designed).
+///
+/// **It pins a known, accepted defect — the same shape as the fingerprint trap before #215.**
+/// If a future slice qualifies the version symbol too, this test fails and whoever did it
+/// deletes it deliberately.
+#[test]
+fn linking_two_modules_binds_one_abi_version_and_the_linker_chooses() {
+    let Some(vcvars) = vcvars64() else {
+        if std::env::var("MATHLESS_GATE_D").as_deref() == Ok("require") {
+            panic!(
+                "MATHLESS_GATE_D=require but MSVC was not found — the ABI-version binding \
+                 cannot be measured."
+            );
+        }
+        println!("GATE_LINK_ABIVER_SKIPPED: no MSVC toolchain found.");
+        return;
+    };
+    let work = common::TempOut::new("link_abiver");
+    let a = emit_artifacts(
+        include_str!("../../../examples/discount.mls"),
+        "discount",
+        &work,
+    )
+    .expect("emit discount");
+    let b = emit_artifacts(
+        include_str!("../../../examples/schedule.mls"),
+        "schedule",
+        &work,
+    )
+    .expect("emit schedule");
+
+    let src = work.join("abiver_probe.c");
+    std::fs::write(
+        &src,
+        // Every reserved symbol is REFERENCED, or the linker has no reason to import it and
+        // this measures the compiler's optimiser rather than the ABI.
+        r#"#include <stdio.h>
+#include <stdint.h>
+#include "discount.h"
+#include "schedule.h"
+int main(void) {
+    printf("%u %d %d\n", ml_module_abi_version(),
+           ml_iface_hash_discount() == ML_DISCOUNT_IFACE_HASH,
+           ml_iface_hash_schedule() == ML_SCHEDULE_IFACE_HASH);
+    return 0;
+}
+"#,
+    )
+    .expect("write probe");
+
+    let compile = run_in_msvc_env(
+        &vcvars,
+        &work,
+        &format!(
+            "cl /nologo /W4 /WX /std:c11 /I\"{}\" \"{}\" /Fe:abiver_probe.exe \
+             /Fo:abiver_probe.obj /link \"{}\" \"{}\"",
+            work.display(),
+            src.display(),
+            a.import_lib.display(),
+            b.import_lib.display()
+        ),
+    );
+    assert!(
+        compile.status.success(),
+        "the probe must build:\n{}\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let exe = work.join("abiver_probe.exe");
+    let imports = dumpbin_imports(&vcvars, &work, &exe);
+    assert!(
+        !imports.is_empty(),
+        "dumpbin reported no imports at all, so this measures nothing"
+    );
+
+    let version_providers: Vec<&String> = imports
+        .iter()
+        .filter(|s| s.ends_with("!ml_module_abi_version"))
+        .collect();
+    let hash_providers: Vec<&String> = imports
+        .iter()
+        .filter(|s| s.contains("!ml_iface_hash_"))
+        .collect();
+    println!(
+        "linked two modules; ml_module_abi_version from {version_providers:?}, \
+         fingerprints from {hash_providers:?}"
+    );
+
+    // The CONTROL first, because it is what makes the number below meaningful: the
+    // fingerprint is imported from BOTH modules. If this were 1 the rename has regressed and
+    // the assertion after it would be measuring that instead.
+    assert_eq!(
+        hash_providers.len(),
+        2,
+        "each module must provide its own fingerprint import — that is what qualifying the \
+         symbol bought (#215). Got {hash_providers:?}"
+    );
+
+    // Not "discount.dll provides it": WHICH module wins is decided by link order, so naming
+    // one would turn a reordered link line into a failure reporting the wrong thing. The
+    // property is the COUNT, exactly as the deleted fingerprint trap recorded.
+    assert_eq!(
+        version_providers.len(),
+        1,
+        "a linked host imports ml_module_abi_version from exactly one module today, and the \
+         linker chooses which — the accepted cost of DP-Q2. Got {version_providers:?}. If \
+         this is now 2, the version symbol has been qualified per module and this test has \
+         done its job: delete it and update SPEC-qualified-iface-hash §2.2, HOST_ABI.md and \
+         DECISIONS.md D18, which all describe the single binding"
     );
 }

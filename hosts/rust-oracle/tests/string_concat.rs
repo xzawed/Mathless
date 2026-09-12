@@ -234,7 +234,7 @@ fn building_a_string_adds_no_import_and_no_export() {
     assert_eq!(
         ex,
         vec![
-            "ml_iface_hash".to_string(),
+            "ml_iface_hash_receipt".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_full_name".to_string(),
             "mlx_label".to_string(),

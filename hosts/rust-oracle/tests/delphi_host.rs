@@ -430,3 +430,40 @@ fn the_staged_host_exists_and_says_it_is_unverified() {
         "the success marker is missing"
     );
 }
+
+/// **Every unit the Pascal host `uses` must also pass its load-time gate.**
+///
+/// `GateOk` calls `OneModule` once per module, and that list was maintained by hand while a
+/// paragraph above it said the gate "covers every module used, not one". It had stopped
+/// being true: `basket` was added to the `uses` clause for the array-input slice and never
+/// gated, so the host called a module it had not checked — the same shape of defect the
+/// fingerprint exists to prevent, in the host that checks fingerprints.
+///
+/// Deriving the list is what stops it happening a third time. It costs nothing and needs no
+/// Delphi, so unlike the gate itself this DOES run in CI (windows-latest).
+#[test]
+fn the_delphi_host_gates_every_unit_it_uses() {
+    let host_dpr = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("delphi-host")
+        .join("host.dpr");
+    let text = std::fs::read_to_string(&host_dpr).expect("read host.dpr");
+    // Comments out first: a `OneModule('x'` written inside one is prose, not a check, and
+    // would let a unit look gated while nothing called it.
+    let code = common::strip_pascal_comments(&text);
+
+    let units = common::delphi_host_units();
+    assert!(
+        units.len() >= 5,
+        "recovered {units:?} from the uses clause — has its shape changed?"
+    );
+    for unit in &units {
+        let call = format!("OneModule('{unit}'");
+        assert!(
+            code.contains(&call),
+            "host.dpr uses `{unit}` but GateOk never calls {call}…): the host would call a \
+             module whose abi version and interface fingerprint it never checked. The units \
+             it uses are {units:?}"
+        );
+    }
+}

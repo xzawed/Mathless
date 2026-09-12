@@ -284,7 +284,8 @@ pub fn emit_artifacts(
     let ir = compile_to_ir(src)?;
 
     // Back end: IR → extern "C" Rust → cdylib DLL, in a private self-cleaning build tree.
-    let rust = codegen::emit(&ir).map_err(|e| EmitError::Compile(CompileError::Codegen(e)))?;
+    let rust = codegen::emit(&ir, module_name)
+        .map_err(|e| EmitError::Compile(CompileError::Codegen(e)))?;
 
     // Stage all four deliverables next to their destination, then move them into place.
     // Nothing reaches `out_dir` until everything has been produced, so a failure part-way

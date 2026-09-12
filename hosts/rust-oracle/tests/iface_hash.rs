@@ -26,6 +26,20 @@ export fn rate(code: i32) -> f64 { if code == 1 { return 0.2 } return 0.0 }
 export fn boxes(items: i32, per: i32) -> i32 { return items / per }
 ";
 
+/// Every module here is built under the SAME name, and the build DIRECTORY carries the tag.
+///
+/// That is the situation the fingerprint exists for — a module replaced by a drifted build
+/// of *itself*, not two modules with different names. It also keeps the control in
+/// [`a_drifted_module_reports_a_different_fingerprint`] honest: since
+/// `SPEC-qualified-iface-hash` the fingerprint export is `ml_iface_hash_<module>`, so
+/// building the two versions under different names would make their export tables differ
+/// and the "name-based linking cannot distinguish these modules" control would then pass by
+/// measuring something else.
+const MODULE: &str = "iface";
+
+/// The symbol that module exports its fingerprint under.
+const HASH_SYMBOL: &[u8] = b"ml_iface_hash_iface\0";
+
 struct Built {
     dir: std::path::PathBuf,
     dll: std::path::PathBuf,
@@ -36,20 +50,22 @@ struct Built {
 fn build(src: &str, tag: &str) -> Built {
     let ir = compile_to_ir(src).expect("compile");
     let expected = iface::fingerprint(&ir);
-    let rust = mlc::codegen::emit(&ir).expect("codegen");
+    let rust = mlc::codegen::emit(&ir, MODULE).expect("codegen");
     let dir = std::env::temp_dir().join(format!("mlc_iface_{}_{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let dll = build_cdylib(&rust, &format!("iface_{tag}"), &dir)
-        .expect("build cdylib")
-        .dll;
+    let dll = build_cdylib(&rust, MODULE, &dir).expect("build cdylib").dll;
     Built { dir, dll, expected }
 }
 
 /// Read the fingerprint the way a host does: load, resolve, call.
 fn hash_of(dll: &std::path::Path) -> u64 {
     let m = Module::load(dll.to_str().unwrap()).expect("load");
-    let f: extern "C" fn() -> u64 =
-        unsafe { std::mem::transmute(m.symbol(b"ml_iface_hash\0").unwrap()) };
+    let f: extern "C" fn() -> u64 = unsafe {
+        std::mem::transmute(
+            m.symbol(HASH_SYMBOL)
+                .expect("the module must export its qualified fingerprint symbol"),
+        )
+    };
     f()
 }
 
@@ -134,7 +150,7 @@ fn a_host_that_checks_refuses_the_drifted_module_and_calls_nothing() {
     for (label, dll) in [("v1", &v1.dll), ("v2", &v2.dll)] {
         let m = Module::load(dll.to_str().unwrap()).expect("load");
         let hash: extern "C" fn() -> u64 =
-            unsafe { std::mem::transmute(m.symbol(b"ml_iface_hash\0").unwrap()) };
+            unsafe { std::mem::transmute(m.symbol(HASH_SYMBOL).unwrap()) };
         if hash() != pinned {
             println!(
                 "{label}: refused (fingerprint {:#018X} != {pinned:#018X})",

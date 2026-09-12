@@ -54,7 +54,7 @@ fn the_colliding_fixture_is_a_real_module_that_still_answers() {
     assert_eq!(
         exports,
         vec![
-            "ml_iface_hash".to_string(),
+            "ml_iface_hash_refund".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_refund".to_string(),
         ],

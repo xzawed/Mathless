@@ -15,7 +15,7 @@
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x224A2953E2699E31 }
+pub extern "C" fn ml_iface_hash_add() -> u64 { 0x224A2953E2699E31 }
 
 fn ml_fn_add(a: i32, b: i32) -> i32 {
     let sum = (a).wrapping_add(b);
@@ -41,7 +41,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x2EDF7518E64EDF74 }
+pub extern "C" fn ml_iface_hash_allocate() -> u64 { 0x2EDF7518E64EDF74 }
 
 fn ml_fn_allocate(stock: *const i32, stock_len: i32, want: i32, ml_buf: *mut i32, ml_cap: i32, ml_needed: *mut i32) -> i32 {
     let __n = stock_len;
@@ -116,7 +116,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x5D04BA666CC0CBC6 }
+pub extern "C" fn ml_iface_hash_basket() -> u64 { 0x5D04BA666CC0CBC6 }
 
 fn ml_fn_basket_total(qty: *const i32, qty_len: i32, price: *const i32, price_len: i32, cap: i32) -> Result<i32, i32> {
     if (qty_len != price_len) {
@@ -203,7 +203,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xC8D1191E339AAF6E }
+pub extern "C" fn ml_iface_hash_carrier() -> u64 { 0xC8D1191E339AAF6E }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;
@@ -287,7 +287,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x8120E9C099B13F94 }
+pub extern "C" fn ml_iface_hash_commission() -> u64 { 0x8120E9C099B13F94 }
 
 fn ml_fn_commission(amount: f64, tier: *mut i32) -> f64 {
     if (amount < 1000000.0f64) {
@@ -337,7 +337,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xE83F762BFBFC9CA4 }
+pub extern "C" fn ml_iface_hash_count_bounded() -> u64 { 0xE83F762BFBFC9CA4 }
 
 fn ml_fn_count_bounded(n: i32, cap: i32) -> i32 {
     let mut i = 0i32;
@@ -366,7 +366,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xB2B1F335D1DC7105 }
+pub extern "C" fn ml_iface_hash_deduction() -> u64 { 0xB2B1F335D1DC7105 }
 
 const ML_INTEGRAL: f64 = 9007199254740992.0;
 fn ml_trunc_raw(x: f64) -> f64 {
@@ -438,7 +438,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x05697A6FAFD68344 }
+pub extern "C" fn ml_iface_hash_discount() -> u64 { 0x05697A6FAFD68344 }
 
 fn ml_fn_discount(price: f64, vip: bool) -> f64 {
     if vip {
@@ -466,7 +466,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xEE1B0032D821B816 }
+pub extern "C" fn ml_iface_hash_discount2() -> u64 { 0xEE1B0032D821B816 }
 
 fn ml_fn_discount2(price: f64, vip: bool) -> f64 {
     let rate = 0.9f64;
@@ -495,7 +495,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x0532D4F36E005A3B }
+pub extern "C" fn ml_iface_hash_discount3() -> u64 { 0x0532D4F36E005A3B }
 
 fn ml_fn_discount3(price: f64, vip: bool) -> f64 {
     let mut result = price;
@@ -524,7 +524,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x5C3F47E3EB635EF8 }
+pub extern "C" fn ml_iface_hash_discount4() -> u64 { 0x5C3F47E3EB635EF8 }
 
 fn ml_fn_vip_rate(vip: bool) -> f64 {
     if vip {
@@ -556,7 +556,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x2B4FBE9547EC2453 }
+pub extern "C" fn ml_iface_hash_line_total() -> u64 { 0x2B4FBE9547EC2453 }
 
 fn ml_fn_line_total(each: f64, qty: i32) -> f64 {
     return (each * (qty as f64));
@@ -581,7 +581,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xF05D0C1F381CF156 }
+pub extern "C" fn ml_iface_hash_negate_if() -> u64 { 0xF05D0C1F381CF156 }
 
 fn ml_fn_negate_if(x: i32, flip: bool) -> i32 {
     if (!flip) {
@@ -609,7 +609,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xDA0077B3A04515AB }
+pub extern "C" fn ml_iface_hash_pack() -> u64 { 0xDA0077B3A04515AB }
 
 fn ml_fn_boxes(qty: i32, per_box: i32) -> i32 {
     return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } };
@@ -653,7 +653,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x159CAA5FE5CB3400 }
+pub extern "C" fn ml_iface_hash_quote() -> u64 { 0x159CAA5FE5CB3400 }
 
 fn ml_fn_check_qty(qty: i32) -> Result<i32, i32> {
     if (qty < 1i32) {
@@ -711,7 +711,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x12CC5B502BEA4895 }
+pub extern "C" fn ml_iface_hash_receipt() -> u64 { 0x12CC5B502BEA4895 }
 
 fn ml_strout(src: *const u8, buf: *mut u8, cap: i32, needed: *mut i32) -> i32 {
     // Pass 1: count to the NUL, inclusive. `n` ends at >= 1 for every string.
@@ -895,7 +895,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xC22D9C0A1441EE54 }
+pub extern "C" fn ml_iface_hash_refund() -> u64 { 0xC22D9C0A1441EE54 }
 
 fn ml_fn_refund(paid: f64, days_since: i32) -> Result<f64, i32> {
     if (paid < 0.0f64) {
@@ -926,7 +926,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x91118FB2AED9DEE5 }
+pub extern "C" fn ml_iface_hash_safe_div() -> u64 { 0x91118FB2AED9DEE5 }
 
 fn ml_fn_safe_div(a: f64, b: f64) -> Result<f64, i32> {
     if (b == 0.0f64) {
@@ -954,7 +954,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x85A56496B143C25C }
+pub extern "C" fn ml_iface_hash_schedule() -> u64 { 0x85A56496B143C25C }
 
 fn ml_fn_schedule(principal: i32, months: i32, ml_buf: *mut i32, ml_cap: i32, ml_needed: *mut i32) -> i32 {
     let __n = months;
@@ -1018,7 +1018,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xEBBDE5676601568D }
+pub extern "C" fn ml_iface_hash_shapes() -> u64 { 0xEBBDE5676601568D }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;
@@ -1176,7 +1176,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0xD3FC526CA957505A }
+pub extern "C" fn ml_iface_hash_sum_to() -> u64 { 0xD3FC526CA957505A }
 
 fn ml_fn_sum_to(n: i32) -> i32 {
     let mut total = 0i32;
@@ -1207,7 +1207,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash() -> u64 { 0x7CE7BE3A0EEE106C }
+pub extern "C" fn ml_iface_hash_vat() -> u64 { 0x7CE7BE3A0EEE106C }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;

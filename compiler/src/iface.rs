@@ -9,7 +9,7 @@
 //! constant that does not depend on any signature.
 //!
 //! This module computes the value that makes that visible: a fingerprint over the module's
-//! **host-visible contract**, exported as `ml_iface_hash()` and pinned into the generated
+//! **host-visible contract**, exported as `ml_iface_hash_<module>()` and pinned into the generated
 //! header so a host can refuse a module it was not built for.
 //!
 //! **It is a contract fingerprint, not an ABI one (DP-H1).** Parameter *names* are part of
@@ -116,7 +116,7 @@ pub fn manifest(module: &IrModule) -> String {
     s
 }
 
-/// The module's interface fingerprint — the value exported as `ml_iface_hash()`.
+/// The module's interface fingerprint — the value exported as `ml_iface_hash_<module>()`.
 pub fn fingerprint(module: &IrModule) -> u64 {
     fnv1a64(manifest(module).as_bytes())
 }

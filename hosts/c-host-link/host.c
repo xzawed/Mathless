@@ -44,10 +44,27 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    uint64_t iface = ml_iface_hash();
+    /* ONE fingerprint check per linked module, and that is the whole point of the symbol
+     * carrying the module's name. Until SPEC-qualified-iface-hash every module exported a
+     * bare `ml_iface_hash`, so the two calls below would have been the same call: the linker
+     * bound one of them for both, silently, and this host checked `discount` twice while
+     * calling `schedule` unchecked. Measured, with no `cl /W4` diagnostic.
+     *
+     * The refusal names the module, because "which one drifted" is the question a host
+     * operator actually has. The exit code stays 3 for either - it is the same kind of
+     * refusal, and a caller that needs the detail reads the line. */
+    uint64_t iface = ml_iface_hash_discount();
     if (iface != ML_DISCOUNT_IFACE_HASH) {
-        printf("refuse: interface %016llX, header pinned %016llX\n",
+        printf("refuse discount: interface %016llX, header pinned %016llX\n",
                (unsigned long long)iface, (unsigned long long)ML_DISCOUNT_IFACE_HASH);
+        return 3;
+    }
+
+    uint64_t iface_schedule = ml_iface_hash_schedule();
+    if (iface_schedule != ML_SCHEDULE_IFACE_HASH) {
+        printf("refuse schedule: interface %016llX, header pinned %016llX\n",
+               (unsigned long long)iface_schedule,
+               (unsigned long long)ML_SCHEDULE_IFACE_HASH);
         return 3;
     }
 

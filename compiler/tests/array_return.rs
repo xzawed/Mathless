@@ -457,3 +457,41 @@ fn the_delphi_unit_declares_the_triple() {
 {unit}"
     );
 }
+
+/// The truncation status is a CONSTANT in the unit, for an array return too.
+///
+/// The C header declares `ML_ST_INSUFFICIENT_BUFFER` for a string return **and** for an
+/// array return; the Pascal unit declared it only for the string one. So a Delphi host of
+/// an array-returning module had to retype `-1` — the exact thing `hosts/c-host/host.c`
+/// refuses to do on the C side ("the error constant comes from the header too … not from a
+/// number retyped here"), and the exact asymmetry `SPEC-string-return` DP-T6 closed for
+/// strings.
+///
+/// Found while writing acceptance E of `SPEC-array-return`: `examples/allocate.mls` returns
+/// arrays and no strings, and its generated `.h` had the constant while its `.pas` did not.
+#[test]
+fn the_delphi_unit_declares_the_truncation_status_for_an_array_return() {
+    let unit = mlc::header::emit_delphi_unit(
+        &compile_to_ir("export fn f(n: i32) -> [i32]! { result n }").expect("compile"),
+        "m",
+    );
+    assert!(
+        unit.contains("ML_ST_INSUFFICIENT_BUFFER = -1;"),
+        "a module that can truncate must declare the status its host compares against:\n{unit}"
+    );
+    // And only once, for a module that returns BOTH shapes — a Pascal const block that
+    // declares the same identifier twice does not compile.
+    let both = mlc::header::emit_delphi_unit(
+        &compile_to_ir(
+            "export fn a(n: i32) -> [i32]! { result n }\n\
+             export fn b(s: string) -> string! { return s }",
+        )
+        .expect("compile"),
+        "m",
+    );
+    assert_eq!(
+        both.matches("ML_ST_INSUFFICIENT_BUFFER = -1;").count(),
+        1,
+        "declared twice in one const block, which is a compile error in Pascal:\n{both}"
+    );
+}

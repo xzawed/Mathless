@@ -102,7 +102,14 @@ fn the_readmes_do_not_understate_the_export_set() {
     // this guard entirely (protection.rs would still have caught it, but the READMEs would
     // have gone stale silently, which is the exact failure this file exists to stop).
     let protection = read("hosts/rust-oracle/tests/protection.rs");
-    let pinned = string_literals_in_vec_after(&protection, "        exports,");
+    // One of the three carries the module's name, so what protection.rs pins is
+    // `ml_iface_hash_{module}` and what a document can state is `ml_iface_hash_<module>` —
+    // the same two spellings the reserved-symbol guard above reconciles, through the same
+    // one translation.
+    let pinned: Vec<String> = string_literals_in_vec_after(&protection, "        exports,")
+        .iter()
+        .map(|s| placeholder_to_module(s))
+        .collect();
     assert!(
         pinned.len() >= 3,
         "recovered {pinned:?} from protection.rs's export assertion — has its shape changed?"
@@ -400,6 +407,15 @@ fn with_commas(n: u64) -> String {
 /// It also forbids a module-specific `mlx_*` declaration. The file used to declare
 /// `mlx_discount` from one example — the kind of detail that goes stale in a file nobody
 /// compiles, and the reason D4 was open at all.
+///
+/// **One of the two is a PATTERN, not a declaration.** Since `SPEC-qualified-iface-hash` the
+/// fingerprint export is `ml_iface_hash_<module>`, so the emitter's literal carries a format
+/// placeholder and `runtime/ml_abi.h` cannot declare the symbol at all — the name is not
+/// fixed. It documents the shape instead, and [`placeholder_to_module`] is the single
+/// translation between the two spellings. That is a real narrowing of what this can prove:
+/// for that symbol it now checks that the file DESCRIBES the export, not that it declares
+/// it. Both were only ever textual — nothing compiles `ml_abi.h` — so what is lost is the
+/// declaration's shape, and what is kept is the name and the signature.
 #[test]
 fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits() {
     let header_rs = read("compiler/src/header.rs");
@@ -427,10 +443,11 @@ fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits
     );
 
     for decl in &reserved {
+        let want = placeholder_to_module(decl);
         assert!(
-            abi_h.contains(decl),
+            abi_h.contains(&want),
             "compiler/src/header.rs emits '{decl}' into every generated header, but \
-             runtime/ml_abi.h does not declare it. That file is the hand-written list of \
+             runtime/ml_abi.h does not carry '{want}'. That file is the hand-written list of \
              reserved symbols; nothing compiles it, so only this test can notice"
         );
     }
@@ -850,9 +867,15 @@ fn the_link_host_never_resolves_a_symbol_by_name() {
     }
     // And it really does call the module and the gate, rather than being an empty shell
     // that trivially satisfies the check above.
+    // Both fingerprints, not one. This host links two modules, and until
+    // SPEC-qualified-iface-hash they exported the same `ml_iface_hash`, so "the host calls
+    // the fingerprint" was satisfied while `schedule` was called with no interface check at
+    // all — the linker chose which module the single call reached (STATUS §7-4). Naming both
+    // is what makes this guard say "every linked module is gated" rather than "a gate exists".
     for expected in [
         "mlx_discount(",
-        "ml_iface_hash()",
+        "ml_iface_hash_discount()",
+        "ml_iface_hash_schedule()",
         "ml_module_abi_version()",
     ] {
         assert!(
@@ -869,6 +892,32 @@ fn the_link_host_never_resolves_a_symbol_by_name() {
 /// Deliberately naive: it does not understand string literals, which is fine for the one
 /// file it is used on (no `//` or `/*` inside any string there) and would be over-building
 /// for anything this test needs.
+/// `"uint64_t ml_iface_hash_{dll_name}(void);"` → `"uint64_t ml_iface_hash_<module>(void);"`.
+///
+/// The reserved declarations above are recovered from `header.rs`'s own string literals, and
+/// one of them now spells the module's name into the symbol. Where a generated header has a
+/// real name, the emitter's literal has a format placeholder and `runtime/ml_abi.h` has the
+/// pattern `<module>` — because a file that serves every module cannot pick one. This is the
+/// only place those three spellings are reconciled.
+///
+/// Anything between `{` and `}` becomes `<module>`, so a positional `{}` reads the same as a
+/// named `{dll_name}`. An unclosed `{` stops the rewrite and leaves the rest verbatim, which
+/// makes the assertion fail loudly rather than quietly matching less.
+fn placeholder_to_module(decl: &str) -> String {
+    let mut out = String::with_capacity(decl.len());
+    let mut rest = decl;
+    while let Some(open) = rest.find('{') {
+        let Some(close) = rest[open..].find('}') else {
+            break;
+        };
+        out.push_str(&rest[..open]);
+        out.push_str("<module>");
+        rest = &rest[open + close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn strip_c_comments(src: &str) -> String {
     let bytes = src.as_bytes();
     let mut out = String::with_capacity(src.len());

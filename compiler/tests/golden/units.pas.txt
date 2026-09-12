@@ -21,7 +21,7 @@ const
   ML_ADD_IFACE_HASH: UInt64 = UInt64($224A2953E2699E31);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_add: UInt64; cdecl; external ML_MODULE;
 function mlx_add(a: Integer; b: Integer): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -71,12 +71,18 @@ interface
 const
   ML_MODULE = 'allocate.dll';
   ML_ALLOCATE_IFACE_HASH: UInt64 = UInt64($2EDF7518E64EDF74);
+  { Q12 caller-allocates protocol: the buffer was too small to hold the result,
+    NUL included. Truncation is a FAILURE, not a short success - nothing is written,
+    and ml_needed is the exact size to allocate, in the same unit as ml_cap. }
+  { For an ARRAY return ml_cap and ml_needed count ELEMENTS, not bytes, so the
+    retry is SetLength(Arr, Needed) and Cap := Length(Arr) - never a byte count. }
+  ML_ST_INSUFFICIENT_BUFFER = -1;
   { An array index outside 0..len. The out-parameter is NOT written (D17), and
     the length is the one YOU passed alongside the pointer. }
   ML_ST_INDEX_OUT_OF_RANGE = -2;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_allocate: UInt64; cdecl; external ML_MODULE;
 function mlx_allocate(stock: PInteger; stock_len: Integer; want: Integer; ml_buf: PInteger; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_in_stock(stock: PInteger; stock_len: Integer; ml_buf: PBoolean; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 
@@ -126,7 +132,7 @@ const
   ML_ST_INDEX_OUT_OF_RANGE = -2;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_basket: UInt64; cdecl; external ML_MODULE;
 function mlx_basket_total(qty: PInteger; qty_len: Integer; price: PInteger; price_len: Integer; cap: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_largest(xs: PDouble; xs_len: Integer; floor: Double; out out_value: Double): Integer; cdecl; external ML_MODULE;
 function mlx_how_many(flags: PBoolean; flags_len: Integer): Integer; cdecl; external ML_MODULE;
@@ -188,7 +194,7 @@ const
   ML_ST_INSUFFICIENT_BUFFER = -1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_carrier: UInt64; cdecl; external ML_MODULE;
 function mlx_carrier_name(scac: PAnsiChar; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_carrier_label(scac: PAnsiChar; out tier: Integer; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 
@@ -218,7 +224,7 @@ const
   ML_COMMISSION_ERR_E_NEGATIVE = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_commission: UInt64; cdecl; external ML_MODULE;
 function mlx_commission(amount: Double; out tier: Integer): Double; cdecl; external ML_MODULE;
 function mlx_commission_checked(amount: Double; out tier: Integer; out out_value: Double): Integer; cdecl; external ML_MODULE;
 
@@ -247,7 +253,7 @@ const
   ML_COUNT_BOUNDED_IFACE_HASH: UInt64 = UInt64($E83F762BFBFC9CA4);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_count_bounded: UInt64; cdecl; external ML_MODULE;
 function mlx_count_bounded(n: Integer; cap: Integer): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -275,7 +281,7 @@ const
   ML_DEDUCTION_IFACE_HASH: UInt64 = UInt64($B2B1F335D1DC7105);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_deduction: UInt64; cdecl; external ML_MODULE;
 function mlx_deduction(gross: Double): Double; cdecl; external ML_MODULE;
 function mlx_fl(x: Double): Double; cdecl; external ML_MODULE;
 function mlx_ce(x: Double): Double; cdecl; external ML_MODULE;
@@ -307,7 +313,7 @@ const
   ML_DISCOUNT_IFACE_HASH: UInt64 = UInt64($05697A6FAFD68344);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_discount: UInt64; cdecl; external ML_MODULE;
 function mlx_discount(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -335,7 +341,7 @@ const
   ML_DISCOUNT2_IFACE_HASH: UInt64 = UInt64($EE1B0032D821B816);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_discount2: UInt64; cdecl; external ML_MODULE;
 function mlx_discount2(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -363,7 +369,7 @@ const
   ML_DISCOUNT3_IFACE_HASH: UInt64 = UInt64($0532D4F36E005A3B);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_discount3: UInt64; cdecl; external ML_MODULE;
 function mlx_discount3(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -391,7 +397,7 @@ const
   ML_DISCOUNT4_IFACE_HASH: UInt64 = UInt64($5C3F47E3EB635EF8);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_discount4: UInt64; cdecl; external ML_MODULE;
 function mlx_discount4(price: Double; vip: Boolean): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -419,7 +425,7 @@ const
   ML_LINE_TOTAL_IFACE_HASH: UInt64 = UInt64($2B4FBE9547EC2453);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_line_total: UInt64; cdecl; external ML_MODULE;
 function mlx_line_total(each: Double; qty: Integer): Double; cdecl; external ML_MODULE;
 
 implementation
@@ -447,7 +453,7 @@ const
   ML_NEGATE_IF_IFACE_HASH: UInt64 = UInt64($F05D0C1F381CF156);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_negate_if: UInt64; cdecl; external ML_MODULE;
 function mlx_negate_if(x: Integer; flip: Boolean): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -476,7 +482,7 @@ const
   ML_PACK_ERR_E_EMPTY_BOX = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_pack: UInt64; cdecl; external ML_MODULE;
 function mlx_boxes(qty: Integer; per_box: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_loose(qty: Integer; per_box: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_boxes_checked(qty: Integer; per_box: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
@@ -508,7 +514,7 @@ const
   ML_QUOTE_ERR_E_DIV0 = 2;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_quote: UInt64; cdecl; external ML_MODULE;
 function mlx_unit_price(total: Double; qty: Integer; out out_value: Double): Integer; cdecl; external ML_MODULE;
 function mlx_line_check(qty: Integer; out tier: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
 
@@ -567,7 +573,7 @@ const
   ML_ST_INSUFFICIENT_BUFFER = -1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_receipt: UInt64; cdecl; external ML_MODULE;
 function mlx_full_name(first: PAnsiChar; last: PAnsiChar; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_receipt_line(item: PAnsiChar; qty: Integer; unit_price: Integer; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_label(n: Integer; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
@@ -600,7 +606,7 @@ const
   ML_REFUND_ERR_E_TOO_LATE = 4;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_refund: UInt64; cdecl; external ML_MODULE;
 function mlx_refund(paid: Double; days_since: Integer; out out_value: Double): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -629,7 +635,7 @@ const
   ML_SAFE_DIV_ERR_DIV_BY_ZERO = 1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_safe_div: UInt64; cdecl; external ML_MODULE;
 function mlx_safe_div(a: Double; b: Double; out out_value: Double): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -663,9 +669,15 @@ const
   ML_MODULE = 'schedule.dll';
   ML_SCHEDULE_IFACE_HASH: UInt64 = UInt64($85A56496B143C25C);
   ML_SCHEDULE_ERR_E_BAD_TERM = 1;
+  { Q12 caller-allocates protocol: the buffer was too small to hold the result,
+    NUL included. Truncation is a FAILURE, not a short success - nothing is written,
+    and ml_needed is the exact size to allocate, in the same unit as ml_cap. }
+  { For an ARRAY return ml_cap and ml_needed count ELEMENTS, not bytes, so the
+    retry is SetLength(Arr, Needed) and Cap := Length(Arr) - never a byte count. }
+  ML_ST_INSUFFICIENT_BUFFER = -1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_schedule: UInt64; cdecl; external ML_MODULE;
 function mlx_schedule(principal: Integer; months: Integer; ml_buf: PInteger; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_one_payment(principal: Integer; months: Integer; month: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
 
@@ -725,7 +737,7 @@ const
   ML_ST_INSUFFICIENT_BUFFER = -1;
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_shapes: UInt64; cdecl; external ML_MODULE;
 function mlx_is_big(n: Integer; out out_value: Boolean): Integer; cdecl; external ML_MODULE;
 function mlx_bump(n: Integer; out out_value: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_answer(out out_value: Integer): Integer; cdecl; external ML_MODULE;
@@ -761,7 +773,7 @@ const
   ML_SUM_TO_IFACE_HASH: UInt64 = UInt64($D3FC526CA957505A);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_sum_to: UInt64; cdecl; external ML_MODULE;
 function mlx_sum_to(n: Integer): Integer; cdecl; external ML_MODULE;
 
 implementation
@@ -814,7 +826,7 @@ const
   ML_VAT_IFACE_HASH: UInt64 = UInt64($7CE7BE3A0EEE106C);
 
 function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;
-function ml_iface_hash: UInt64; cdecl; external ML_MODULE;
+function ml_iface_hash_vat: UInt64; cdecl; external ML_MODULE;
 function mlx_vat_rate(country: PAnsiChar): Double; cdecl; external ML_MODULE;
 function mlx_issuer_of(bin: PAnsiChar): Integer; cdecl; external ML_MODULE;
 function mlx_is_export_item(code: PAnsiChar): Boolean; cdecl; external ML_MODULE;

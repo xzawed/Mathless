@@ -68,7 +68,7 @@ fn compile_error_display_reports_codegen_errors() {
         }],
         errors: vec![],
     };
-    let err = CompileError::Codegen(codegen::emit(&ir).unwrap_err());
+    let err = CompileError::Codegen(codegen::emit(&ir, "diag").unwrap_err());
     let shown = err.to_string();
     assert!(shown.starts_with("codegen error:"), "{shown}");
     assert!(!shown.contains("CodegenError {"), "{shown}");

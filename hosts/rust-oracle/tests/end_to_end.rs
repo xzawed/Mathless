@@ -4,13 +4,16 @@
 #![cfg(windows)]
 
 use ml_oracle::Module;
-use mlc::{codegen::build_cdylib, compile_to_rust};
+use mlc::{codegen::build_cdylib, compile_to_rust_named};
 
 #[test]
 fn compiles_discount_mls_and_calls_it_via_oracle() {
     // A: source → emitted Rust → native DLL, produced by the compiler.
     let src = include_str!("../../../examples/discount.mls");
-    let rust = compile_to_rust(src).expect("compile discount.mls");
+    // Named, because a DLL comes out of this: the fingerprint export carries the module name
+    // (SPEC-qualified-iface-hash) and `build_cdylib` refuses a source whose name does not
+    // match the crate it is asked to build.
+    let rust = compile_to_rust_named(src, "discount").expect("compile discount.mls");
     // Isolate the build tree per test process (build_cdylib expects a unique workdir); a
     // fixed name would race two concurrent `cargo test` runs.
     let workdir = std::env::temp_dir().join(format!("mlc_e2e_{}", std::process::id()));

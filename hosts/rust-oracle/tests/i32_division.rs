@@ -114,8 +114,13 @@ fn the_export_surface_is_unchanged_in_shape() {
         names.contains(&"mlx_boxes_checked".to_string()),
         "{names:?}"
     );
-    assert!(names.contains(&"ml_iface_hash".to_string()), "{names:?}");
-    // Three `export fn` plus the two reserved symbols (ml_module_abi_version, ml_iface_hash).
+    assert!(
+        names.contains(&"ml_iface_hash_pack".to_string()),
+        "{names:?}"
+    );
+    // Three `export fn` plus the two reserved symbols (ml_module_abi_version,
+    // ml_iface_hash_pack — the fingerprint carries the module name since
+    // SPEC-qualified-iface-hash, and the COUNT is what this pins).
     assert_eq!(names.len(), 5, "nothing else may be exported: {names:?}");
     // The size proxy moves with the added guard; record it rather than pin it (STATUS 5-5).
     let size = std::fs::metadata(&dll).unwrap().len();

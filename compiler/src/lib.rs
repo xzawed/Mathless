@@ -50,9 +50,25 @@ pub fn compile_to_ir(src: &str) -> Result<ir::IrModule, CompileError> {
 }
 
 /// Full front→middle→back: source → typed IR → emitted `extern "C"` Rust source (W4).
+///
+/// **Lowering only.** There is no file behind `src`, so there is no module name either, and
+/// the fingerprint export is qualified with [`codegen::UNNAMED_MODULE`]
+/// (`ml_iface_hash_unnamed`). That is right for reading the lowering of an expression and
+/// wrong for producing an artifact — [`codegen::build_cdylib`] refuses the mismatch instead
+/// of writing a DLL whose fingerprint symbol names a module that does not exist. Use
+/// [`compile_to_rust_named`] whenever the name will reach a file.
 pub fn compile_to_rust(src: &str) -> Result<String, CompileError> {
+    compile_to_rust_named(src, codegen::UNNAMED_MODULE)
+}
+
+/// [`compile_to_rust`] for a module that has a name: the source file's stem, which is also
+/// the crate name, the DLL name, the C header guard and the Delphi unit name.
+///
+/// The name reaches the back end for one reason — the fingerprint export carries it
+/// (`SPEC-qualified-iface-hash`), so that a host linking two modules can check both.
+pub fn compile_to_rust_named(src: &str, module_name: &str) -> Result<String, CompileError> {
     let ir = compile_to_ir(src)?;
-    codegen::emit(&ir).map_err(CompileError::Codegen)
+    codegen::emit(&ir, module_name).map_err(CompileError::Codegen)
 }
 
 #[derive(Debug, PartialEq, Eq)]

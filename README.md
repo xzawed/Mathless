@@ -101,7 +101,7 @@ hold, and a real C host loads the same module. The stripped `no_std` build is ab
 the exact byte count is machine-dependent (measured: 9,728 B here, 9,216 B on GitHub's
 `windows-latest`, same pinned rustc; the pin covers rustc, not the MSVC linker) — and it
 exports exactly the three symbols it should — `mlx_discount` plus the reserved
-`ml_module_abi_version` and `ml_iface_hash`. We cross-check that count against
+`ml_module_abi_version` and `ml_iface_hash_<module>`. We cross-check that count against
 `dumpbin /exports`, so it does not rest on our own PE reader alone.
 
 **Delphi is gated, but not in CI.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with
@@ -125,7 +125,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 ```sh
 mlc build discount.mls -o out/
-#  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version + ml_iface_hash
+#  out/discount.dll   native module — exports mlx_discount + ml_module_abi_version + ml_iface_hash_discount
 #  out/discount.h     C header
 #  out/discount.pas   Delphi import unit (Delphi: checked by MATHLESS_GATE_DELPHI, which does not run in CI)
 #  out/discount.lib   MSVC import library (link-time binding)

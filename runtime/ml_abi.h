@@ -64,6 +64,10 @@ extern "C" {
  * Every module exports these two, whatever its source says. `doc_claims.rs` fails if the
  * compiler starts emitting a reserved `ml_*` declaration that is missing from this file -
  * which is how ml_iface_hash came to be absent here for a slice after it shipped.
+ *
+ * One of the two is spelled with the module's name in it, so only ONE of them can be
+ * declared here. Which one, and why it is that one, is the subject of the second block
+ * below.
  */
 
 /* The module ABI version. Contract for hosts: resolve it (GetProcAddress on Windows today;
@@ -71,7 +75,17 @@ extern "C" {
  * major mismatch. The reference C host does refuse, since 2026-09-02, and it does so
  * before the first call on every module it loads (hosts/c-host/host.c, gate()). For a
  * third-party host it stays a CONTRACT: nothing in the module enforces it, and the Rust
- * oracle only asserts the value matches. */
+ * oracle only asserts the value matches.
+ *
+ * Deliberately NOT qualified with the module name, unlike the fingerprint below. Its value
+ * is a compiler constant - every module built by one compiler answers the same number - so
+ * a linker binding one module's copy for all of them returns the right answer anyway. And
+ * it is D18's bootstrap: resolving this symbol is the only way a host can ask a module
+ * which ABI it speaks, so a host that had to know the module name first would have nothing
+ * left to negotiate with. The cost is recorded rather than hidden: modules built by two
+ * DIFFERENT compiler versions and linked together would bind one version symbol and skip
+ * the other's. That is outside the one-compiler premise, it is an argument and not a
+ * measurement, and no slice fixes it today. */
 uint32_t ml_module_abi_version(void);
 
 /* A fingerprint of the module's host-visible interface - the exported signatures including
@@ -81,9 +95,23 @@ uint32_t ml_module_abi_version(void);
  * matches. That failure was measured before this existed: a silently wrong answer, and an
  * access violation.
  *
+ * The export carries the MODULE NAME, so this file cannot declare it - the name is not
+ * fixed. Every generated header declares its own:
+ *
+ *   uint64_t ml_iface_hash_<module>(void);
+ *
+ * It was a bare `ml_iface_hash` until SPEC-qualified-iface-hash. This is the one reserved
+ * export whose VALUE differs per module while its name did not, and that combination has a
+ * measured consequence: a C host that LINKS two modules gets one binding for both, chosen
+ * by the linker with no `cl /W4` diagnostic, and calls the other module with no interface
+ * check at all - the exact state the fingerprint exists to prevent. The version above keeps
+ * its bare name on purpose (see there).
+ *
+ * A DYNAMIC host builds the name from the module it is loading: the module name is the
+ * source file's stem, so `discount.dll` answers to `ml_iface_hash_discount`.
+ *
  * NOT integrity (P1). An attacker who edits the module edits this function too. What it
  * stops is a module swapped without rebuilding the host. */
-uint64_t ml_iface_hash(void);
 
 /* User modules export their own functions under the mlx_ prefix, distinct from the runtime
  * ml_* namespace above (D18). Those declarations belong in the module's generated header,

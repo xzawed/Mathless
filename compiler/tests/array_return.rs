@@ -495,3 +495,61 @@ fn the_delphi_unit_declares_the_truncation_status_for_an_array_return() {
         "declared twice in one const block, which is a compile error in Pascal:\n{both}"
     );
 }
+
+/// **The scalar safety net does not reach array ELEMENTS, and the zero-fill makes that quiet.**
+///
+/// Found by re-running the repository's own section-7 method on 2026-09-12: ten business
+/// rules written naturally, compiled, and called from a real C host. All ten worked — but
+/// one of them was written with two `if`s and no `else`, because Mathless has no `else`, and
+/// that means the author writes the COMPLEMENT CONDITION BY HAND.
+///
+/// Get that complement wrong and the two shapes diverge:
+///
+/// | shape | a gap in the conditions |
+/// |---|---|
+/// | scalar `-> i32` | **compile error** — `may not return on all paths` |
+/// | array `-> [i32]!` | **compiles**, and the uncovered index reads back as the zero-fill |
+///
+/// Measured on a linked C host, with `need <= 0` and `need > 1` leaving `need == 1`
+/// uncovered: `status=0 needed=3 result=[5,0,0]` where the answer is `[5,0,1]`.
+///
+/// **Neither half is a bug.** `typeck.rs` skips the return-path check for an array return on
+/// purpose — the value IS the host's buffer and there is no `return` to demand — and DP-R4
+/// already declared per-index coverage undecidable, which is why the fill exists at all. The
+/// fill is a real gain: it turns an undefined hole into a defined value.
+///
+/// What this pins is the ASYMMETRY, because an author who has learned "the compiler catches
+/// my missing branch" is wrong exactly where the consequence is a plausible number rather
+/// than a crash. It is a documented hazard now (`SPEC-array-return` §5.2, `LANGUAGE.md`), and
+/// a documented hazard that nothing checks is how the wording drifts.
+#[test]
+fn a_gap_in_the_conditions_is_caught_for_a_scalar_and_not_for_an_array() {
+    // `x == 1` is covered by neither branch.
+    let scalar = "export fn band(x: i32) -> i32 {\n\
+                  \x20 if x <= 0 { return 0 }\n\
+                  \x20 if x > 1 { return 2 }\n\
+                  }";
+    let err = compile_to_ir(scalar).expect_err("a scalar return must demand every path");
+    assert!(
+        err.to_string().contains("may not return on all paths"),
+        "the scalar half must be refused for the COVERAGE reason, not some other one: {err}"
+    );
+
+    // The same gap, one index at a time. Nothing refuses it, and nothing can: whether every
+    // index is assigned depends on the loop, which is arbitrary (DP-R4).
+    let array = "export fn reorder(on_hand: [i32], target: i32) -> [i32]! {\n\
+                 \x20 result len(on_hand)\n\
+                 \x20 let mut i = 0\n\
+                 \x20 while i < len(on_hand) {\n\
+                 \x20   let need = target - on_hand[i]\n\
+                 \x20   if need <= 0 { result[i] = 0 }\n\
+                 \x20   if need > 1 { result[i] = need }\n\
+                 \x20   i = i + 1\n\
+                 \x20 }\n\
+                 }";
+    compile_to_ir(array).expect(
+        "the array half must still compile — if this starts failing, per-index coverage has \
+         become checkable and SPEC-array-return DP-R4 plus the note in section 5.2 are now \
+         wrong, which is a bigger change than this test",
+    );
+}

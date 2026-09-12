@@ -20,7 +20,7 @@
 
 use std::path::{Path, PathBuf};
 
-use mlc::{compile_to_ir, compile_to_rust};
+use mlc::{compile_to_ir, compile_to_rust_named};
 
 fn examples_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -113,7 +113,11 @@ fn the_generated_rust_is_frozen() {
     );
     for (name, src) in examples() {
         all.push_str(&banner(&name));
-        all.push_str(&compile_to_rust(&src).unwrap_or_else(|e| panic!("{name}: {e}")));
+        // NAMED, with the example's own stem — which is what `mlc build` passes. The
+        // fingerprint export carries the module name since SPEC-qualified-iface-hash, so the
+        // nameless entry point would freeze `ml_iface_hash_unnamed` for all nineteen modules
+        // and this golden would stop showing the one thing that differs between them.
+        all.push_str(&compile_to_rust_named(&src, &name).unwrap_or_else(|e| panic!("{name}: {e}")));
     }
     check_golden("generated.rs.txt", &all);
 }

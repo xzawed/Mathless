@@ -30,7 +30,9 @@ fn an_internal_helper_never_reaches_the_export_table() {
     assert_eq!(
         exports,
         vec![
-            "ml_iface_hash".to_string(),
+            // Qualified with the module name since SPEC-qualified-iface-hash — and the
+            // count, which is what acceptance C is about, is unchanged at three.
+            "ml_iface_hash_discount4".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_discount4".to_string(),
         ],

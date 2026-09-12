@@ -363,7 +363,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
     //
     // `/exports` and not `/linkermember`, and that is measured rather than assumed: on
     // `discount.lib` from a real `mlc build`, `dumpbin /nologo /exports` exits 0 and prints
-    // exactly `ml_iface_hash`, `ml_module_abi_version`, `mlx_discount`. (`/linkermember:1`
+    // exactly `ml_iface_hash_discount`, `ml_module_abi_version`, `mlx_discount`. (`/linkermember:1`
     // also works, listing `mlx_discount` and `__imp_mlx_discount`, but it reports archive
     // members rather than the export set this asserts.) Grok flagged the mode as a risk
     // during review; the run above is what settled it.
@@ -381,7 +381,11 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         String::from_utf8_lossy(&implib_dump.stderr)
     );
     let implib_text = String::from_utf8_lossy(&implib_dump.stdout);
-    for symbol in ["mlx_discount", "ml_module_abi_version", "ml_iface_hash"] {
+    for symbol in [
+        "mlx_discount",
+        "ml_module_abi_version",
+        "ml_iface_hash_discount",
+    ] {
         assert!(
             implib_text.contains(symbol),
             "the import library does not offer '{symbol}' to the linker, so a host that \
@@ -510,6 +514,18 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         "the C host never exercised the drift refusal — it printed GATE_D_DRIFT_SKIPPED, so \
          the drifted module was not passed on the command line:\n{stdout}"
     );
+    // …and that it refused for the FINGERPRINT reason. `gate()` now builds the fingerprint
+    // symbol from the module's file name (SPEC-qualified-iface-hash), which gives the
+    // refusal a second way to happen: a name it cannot resolve. `!gate(...)` is satisfied by
+    // either, so a derivation bug would leave the drift check green while measuring
+    // "GetProcAddress failed" instead of "the interfaces differ". The host prints which one;
+    // this reads it.
+    assert!(
+        stdout.contains("refuse pack_drift.dll: interface"),
+        "the drift refusal must be the fingerprint comparison, not a symbol the host failed \
+         to resolve — `refuse …: a reserved symbol is missing` would satisfy the gate check \
+         above while proving nothing about the fingerprint:\n{stdout}"
+    );
 
     // Cross-check our own PE reader against Microsoft's dumpbin on the same file: until now
     // the export measurement (acceptance C) had exactly one implementation — ours.
@@ -547,12 +563,22 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         // acceptance C's whole claim is "exactly these three symbols" — did not (STATUS
         // §9-A A4). Assert the shape every module must have, not merely non-emptiness:
         // both reserved symbols plus at least one `mlx_` entry point.
+        // The fingerprint symbol carries the module name since SPEC-qualified-iface-hash, so
+        // the name expected here is DERIVED from the file rather than written once. A fixed
+        // `ml_iface_hash` would have been satisfied by any module's copy of it — which is
+        // the confusion the rename removes, and not one to re-introduce in the guard that
+        // measures it.
+        let stem = dll
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a module path always has a stem");
+        let fingerprint = format!("ml_iface_hash_{stem}");
         assert!(
             ours.iter().any(|s| s == "ml_module_abi_version")
-                && ours.iter().any(|s| s == "ml_iface_hash")
+                && ours.contains(&fingerprint)
                 && ours.iter().any(|s| s.starts_with("mlx_")),
             "the export set read for {} is {ours:?}; every module must export \
-             ml_module_abi_version, ml_iface_hash and at least one mlx_ function. An empty \
+             ml_module_abi_version, {fingerprint} and at least one mlx_ function. An empty \
              read, or one that lost a reserved symbol, would otherwise match dumpbin's and \
              prove nothing. (It does NOT catch a read that drops one of several mlx_ names \
              while keeping the shape — section_invariants.rs pins the exact count against \
@@ -706,11 +732,80 @@ fn a_c_host_that_links_against_the_import_library() {
         refused.status.code()
     );
     assert!(
-        refused_out.contains("refuse: interface"),
-        "the refusal must say which check failed:\n{refused_out}"
+        refused_out.contains("refuse discount: interface"),
+        "the refusal must say which check failed, and for WHICH module:\n{refused_out}"
     );
     println!("{}", refused_out.trim_end());
-    println!("GATE_LINK_OK: link-time binding verified, and a drifted module refused.");
+
+    // 3. Beside a drifted SECOND module, the first one intact. This is acceptance A of
+    //    `SPEC-qualified-iface-hash`, and it is the half that could not exist before: every
+    //    module exported the same `ml_iface_hash`, so this host checked one fingerprint and
+    //    the linker chose which — `schedule` was called with no interface check at all, and
+    //    a drift here produced a clean exit 0. Measured (STATUS §7-4), with no `cl /W4`
+    //    diagnostic.
+    //
+    //    The drift is a parameter RENAME: `months` -> `term`. In C both are
+    //    `int32_t mlx_schedule(int32_t, int32_t, int32_t *, int32_t, int32_t *)`, so every
+    //    symbol still resolves and only the fingerprint can tell them apart (DP-H1 puts
+    //    parameter names in it for exactly this). `one_payment` is kept so the drifted module
+    //    is the same module with a moved interface, not a smaller one.
+    let schedule_drift_src = work.join("scheddriftsrc");
+    let drifted_schedule = emit_artifacts(
+        "error E_BAD_TERM = 1\n\
+         \n\
+         export fn schedule(principal: i32, term: i32) -> [i32]! {\n\
+         \x20   result term\n\
+         \x20   let mut i = 0\n\
+         \x20   while i < term {\n\
+         \x20       result[i] = principal / term\n\
+         \x20       i = i + 1\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         export fn one_payment(principal: i32, months: i32, month: i32) -> i32! {\n\
+         \x20   if months <= 0 { fail E_BAD_TERM }\n\
+         \x20   if month < 0 { fail E_BAD_TERM }\n\
+         \x20   if month >= months { fail E_BAD_TERM }\n\
+         \x20   let base = principal / months\n\
+         \x20   if month == 0 { return base + principal % months }\n\
+         \x20   return base\n\
+         }\n",
+        "schedule",
+        &schedule_drift_src,
+    )
+    .expect("emit drifted schedule");
+
+    let sched_run = work.join("scheddriftrun");
+    std::fs::create_dir_all(&sched_run).expect("create schedule drift run dir");
+    std::fs::copy(&exe, sched_run.join("host_link.exe")).expect("copy exe");
+    std::fs::copy(&arts.dll, sched_run.join("discount.dll")).expect("copy intact discount");
+    std::fs::copy(&drifted_schedule.dll, sched_run.join("schedule.dll"))
+        .expect("copy drifted schedule dll");
+
+    let refused_schedule = run_in_msvc_env(
+        &vcvars,
+        &sched_run,
+        &format!("\"{}\" {abi}", sched_run.join("host_link.exe").display()),
+    );
+    let sched_out = String::from_utf8_lossy(&refused_schedule.stdout);
+    assert_eq!(
+        refused_schedule.status.code(),
+        Some(3),
+        "a drifted SECOND module must be refused too — before the fingerprint symbol carried \
+         the module name this run exited 0, because the host never saw schedule's \
+         fingerprint at all, got {:?}\n{sched_out}",
+        refused_schedule.status.code()
+    );
+    assert!(
+        sched_out.contains("refuse schedule: interface"),
+        "the refusal must name SCHEDULE. `refuse discount: …` here would mean the host is \
+         still reading one module's fingerprint for both:\n{sched_out}"
+    );
+    println!("{}", sched_out.trim_end());
+    println!(
+        "GATE_LINK_OK: link-time binding verified; each linked module's fingerprint is \
+         checked, and a drift in EITHER is refused."
+    );
 }
 
 /// A generated header must compile where a real host actually reads it — **after** the
@@ -886,36 +981,30 @@ fn the_liveness_deadline_actually_kills_a_child_that_never_returns() {
     );
 }
 
-/// **A linked host can check ONE module's fingerprint, and the linker picks which.**
+/// **Acceptance A of `SPEC-qualified-iface-hash`: every linked module's fingerprint is
+/// reachable by name.**
 ///
-/// Measured 2026-09-11, by audit rather than by a guard. Every module exports the SAME
-/// unqualified names — `ml_iface_hash` and `ml_module_abi_version` — so a host that links two
-/// of them gets one binding for both, chosen at link time, with no warning:
+/// The same probe as the trap above, asking the opposite question. The trap existed because
+/// two modules exported the same unqualified `ml_iface_hash`, so the linker bound one and the
+/// other was called with no interface check at all. With the symbol qualified
+/// (`ml_iface_hash_<module>`) the two names cannot collide, and the answer that used to be
+/// "exactly one reachable" must become **both**.
 ///
-/// ```text
-/// ml_iface_hash()        = 05697A6FAFD68344
-/// ML_DISCOUNT_IFACE_HASH = 05697A6FAFD68344  <== MATCH
-/// ML_SCHEDULE_IFACE_HASH = 85A56496B143C25C
-/// ```
-///
-/// The second module's fingerprint is **unreachable by name**. It is called with no interface
-/// check at all, and nothing says so: `cl /W4` emitted no diagnostic.
-///
-/// **STATUS §9-14 recorded this trap in Delphi** — `uses` bound the unqualified name to the
-/// last unit — and concluded "C 호스트는 모듈 핸들마다 해석하므로 이 함정을 만날 수 없다". That
-/// is true of the DYNAMIC host, which resolves per `HMODULE`. It is false of the LINKED one,
-/// and nobody had linked two modules until this audit.
-///
-/// This test PINS the trap rather than fixing it: the fix is a naming decision about the ABI
-/// (per-module symbol names), which is not a test's call to make. If it is fixed, this test
-/// fails and whoever fixed it deletes it deliberately — the same shape as AR1's seam test.
+/// Deliberately the probe and not the host: the host proves that the check is *performed*,
+/// this proves the names are *distinct*. A host could pass by checking one module twice.
 #[test]
-fn linking_two_modules_binds_one_fingerprint_and_the_linker_chooses() {
+fn linking_two_modules_binds_both_fingerprints() {
     let Some(vcvars) = vcvars64() else {
-        println!("GATE_LINK_DUP_SKIPPED: no MSVC toolchain found.");
+        if std::env::var("MATHLESS_GATE_D").as_deref() == Ok("require") {
+            panic!(
+                "MATHLESS_GATE_D=require but MSVC was not found — the per-module fingerprint \
+                 symbol cannot be verified."
+            );
+        }
+        println!("GATE_LINK_BOTH_SKIPPED: no MSVC toolchain found.");
         return;
     };
-    let work = common::TempOut::new("link_dup");
+    let work = common::TempOut::new("link_both");
     let a = emit_artifacts(
         include_str!("../../../examples/discount.mls"),
         "discount",
@@ -929,21 +1018,19 @@ fn linking_two_modules_binds_one_fingerprint_and_the_linker_chooses() {
     )
     .expect("emit schedule");
 
-    let src = work.join("dup_probe.c");
+    let src = work.join("both_probe.c");
     std::fs::write(
         &src,
-        // A raw string on purpose. The first version escaped this C source into an ordinary
-        // Rust literal, and printf's `\n` came out as a REAL newline in the .c file --
-        // `error C2001: newline in constant`. One layer of escaping too few, which is the
-        // failure STATUS section 7-3 (2) is about, arriving in a Rust literal this time
-        // rather than in a shell script.
+        // Raw string, for the reason the trap above records: printf's `\n` must reach the
+        // .c file as two characters, not as a real newline inside a C string literal.
         r#"#include <stdio.h>
 #include <stdint.h>
 #include "discount.h"
 #include "schedule.h"
 int main(void) {
-    uint64_t h = ml_iface_hash();
-    printf("%d %d\n", h == ML_DISCOUNT_IFACE_HASH, h == ML_SCHEDULE_IFACE_HASH);
+    printf("%d %d\n",
+           ml_iface_hash_discount() == ML_DISCOUNT_IFACE_HASH,
+           ml_iface_hash_schedule() == ML_SCHEDULE_IFACE_HASH);
     return 0;
 }
 "#,
@@ -954,7 +1041,7 @@ int main(void) {
         &vcvars,
         &work,
         &format!(
-            "cl /nologo /W4 /std:c11 /I\"{}\" \"{}\" /Fe:dup_probe.exe /Fo:dup_probe.obj \
+            "cl /nologo /W4 /WX /std:c11 /I\"{}\" \"{}\" /Fe:both_probe.exe /Fo:both_probe.obj \
              /link \"{}\" \"{}\"",
             work.display(),
             src.display(),
@@ -964,31 +1051,24 @@ int main(void) {
     );
     assert!(
         compile.status.success(),
-        "linking two modules must at least BUILD -- the duplicate export names are not a link \
-         error, which is half of why this is a trap:\n{}",
-        String::from_utf8_lossy(&compile.stdout)
+        "the probe must BUILD — a qualified fingerprint symbol that the header does not \
+         declare is a compile error, which is the loud half of this change:\n{}\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
     );
 
     let run = run_in_msvc_env(
         &vcvars,
         &work,
-        &format!("\"{}\"", work.join("dup_probe.exe").display()),
+        &format!("\"{}\"", work.join("both_probe.exe").display()),
     );
     let out = String::from_utf8_lossy(&run.stdout);
     let answer = out.trim();
     println!("linked two modules; (matches discount, matches schedule) = {answer}");
-    // EXACTLY ONE reachable -- not "discount's is the one". Which module wins is decided by
-    // link order, so pinning `"1 0"` would turn a reordered link line into a failure that
-    // reported the wrong thing: the trap would be unchanged and the message would say it had
-    // changed. Verification review caught that; the property is the count, not the winner.
-    //
-    // The other two answers are different defects and must stay loud:
-    //   "1 1" -- the two fingerprints COLLIDE, which is a hash defect, not a linkage one.
-    //   "0 0" -- neither is bound, so the probe is measuring nothing.
-    assert!(
-        answer == "1 0" || answer == "0 1",
-        "expected exactly ONE fingerprint to be reachable, got {answer:?}. \"1 1\" would mean \
-         the two fingerprints collided (a hash defect); \"0 0\" would mean neither is bound \
-         (the probe measures nothing). Both are different defects from the one pinned here"
+    assert_eq!(
+        answer, "1 1",
+        "both fingerprints must be reachable by name. \"1 0\"/\"0 1\" is the collision this \
+         slice removes — one module bound, the other called unchecked; \"0 0\" would mean \
+         neither symbol is bound and the probe measures nothing"
     );
 }

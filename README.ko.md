@@ -95,7 +95,7 @@ export를 찾습니다. 그리고 두 번째 C 호스트는 **평범한 방식**
 실제 C 호스트가 같은 모듈을 로드합니다. strip된 `no_std` 빌드는 약 9.0~9.5 KB입니다 — **정확한
 바이트 수는 머신에 따라 다릅니다**(실측: 이 머신 9,728 B, GitHub `windows-latest` 9,216 B. 같은
 핀된 rustc이며, 핀은 rustc를 덮지 MSVC 링커를 덮지 않습니다). 의도한 심볼 세 개
-(`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash`)만 export합니다. 이 개수는
+(`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash_<module>`)만 export합니다. 이 개수는
 `dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지 않습니다.
 
 **Delphi에는 게이트가 있습니다 — 단 CI에는 없습니다.** `MATHLESS_GATE_DELPHI`가
@@ -118,7 +118,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 ```sh
 mlc build discount.mls -o out/
-#  out/discount.dll   네이티브 모듈 — export: mlx_discount + ml_module_abi_version + ml_iface_hash
+#  out/discount.dll   네이티브 모듈 — export: mlx_discount + ml_module_abi_version + ml_iface_hash_discount
 #  out/discount.h     C 헤더
 #  out/discount.pas   Delphi import unit (Delphi: checked by MATHLESS_GATE_DELPHI, which does not run in CI)
 #  out/discount.lib   MSVC 임포트 라이브러리 (링크 타임 바인딩)

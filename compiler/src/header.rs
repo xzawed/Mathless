@@ -75,6 +75,21 @@ fn iface_hash_macro(dll_name: &str) -> String {
     format!("ML_{}_IFACE_HASH", macro_stem(dll_name))
 }
 
+/// Name of the fingerprint EXPORT this header declares — `ml_iface_hash_<module>`.
+///
+/// The constant above says what the header was built against; this says what to ask the
+/// module. They were `ML_<MODULE>_IFACE_HASH` and a bare `ml_iface_hash` until
+/// `SPEC-qualified-iface-hash`, which is one prefixed name and one unprefixed name for the
+/// two halves of a single comparison — and the unprefixed half collided. Measured: a C host
+/// linking two modules bound one `ml_iface_hash` for both, with no `cl /W4` diagnostic, and
+/// called the other module without checking its interface at all.
+///
+/// No new validation rule: `<module>` is the same string `emit_artifacts` already checks is
+/// an identifier before anything is generated (#42), exactly as `mlx_<name>` relies on.
+fn iface_hash_fn(dll_name: &str) -> String {
+    format!("ml_iface_hash_{dll_name}")
+}
+
 /// Name of a module-defined error constant (Q14, closed 2026-09-03 → DP-Q1).
 ///
 /// Same stem as the fingerprint above, so a header carries one naming rule rather than two.
@@ -133,7 +148,8 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     );
     let _ = writeln!(
         s,
-        " * ml_iface_hash() right after loading, and REFUSE the module when they differ:"
+        " * {}() right after loading, and REFUSE the module when they differ:",
+        iface_hash_fn(dll_name)
     );
     let _ = writeln!(
         s,
@@ -150,7 +166,8 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     // compiled, which is what acceptance D does.
     let _ = writeln!(
         s,
-        " *   if (ml_iface_hash() != {}) {{",
+        " *   if ({}() != {}) {{",
+        iface_hash_fn(dll_name),
         iface_hash_macro(dll_name)
     );
     let _ = writeln!(
@@ -278,7 +295,12 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
 
     let _ = writeln!(s, "uint32_t ml_module_abi_version(void);");
-    let _ = writeln!(s, "uint64_t ml_iface_hash(void);");
+    // Written with the module name inline rather than through `iface_hash_fn` so the literal
+    // still carries the shape `uint64_t ml_iface_hash_…(void);`. `doc_claims.rs` recovers the
+    // reserved declarations from THESE literals; a `"{}"` built elsewhere would drop this
+    // symbol out of the derived list and the guard would go on passing while checking one
+    // symbol instead of two (the scope failure STATUS §7-3 records).
+    let _ = writeln!(s, "uint64_t ml_iface_hash_{dll_name}(void);");
     let provenance = error_provenance(module);
     // Bindings describe the module's SURFACE: internal functions are not callable by a host
     // and must not appear here (SPEC-calls section 2.3).
@@ -631,8 +653,8 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
     s.push('\n');
     let _ = writeln!(s, "const");
     let _ = writeln!(s, "  ML_MODULE = '{dll_name}.dll';");
-    // Interface fingerprint of this unit — compare against ml_iface_hash after loading and
-    // refuse the module when they differ (see the C header for the full note).
+    // Interface fingerprint of this unit — compare against ml_iface_hash_<module> after
+    // loading and refuse the module when they differ (see the C header for the full note).
     //
     // The `UInt64(...)` cast is not decoration. A bare `$8120E9C099B13F94` is typed as a
     // SIGNED Int64 first, so every fingerprint with the top bit set — measured: 11 of the 19
@@ -694,9 +716,14 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
         s,
         "function ml_module_abi_version: LongWord; cdecl; external ML_MODULE;"
     );
+    // Qualified like the C declaration. Delphi already resolved the collision its own way —
+    // `uses` binds an unqualified name to the last unit, and §9-14 found that the hard way —
+    // but both bindings must name the SAME exported symbol, so the unit follows the header.
+    // A Pascal `external` with no `name` clause imports under the identifier written here,
+    // which is why renaming the identifier is enough.
     let _ = writeln!(
         s,
-        "function ml_iface_hash: UInt64; cdecl; external ML_MODULE;"
+        "function ml_iface_hash_{dll_name}: UInt64; cdecl; external ML_MODULE;"
     );
     for f in module.functions.iter().filter(|f| f.exported) {
         let _ = writeln!(s, "{} cdecl; external ML_MODULE;", delphi_signature(f));

@@ -4,7 +4,7 @@
 #![cfg(windows)]
 
 use ml_oracle::pe;
-use mlc::{codegen::build_cdylib, compile_to_rust};
+use mlc::{codegen::build_cdylib, compile_to_rust_named};
 
 /// Measured sizes of the stripped `no_std` `discount` module, in bytes.
 ///
@@ -47,28 +47,33 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 #[test]
 fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     let src = include_str!("../../../examples/discount.mls");
-    let rust = compile_to_rust(src).expect("compile");
+    // The crate this is built as, and therefore the name the fingerprint export carries
+    // (SPEC-qualified-iface-hash). It is `discount_w6` rather than `discount` so this test's
+    // build tree cannot be mistaken for another's; the export SET is what acceptance C
+    // measures, and the count is what the documents state.
+    let module = "discount_w6";
+    let rust = compile_to_rust_named(src, module).expect("compile");
     // Isolate the build tree per test process (build_cdylib expects a unique workdir).
     let workdir = std::env::temp_dir().join(format!("mlc_w6_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&workdir);
-    let dll = build_cdylib(&rust, "discount_w6", &workdir)
-        .expect("build")
-        .dll;
+    let dll = build_cdylib(&rust, module, &workdir).expect("build").dll;
 
     // Export table = exactly the two reserved symbols + the mlx_ function (D18).
     // `ml_iface_hash` joined `ml_module_abi_version` with the interface-fingerprint slice;
     // the proxy this test reports therefore moved from 2 exports to 3, and SECURITY.md
     // section on P0 measurements was updated in the same PR rather than left stale.
+    // `SPEC-qualified-iface-hash` renamed one of those three and changed NEITHER the count
+    // nor the size — measured before the rename was decided on, and the reason it was.
     let mut exports = pe::read_exports(&dll).expect("read exports");
     exports.sort();
     assert_eq!(
         exports,
         vec![
-            "ml_iface_hash".to_string(),
+            format!("ml_iface_hash_{module}"),
             "ml_module_abi_version".to_string(),
             "mlx_discount".to_string(),
         ],
-        "module must export only ml_iface_hash + ml_module_abi_version + mlx_discount"
+        "module must export only ml_iface_hash_{module} + ml_module_abi_version + mlx_discount"
     );
 
     // ...and the documents have to state the number this just measured.

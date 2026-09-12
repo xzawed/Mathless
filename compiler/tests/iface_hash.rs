@@ -190,10 +190,10 @@ fn codegen_and_header_agree_on_the_value() {
     let ir = compile_to_ir(src).expect("compile");
     let expected = iface::fingerprint(&ir);
 
-    let rust = mlc::codegen::emit(&ir).expect("codegen");
+    let rust = mlc::codegen::emit(&ir, "discount").expect("codegen");
     assert!(
         rust.contains(&format!(
-            "pub extern \"C\" fn ml_iface_hash() -> u64 {{ 0x{expected:016X} }}"
+            "pub extern \"C\" fn ml_iface_hash_discount() -> u64 {{ 0x{expected:016X} }}"
         )),
         "generated Rust must export the fingerprint:\n{rust}"
     );
@@ -206,7 +206,7 @@ fn codegen_and_header_agree_on_the_value() {
         "header must pin the same value:\n{h}"
     );
     assert!(
-        h.contains("uint64_t ml_iface_hash(void);"),
+        h.contains("uint64_t ml_iface_hash_discount(void);"),
         "header must declare the export:\n{h}"
     );
 
@@ -218,7 +218,7 @@ fn codegen_and_header_agree_on_the_value() {
         "Delphi unit must pin the same value:\n{p}"
     );
     assert!(
-        p.contains("function ml_iface_hash: UInt64; cdecl; external ML_MODULE;"),
+        p.contains("function ml_iface_hash_discount: UInt64; cdecl; external ML_MODULE;"),
         "Delphi unit must declare the export:\n{p}"
     );
 }

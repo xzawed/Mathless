@@ -16,6 +16,7 @@
 //! rather than as something that already scrolled past.
 
 use mlc::codegen::build_cdylib;
+use mlc::compile_to_rust;
 
 fn workdir(tag: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("mlc_gco_{tag}_{}", std::process::id()));
@@ -30,8 +31,14 @@ fn a_failing_generated_crate_reports_what_rustc_said() {
     // that used to produce invalid Rust (#67 closed the last one). So drive codegen directly,
     // which is also the only honest way to test the backend's own failure path.
     let d = workdir("fail");
+    // The fingerprint export is present because `build_cdylib` refuses a source that does
+    // not carry `ml_iface_hash_<crate>` (SPEC-qualified-iface-hash) — it is the join where
+    // the name baked into the source is checked against the name the artifact is built
+    // under. This source stands in for emitter output, so it carries what the emitter always
+    // emits; what is broken about it is still the `-> i32` returning a `&str`.
     let err = build_cdylib(
-        "#![no_std]\npub fn broken() -> i32 { \"not an i32\" }\n",
+        "#![no_std]\n#[no_mangle]\npub extern \"C\" fn ml_iface_hash_broken() -> u64 { 0 }\n\
+         pub fn broken() -> i32 { \"not an i32\" }\n",
         "broken",
         &d,
     )
@@ -64,6 +71,38 @@ fn a_failing_generated_crate_reports_what_rustc_said() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+/// The module's name reaches `build_cdylib` twice — baked into the source by `emit`, and
+/// passed as the crate to build — and separate arguments are how the two can disagree.
+///
+/// This is not hypothetical: `compile_to_rust` has no file behind it, so it emits
+/// `ml_iface_hash_unnamed`, and two oracle tests were passing exactly that to `build_cdylib`
+/// under a real module name. Before this refusal existed the result was a DLL exporting a
+/// fingerprint that named a module which does not exist — resolved by nobody, and failing
+/// far from the cause: `GetProcAddress` returning NULL in a dynamic host, `LNK2019` in a
+/// linked one.
+///
+/// It runs no cargo: the refusal is a string comparison made before the crate is written, so
+/// this costs nothing and can sit in the ungated part of the file.
+#[test]
+fn build_cdylib_refuses_a_source_whose_fingerprint_names_another_module() {
+    let d = workdir("mismatch");
+    let rust = compile_to_rust("export fn f(x: f64) -> f64 { return x }").expect("compile");
+    let err = build_cdylib(&rust, "discount", &d)
+        .expect_err("a source emitting ml_iface_hash_unnamed must not be buildable as `discount`");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("ml_iface_hash_discount") && msg.contains("compile_to_rust_named"),
+        "the refusal must name the symbol it wanted and the entry point that produces it: \
+         {msg}"
+    );
+    // And the refusal happens BEFORE any crate is written, so nothing is left behind.
+    assert!(
+        !d.join("discount").exists(),
+        "the crate directory must not be created for a source that is refused"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 // Windows-only, and the reason is worth stating: `build_cdylib` looks for
 // `target/release/<name>.dll`, so on Linux it builds the crate fine and then fails to find
 // the artifact — cargo produced `lib<name>.so`. That is not a bug to fix here. Making the
@@ -81,6 +120,7 @@ fn a_successful_build_still_produces_a_dll() {
     let d = workdir("ok");
     let dll = build_cdylib(
         "#![no_std]\n#[panic_handler]\nfn p(_: &core::panic::PanicInfo) -> ! { loop {} }\n\
+         #[no_mangle]\npub extern \"C\" fn ml_iface_hash_okcrate() -> u64 { 0 }\n\
          #[no_mangle]\npub extern \"C\" fn mlx_one() -> i32 { 1 }\n",
         "okcrate",
         &d,

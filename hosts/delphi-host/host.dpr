@@ -102,17 +102,25 @@ end;
   gates USE rather than loading -- see the header note.
 
   EVERY name below is qualified, and that is not style. Each generated unit declares the
-  same two reserved functions, so an unqualified `ml_iface_hash` binds to whichever unit
-  came LAST in the uses clause. The first version of this file did exactly that: it
-  compared carrier's fingerprint against ML_DISCOUNT_IFACE_HASH, which can never match.
-  Measured the day this file was first compiled at all (2026-09-07):
+  same reserved `ml_module_abi_version`, so an unqualified use binds to whichever unit came
+  LAST in the uses clause. The first version of this file did exactly that: it compared
+  carrier's fingerprint against ML_DISCOUNT_IFACE_HASH, which can never match. Measured the
+  day this file was first compiled at all (2026-09-07):
 
       unqualified ml_iface_hash = C8D1191E339AAF6E   (carrier, the last unit used)
       ML_DISCOUNT_IFACE_HASH    = 05697A6FAFD68344
 
   `ml_module_abi_version` had the same bug and hid it, because every module answers 1.
-  The C host cannot meet this at all: it resolves per module handle. It is a hazard of
-  the import-unit binding, so the gate now covers every module used, not one. }
+
+  The FINGERPRINT half of that trap is gone at the source since SPEC-qualified-iface-hash:
+  the export is `ml_iface_hash_<module>`, so the four calls below name four different
+  functions and could not bind to one another even unqualified. The unit prefixes stay,
+  because `ml_module_abi_version` still can -- and because the rule "qualify every imported
+  name" is one rule instead of a rule with an exception in it.
+
+  The C host never met the fingerprint half at all: it resolves per module handle. The
+  LINKED C host did meet it, silently, which is what the rename fixes -- so this hazard was
+  never Pascal's alone, only found there first. }
 function GateOk(ExpectedAbi: LongWord): Boolean;
 
   function OneModule(const Name: string; Abi: LongWord; Hash, Pinned: UInt64): Boolean;
@@ -132,17 +140,17 @@ function GateOk(ExpectedAbi: LongWord): Boolean;
 
 begin
   Result := True;
-  if not OneModule('discount', discount.ml_module_abi_version, discount.ml_iface_hash,
-                   ML_DISCOUNT_IFACE_HASH) then
+  if not OneModule('discount', discount.ml_module_abi_version,
+                   discount.ml_iface_hash_discount, ML_DISCOUNT_IFACE_HASH) then
     Result := False;
-  if not OneModule('safe_div', safe_div.ml_module_abi_version, safe_div.ml_iface_hash,
-                   ML_SAFE_DIV_IFACE_HASH) then
+  if not OneModule('safe_div', safe_div.ml_module_abi_version,
+                   safe_div.ml_iface_hash_safe_div, ML_SAFE_DIV_IFACE_HASH) then
     Result := False;
-  if not OneModule('carrier', carrier.ml_module_abi_version, carrier.ml_iface_hash,
-                   ML_CARRIER_IFACE_HASH) then
+  if not OneModule('carrier', carrier.ml_module_abi_version,
+                   carrier.ml_iface_hash_carrier, ML_CARRIER_IFACE_HASH) then
     Result := False;
-  if not OneModule('shapes', shapes.ml_module_abi_version, shapes.ml_iface_hash,
-                   ML_SHAPES_IFACE_HASH) then
+  if not OneModule('shapes', shapes.ml_module_abi_version,
+                   shapes.ml_iface_hash_shapes, ML_SHAPES_IFACE_HASH) then
     Result := False;
 end;
 

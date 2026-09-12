@@ -27,7 +27,7 @@ fn oracle_loads_and_calls_an_i32_function() {
     assert_eq!(
         exports,
         vec![
-            "ml_iface_hash".to_string(),
+            "ml_iface_hash_add".to_string(),
             "ml_module_abi_version".to_string(),
             "mlx_add".to_string()
         ]

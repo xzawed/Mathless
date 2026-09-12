@@ -124,8 +124,12 @@ typedef int32_t (*code_of_fn)(const char *, int32_t *);
    mismatched pointer. */
 _Static_assert(_Generic(&ml_module_abi_version, abi_version_fn: 1, default: 0),
                "generated ml_module_abi_version signature changed");
-_Static_assert(_Generic(&ml_iface_hash, iface_hash_fn: 1, default: 0),
-               "generated ml_iface_hash signature changed");
+/* One module's fingerprint export stands for the shape of all of them: the name now carries
+   the module (SPEC-qualified-iface-hash) so there is no single symbol left to check, and
+   naming all eighteen here would assert the same `uint64_t (*)(void)` eighteen times. What
+   this still catches is the shape CHANGING - which is what the check is for. */
+_Static_assert(_Generic(&ml_iface_hash_discount, iface_hash_fn: 1, default: 0),
+               "generated ml_iface_hash_<module> signature changed");
 _Static_assert(_Generic(&mlx_discount, discount_fn: 1, default: 0),
                "generated mlx_discount signature changed");
 _Static_assert(_Generic(&mlx_safe_div, safe_div_fn: 1, default: 0),
@@ -261,8 +265,24 @@ static HMODULE load_raw(const char *dir, const char *name) {
  * Deliberately silent about WHAT differs beyond the numbers: the host is not a diagnostic
  * tool for the module author, and printing signatures would leak the module's surface. */
 static int gate(HMODULE m, const char *name, unsigned long expected_abi, uint64_t pinned) {
+    /* The fingerprint export carries the module's name (SPEC-qualified-iface-hash). The
+     * module name is the source file's stem, which is also the stem of the `.dll` this host
+     * was handed - so the symbol is DERIVED here, once, instead of being repeated beside
+     * every load() call where it could drift from the file name next to it.
+     *
+     * A dynamic host does not need the rename: it resolves per HMODULE, so an unqualified
+     * name never collided here. It follows the linked host because a module exports one set
+     * of names to both. */
+    char symbol[80];
+    size_t stem = strcspn(name, ".");
+    int written = snprintf(symbol, sizeof symbol, "ml_iface_hash_%.*s", (int)stem, name);
+    if (written < 0 || (size_t)written >= sizeof symbol) {
+        printf("  refuse %s: module name too long to form its fingerprint symbol\n", name);
+        return 0;
+    }
+
     abi_version_fn abi = (abi_version_fn)(void *)GetProcAddress(m, "ml_module_abi_version");
-    iface_hash_fn hash = (iface_hash_fn)(void *)GetProcAddress(m, "ml_iface_hash");
+    iface_hash_fn hash = (iface_hash_fn)(void *)GetProcAddress(m, symbol);
     if (abi == NULL || hash == NULL) {
         printf("  refuse %s: a reserved symbol is missing\n", name);
         return 0;

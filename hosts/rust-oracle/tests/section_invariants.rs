@@ -65,10 +65,16 @@ fn the_wrapper_refactor_did_not_grow_the_export_surface() {
             exports.len()
         );
 
+        // Derived from the module's own name, not a fixed string: since
+        // SPEC-qualified-iface-hash the fingerprint export is `ml_iface_hash_<module>`, so
+        // this now also checks — across every example, which no single test does — that each
+        // module exports ITS OWN fingerprint rather than some other module's.
+        let fingerprint = format!("ml_iface_hash_{name}");
         for e in &exports {
             assert!(
-                e == "ml_module_abi_version" || e == "ml_iface_hash" || e.starts_with("mlx_"),
-                "{name}: unexpected export {e} — a body must never be #[no_mangle]"
+                e == "ml_module_abi_version" || *e == fingerprint || e.starts_with("mlx_"),
+                "{name}: unexpected export {e} — a body must never be #[no_mangle], and the \
+                 fingerprint export must be {fingerprint}"
             );
             assert!(
                 !e.starts_with("ml_fn_"),
@@ -79,7 +85,7 @@ fn the_wrapper_refactor_did_not_grow_the_export_surface() {
         // The reserved count went 1 → 2 with the interface-fingerprint slice; it is spelled
         // out here rather than hidden in a magic `+ 2` so the next slice that adds one has to
         // say so.
-        const RESERVED_EXPORTS: usize = 2; // ml_module_abi_version, ml_iface_hash
+        const RESERVED_EXPORTS: usize = 2; // ml_module_abi_version, ml_iface_hash_<module>
         let declared = src.matches("export fn ").count();
         assert_eq!(
             exports.len(),

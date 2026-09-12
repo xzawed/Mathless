@@ -21,7 +21,7 @@
  * (MATHLESS_GATE_DELPHI), which passes -- but only where a Delphi is installed, never
  * here in CI.
  *
- * usage: host <artifact_dir> <expected_abi_version> [drifted_module.dll]
+ * usage: host <artifact_dir> <expected_abi_version> [drifted_module.dll] [longest_named.dll]
  */
 /* <math.h> is here for the rounding checks: DP-R3 says the module's floor/ceil/round/trunc
    match C's exactly, so the honest test is to call both and compare - including signbit(),
@@ -31,6 +31,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+
+/* The compiler's bound on a module name (compiler/src/abi.rs `ML_MAX_MODULE_NAME`), copied
+   here because C cannot read it and this host has to size a buffer from it.
+   `doc_claims.rs::the_c_host_can_gate_every_module_name_the_compiler_accepts` reads BOTH and
+   fails if this one falls behind - the copy is checked, not trusted.
+
+   Why a bound exists at all: since SPEC-qualified-iface-hash the fingerprint export is
+   `ml_iface_hash_<module>`, so a DYNAMIC host builds that symbol name from the module it is
+   loading. That needs a buffer, and a buffer has an edge. This file used to pick `80`
+   independently; an audit measured what that meant - 65 characters gated, 66 refused, while
+   `mlc build` accepted 70 and exited 0. The compiler now sets the bound and this follows it,
+   because the other direction would make one host's buffer into the language's contract. */
+#define ML_MAX_MODULE_NAME 64
 
 #include "discount.h"
 #include "safe_div.h"
@@ -273,7 +286,10 @@ static int gate(HMODULE m, const char *name, unsigned long expected_abi, uint64_
      * A dynamic host does not need the rename: it resolves per HMODULE, so an unqualified
      * name never collided here. It follows the linked host because a module exports one set
      * of names to both. */
-    char symbol[80];
+    /* Sized from the compiler's bound, not from a round number chosen here - see
+       ML_MAX_MODULE_NAME at the top of this file. `sizeof "ml_iface_hash_"` already counts
+       the NUL, so the sum carries the terminator. */
+    char symbol[sizeof "ml_iface_hash_" + ML_MAX_MODULE_NAME];
     size_t stem = strcspn(name, ".");
     int written = snprintf(symbol, sizeof symbol, "ml_iface_hash_%.*s", (int)stem, name);
     if (written < 0 || (size_t)written >= sizeof symbol) {
@@ -948,6 +964,53 @@ int main(int argc, char **argv) {
     } else {
         printf("GATE_D_DRIFT_SKIPPED: no drifted module named on the command line, so the "
                "refusal path was NOT exercised by this run\n");
+    }
+
+    /* --- the module-name BOUND, gated rather than argued (SPEC-module-name-length) ---
+     *
+     * argv[4], when present, names a module in `dir` whose stem is exactly
+     * ML_MAX_MODULE_NAME characters - the longest name the compiler will accept. It is
+     * passed on the command line rather than added to examples/, because a 64-character
+     * example would be dragged into the golden snapshots, the FPC gate and the
+     * export-surface measurement, none of which is what is being measured here.
+     *
+     * What it proves is the half a source-reading guard cannot: that gate()'s derivation
+     * actually WORKS at the edge. `doc_claims` checks that the compiler's bound and this
+     * file's copy agree; only a run can catch an off-by-one in the strcspn/snprintf pair,
+     * where the symbol would be truncated or refused for a module the compiler said was fine.
+     *
+     * It must PASS the gate, not be refused - that is the whole point.
+     *
+     * At the same nesting as the drift block above, and with its own marker, for the reason
+     * that block records: a condition that can skip a check has to say which way it went. */
+    if (argc >= 5) {
+        HMODULE longest = load_raw(dir, argv[4]);
+        if (longest != NULL) {
+            abi_version_fn lv =
+                (abi_version_fn)(void *)GetProcAddress(longest, "ml_module_abi_version");
+            check(lv != NULL && lv() == (uint32_t)expected_abi,
+                  "control: the longest-named module loads and answers");
+            /* The pinned value comes from the module itself: this host has no header for a
+               module invented at test time, so it asks the module for its own fingerprint
+               and gates against THAT. The property under test is that the symbol RESOLVES
+               at the bound, not that the value is some number this file knows. */
+            char sym[sizeof "ml_iface_hash_" + ML_MAX_MODULE_NAME];
+            size_t stem = strcspn(argv[4], ".");
+            int n = snprintf(sym, sizeof sym, "ml_iface_hash_%.*s", (int)stem, argv[4]);
+            iface_hash_fn lh = NULL;
+            if (n > 0 && (size_t)n < sizeof sym) {
+                lh = (iface_hash_fn)(void *)GetProcAddress(longest, sym);
+            }
+            check(lh != NULL,
+                  "the fingerprint symbol of a longest-legal-named module resolves");
+            check(lh != NULL && gate(longest, argv[4], expected_abi, lh()),
+                  "and the gate PASSES it - the compiler's bound fits this host's buffer");
+            FreeLibrary(longest);
+            printf("GATE_D_NAMEBOUND_CHECKED\n");
+        }
+    } else {
+        printf("GATE_D_NAMEBOUND_SKIPPED: no longest-named module given, so the module name "
+               "bound was NOT exercised by this run\n");
     }
 
     /* --- basket.dll: array INPUT (SPEC-array-input). ---

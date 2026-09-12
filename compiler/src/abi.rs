@@ -27,3 +27,26 @@ pub const ML_MODULE_ABI_VERSION: u32 = 1;
 pub const ML_ST_INSUFFICIENT_BUFFER: i32 = -1;
 
 pub const ML_ST_INDEX_OUT_OF_RANGE: i32 = -2;
+
+/// Longest module name the compiler accepts, in ASCII characters.
+///
+/// The module name is not just a file stem: it becomes the crate name, the C header guard,
+/// the Delphi unit name, and — since `SPEC-qualified-iface-hash` — **the suffix of a
+/// reserved export**, `ml_iface_hash_<module>`. That last one is why a bound exists at all.
+///
+/// A DYNAMIC host has to build that symbol name from the module it is loading, so it needs a
+/// buffer, and a buffer has an edge. Measured before this constant existed: the reference C
+/// host could gate a 65-character name and refused at 66, while `mlc build` accepted 70 and
+/// exited 0 — the compiler produced a module its own reference host could not gate
+/// (`SPEC-module-name-length` §0.1).
+///
+/// **The direction matters more than the number.** The compiler sets the bound and the host
+/// sizes its buffer from it; doing it the other way round would make one host's
+/// implementation detail into the language's contract. `hosts/c-host/host.c` derives its
+/// buffer from this value and `doc_claims.rs` fails if the two ever disagree.
+///
+/// The value itself is arbitrary and is written down as arbitrary: 64 is a round number that
+/// fits comfortably inside what the reference host already handled, and it is far above
+/// anything a real module is named — the longest example in this repository is
+/// `count_bounded`, at 13.
+pub const ML_MAX_MODULE_NAME: usize = 64;

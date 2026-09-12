@@ -1433,8 +1433,12 @@ fn op_str(op: IrBinOp) -> &'static str {
         IrBinOp::Eq => "==",
         IrBinOp::Ne => "!=",
         // Rust's `&&`/`||` short-circuit, which is what SPEC-logical-ops DP-B2 specifies.
-        // Nothing in the language can observe that yet (no calls, no trapping operations),
-        // so the SPEC records it as specified-but-unmeasured rather than claiming a test.
+        //
+        // This used to add "and nothing in the language can observe that yet". It can now:
+        // an out-of-range index RETURNS `ML_ST_INDEX_OUT_OF_RANGE` from expression position,
+        // so `false && xs[99] > 0` answering 0 rather than -2 is the surface measurement
+        // (`logical_ops.rs`, STATUS §5-1). The observation arrived with array input and this
+        // comment kept saying it had not.
         IrBinOp::And => "&&",
         IrBinOp::Or => "||",
     }

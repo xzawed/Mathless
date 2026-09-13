@@ -1239,10 +1239,15 @@ fn assigned_on_line(line: &str, name: &str) -> Vec<i64> {
 
 /// Every `.md` in the working tree, as `(path relative to the root, contents)`.
 ///
-/// Walked rather than listed. Every other guard in this file names its documents, and that
-/// is the failure mode the global rule warns about — whatever is outside the hand-written
-/// list rots quietly. A document added tomorrow is covered by this one without being
-/// remembered.
+/// Walked rather than listed, because the needle is self-identifying: a constant's name is
+/// its own evidence that the line is making a claim about it, so there is no document a walk
+/// could wrongly include. Where the needle is NOT self-identifying — `.dll` appears in prose
+/// that is not enumerating artifacts — a walk would be the wrong instrument and the guard
+/// names its documents instead.
+///
+/// (`the_slice_index_is_one_table_and_lists_every_spec` already walks `docs/slices/`, so this
+/// is not the first guard here to find its own scope. An earlier draft of this comment said
+/// it was.)
 fn every_markdown_file() -> Vec<(String, String)> {
     let root = repo_root();
     let mut out = Vec::new();
@@ -1327,4 +1332,59 @@ fn no_document_states_a_stale_value_for_an_abi_constant() {
          it:\n{}",
         stale.join("\n")
     );
+}
+
+/// **A document that names the output-licence exception lists everything the exception
+/// covers.**
+///
+/// `every_artifact_the_emitter_writes_is_named_in_the_docs` already checks this, against a
+/// hand-written list of six files — and its own comment says why that list matters: D23
+/// enumerated four artifacts while `LICENSE-OUTPUT-EXCEPTION` §1 listed five, "a grant that
+/// under-lists what it grants is the worst place for this drift", and it sat outside the
+/// guard until 2026-09-05.
+///
+/// The identical sentence sat ONE DOCUMENT OVER and was not in the list. `OPEN_QUESTIONS.md`
+/// summarised the same grant as `.dll`·`.h`·`.pas`·중간 Rust — four again, no `.lib` —
+/// because the summary was written on 2026-09-02 and `.lib` arrived on 09-03. Measured, not
+/// supposed: seven documents name the exception, six listed `.lib`, one did not.
+///
+/// So this guard takes the scope the OTHER one cannot: naming `LICENSE-OUTPUT-EXCEPTION` is
+/// a document volunteering that it describes the grant, which makes the set discoverable
+/// instead of remembered. The artifacts themselves come from the licence, not from here — it
+/// is the document that grants the rights, so it is the document that says what they cover.
+#[test]
+fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
+    // The `(`.ext`)` spellings inside the licence's own enumeration, in its order.
+    let licence = read("LICENSE-OUTPUT-EXCEPTION");
+    let covered: Vec<String> = licence
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let rest = l.strip_prefix("- the ")?;
+            let open = rest.find("(`.")?;
+            let close = rest[open..].find("`)")?;
+            Some(rest[open + 2..open + close].to_string())
+        })
+        .collect();
+    assert_eq!(
+        covered.len(),
+        4,
+        "recovered {covered:?} from LICENSE-OUTPUT-EXCEPTION §1 — it enumerated four \
+         extensions plus the intermediate Rust, which has no extension to cite. If the \
+         licence changed shape, teach this guard the new one rather than dropping it"
+    );
+
+    for (path, text) in every_markdown_file() {
+        if !text.contains("LICENSE-OUTPUT-EXCEPTION") {
+            continue;
+        }
+        for ext in &covered {
+            assert!(
+                text.contains(&format!("`{ext}`")),
+                "{path} cites LICENSE-OUTPUT-EXCEPTION but never mentions `{ext}`, which the \
+                 licence grants rights over. A summary that under-lists a grant reads as a \
+                 narrower grant — the licence covers {covered:?}"
+            );
+        }
+    }
 }

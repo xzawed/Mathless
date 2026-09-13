@@ -57,6 +57,7 @@
 #include "pack.h"
 #include "vat.h"
 #include "carrier.h"
+#include "account.h"
 #include "quote.h"
 #include "receipt.h"
 #include "basket.h"
@@ -109,6 +110,10 @@ typedef int32_t (*issuer_of_fn)(const char *);
 typedef bool (*is_export_item_fn)(const char *);
 typedef int32_t (*carrier_name_fn)(const char *, char *, int32_t, int32_t *);
 typedef int32_t (*carrier_label_fn)(const char *, int32_t *, char *, int32_t, int32_t *);
+/* The string-slice slice does not change the C ABI either: a span is returned through the
+   same Q12 triple a literal is. Same shape as carrier_name, declared separately so that a
+   change to one is not silently accepted by the other's typedef. */
+typedef int32_t (*bank_code_fn)(const char *, char *, int32_t, int32_t *);
 typedef int32_t (*unit_price_fn)(double, int32_t, double *);
 typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
 /* The concat slice does not change the C ABI: a built string is declared exactly like a
@@ -221,6 +226,13 @@ _Static_assert(_Generic(&mlx_carrier_name, carrier_name_fn: 1, default: 0),
                "generated mlx_carrier_name signature changed");
 _Static_assert(_Generic(&mlx_carrier_label, carrier_label_fn: 1, default: 0),
                "generated mlx_carrier_label signature changed");
+/* A span must be indistinguishable from any other string return at the boundary. If
+   `byte_slice` had leaked anything into the ABI - an offset, a length, a second buffer -
+   these would stop matching the shape a C author already knows. */
+_Static_assert(_Generic(&mlx_bank_code, bank_code_fn: 1, default: 0),
+               "generated mlx_bank_code signature changed");
+_Static_assert(_Generic(&mlx_masked, bank_code_fn: 1, default: 0),
+               "generated mlx_masked signature changed");
 /* The fallible-calls slice must not touch the C ABI at all: a function that propagates a
    helper's status is declared exactly like any other D17 fallible export. If the internal
    Result shape ever leaked into the boundary, these two would stop matching. */
@@ -684,6 +696,63 @@ int main(int argc, char **argv) {
         st = carrier_label("UPSN", &tier, buf, (int32_t)sizeof buf, &needed);
         check(st == 0 && tier == 1, "carrier_label writes the declared out first");
         check(strcmp(buf, "UPS Ground") == 0, "...and the string into the triple");
+    }
+
+    /* --- account.dll: a SPAN of the caller's own string (SPEC-string-slice acceptance L).
+       The rule is the one the 2026-09-13 audit measured and could not express: the first
+       three digits are the bank code, and until this slice the HOST had to cut them.
+
+       What a C host adds over the oracle is the shape of the mistake. The source here is
+       longer than every span on purpose - with `bank_code("123")` a writer that stopped at
+       the source NUL would return exactly the same three bytes and this gate would pass over
+       a wrong module. --- */
+    HMODULE ac = load(dir, "account.dll", expected_abi, ML_ACCOUNT_IFACE_HASH);
+    if (ac == NULL) {
+        return 1;
+    }
+    bank_code_fn bank_code = (bank_code_fn)sym(ac, "mlx_bank_code");
+    bank_code_fn account_body = (bank_code_fn)sym(ac, "mlx_account_body");
+    bank_code_fn masked = (bank_code_fn)sym(ac, "mlx_masked");
+    if (bank_code && account_body && masked) {
+        char buf[64];
+        int32_t needed;
+        int32_t st;
+
+        /* The span stops at `to`, not at the end of the string. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = bank_code("0881234567", buf, (int32_t)sizeof buf, &needed);
+        check(st == 0, "bank_code status == 0");
+        check(strcmp(buf, "088") == 0, "bank_code cuts three bytes, not the whole string");
+        check(needed == 4, "three bytes plus the NUL - not 11");
+
+        /* `byte_len(s)` as the end offset: the rest of the string. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = account_body("0881234567", buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "1234567") == 0, "account_body is everything after it");
+
+        /* Two spans and a literal in one result, each bounded by its own length. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = masked("0881234567", buf, (int32_t)sizeof buf, &needed);
+        check(st == 0, "masked status == 0");
+        check(strcmp(buf, "088-****-4567") == 0, "two spans compose with a literal");
+
+        /* The module checks the length itself, so a short account is a DOMAIN error, and
+           D17 says that leaves the buffer and *ml_needed alone. */
+        memset(buf, 0xAA, sizeof buf);
+        needed = -7;
+        st = bank_code("08", buf, (int32_t)sizeof buf, &needed);
+        check(st == ML_ACCOUNT_ERR_E_SHORT_ACCOUNT, "a short account is a domain failure");
+        check((unsigned char)buf[0] == 0xAA, "a failed call writes no bytes");
+        check(needed == -7, "and leaves *ml_needed alone");
+
+        /* The probe idiom is unchanged: a span is a string return like any other. */
+        needed = -7;
+        st = masked("0881234567", NULL, 0, &needed);
+        check(st == ML_ST_INSUFFICIENT_BUFFER, "probe (NULL, 0) does not crash");
+        check(needed == 14, "\"088-****-4567\" is 13 bytes plus the NUL");
     }
 
     /* --- quote.dll: a status propagated out of a reused internal helper

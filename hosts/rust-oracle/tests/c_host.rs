@@ -271,6 +271,17 @@ fn a_real_c_host_loads_and_calls_the_module() {
     )
     .expect("emit carrier");
 
+    // The string-slice slice's measured rule. Gated here rather than only in the oracle
+    // because `SPEC-string-slice` acceptance L asks for both hosts — and because the shape of
+    // the mistake a span invites (returning the suffix) is one a C author would read straight
+    // out of `strcmp(buf, "088")`.
+    let account = emit_artifacts(
+        include_str!("../../../examples/account.mls"),
+        "account",
+        &work,
+    )
+    .expect("emit account");
+
     let quote = emit_artifacts(include_str!("../../../examples/quote.mls"), "quote", &work)
         .expect("emit quote");
 
@@ -588,6 +599,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &deduction.dll,
         &vat.dll,
         &carrier.dll,
+        &account.dll,
         &quote.dll,
         &receipt.dll,
         &basket.dll,

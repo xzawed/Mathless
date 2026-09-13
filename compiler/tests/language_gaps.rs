@@ -155,12 +155,19 @@ fn string_operations_that_do_not_exist_yet() {
         "string as i32",
         "export fn f(s: string) -> i32 { return s as i32 }",
     );
-    // The gap block lists 부분문자열 beside 길이 and 순서 비교; only the other two were pinned
-    // (found by re-reading the block against this file — STATUS §9-A A1).
+    // `s[0..2]` is STILL rejected, but as of 2026-09-13 not because substring is missing —
+    // `byte_slice(s, 0, 2)` compiles. What is missing is `..` itself, which the LEXER refuses
+    // for the whole language (`SPEC-string-slice` DP-B3: opening it drags in `for` ranges and
+    // array slices). Same distinction `byte_len` left behind for `s.len`: the capability
+    // exists, the syntax does not, and they are different gaps (§9-38.1).
     rejected(
-        "substring",
+        "range syntax",
         "export fn f(s: string) -> string! { return s[0..2] }",
     );
+
+    // …and the proof that it is the syntax and not the feature.
+    mlc::compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s, 0, 2) }")
+        .expect("the same span is available as a builtin");
 }
 
 // ------------------------------------------------------------------ conversions
@@ -223,7 +230,10 @@ fn data_shapes_that_do_not_exist_yet() {
 /// arithmetic rather than a construct, so there is no source text to reject; see
 /// `conversions_that_do_not_exist_yet`.
 const GAPS: &[(&str, &str)] = &[
-    ("부분문자열", "substring"),
+    // 부분문자열은 더 이상 공백이 아니다 — `byte_slice(s, from, to)`가 2026-09-13에 들어왔다.
+    // 대신 **범위 문법**이 공백이고, 그것이 `s[0..3]`을 거부하는 진짜 이유다. `byte_len`이
+    // 들어온 뒤에도 `s.len`이 거부된 것과 같은 구분이며, §9-38.1이 그 구분을 실측으로 적었다.
+    ("범위 문법", "range syntax"),
     ("순서 비교", "string ordering"),
     ("포맷", "f64 as string"),
     ("지역 변수", "string local"),

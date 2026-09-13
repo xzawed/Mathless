@@ -1,0 +1,36 @@
+// string-slice slice: the account-number rules the 2026-09-13 audit measured.
+//
+// This is the rule that was left over. The audit wrote five validation rules a real system
+// would need; `byte_len` closed one of them, and this one — "the first three digits are the
+// bank code" — was the last whose workaround pushed work OUT of the module: the host had to
+// cut the string, which is precisely the coupling SPEC-string-return section 0.1 exists to
+// reduce. Adding a bank here now changes one file, not two.
+//
+// Every function checks the length FIRST. That is not defensive style, it is the contract:
+// `byte_slice` refuses an out-of-range span with ML_ST_INDEX_OUT_OF_RANGE rather than
+// clamping (SPEC-string-slice DP-B4), so a module that does not check simply reports a
+// different, less specific failure.
+
+error E_SHORT_ACCOUNT = 1
+
+// The bank code. `byte_slice` is half-open, so `(0, 3)` is three bytes (DP-B2).
+export fn bank_code(acct: string) -> string! {
+  if byte_len(acct) < 3 { fail E_SHORT_ACCOUNT }
+  return byte_slice(acct, 0, 3)
+}
+
+// Everything after it. `byte_len(acct)` as the end offset is the composition half-open
+// indexing was chosen for — with a length there the author would have to write the
+// subtraction, and forgetting it is the overrun.
+export fn account_body(acct: string) -> string! {
+  if byte_len(acct) < 3 { fail E_SHORT_ACCOUNT }
+  return byte_slice(acct, 3, byte_len(acct))
+}
+
+// Two spans and a literal in one result: bank code, mask, last four. The interesting part is
+// that the two spans are bound and validated separately before anything is written, so a
+// short account fails without touching the host's buffer.
+export fn masked(acct: string) -> string! {
+  if byte_len(acct) < 7 { fail E_SHORT_ACCOUNT }
+  return byte_slice(acct, 0, 3) + "-****-" + byte_slice(acct, byte_len(acct) - 4, byte_len(acct))
+}

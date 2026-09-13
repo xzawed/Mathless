@@ -117,6 +117,19 @@ impl Rounder {
 /// which is checked beside theirs.
 pub const LEN_BUILTIN: &str = "len";
 
+/// The string length builtin — **bytes, NUL excluded** (`SPEC-string-length`, DP-L1).
+///
+/// Deliberately NOT `len`, and that name is the design rather than a preference. Bytes are
+/// not characters (DP-L2), which is this slice's only new risk, and **the name is the only
+/// defence the compiler can see** — everything else is a comment, and `SPEC-array-return`
+/// §5.2-1 already records that comments are not enforced.
+///
+/// The repository has made the other trade once: `ml_cap` counts BYTES for a string return
+/// and ELEMENTS for an array return, and that SPEC's §2.2 describes the resulting overrun as
+/// possibly silent. Doing it a second time to save one name was the lighter side of the
+/// scale (DP-L4, reversed before implementation).
+pub const BYTE_LEN_BUILTIN: &str = "byte_len";
+
 /// The name that means "the array this function returns" (SPEC-array-return DP-R7).
 ///
 /// **Not a keyword.** It follows `len` rather than `if`: the name only means the return buffer
@@ -246,6 +259,17 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
             return Err(TypeError::new(format!(
                 "function '{}' collides with the built-in `{LEN_BUILTIN}` — rename it \
                  (`{LEN_BUILTIN}(xs)` reads an array parameter's length and returns i32)",
+                f.name
+            )));
+        }
+        // Same rule for the string one, and it was missed on the first pass: `byte_len` was
+        // added as a builtin and NOT added here, so `export fn byte_len(x: i32)` compiled
+        // and shadowed it. Measured before the slice was finished (SPEC §3.1).
+        if f.name == BYTE_LEN_BUILTIN {
+            return Err(TypeError::new(format!(
+                "function '{}' collides with the built-in `{BYTE_LEN_BUILTIN}` — rename it \
+                 (`{BYTE_LEN_BUILTIN}(s)` counts a string's bytes up to the NUL and returns \
+                 i32)",
                 f.name
             )));
         }
@@ -1475,6 +1499,9 @@ fn is_built_string(e: &IrExpr) -> bool {
         // a length is an i32 — but spelled out rather than lumped into the `false` list, so a
         // string-shaped array would have to answer this question instead of inheriting `no`.
         IrExprKind::Index { .. } | IrExprKind::Len { .. } => false,
+        // Also unreachable behind the guard (`byte_len` is an i32), and also spelled out
+        // rather than inherited: it READS borrowed bytes and produces none.
+        IrExprKind::ByteLen(_) => false,
         IrExprKind::Binary { op, .. } => match op {
             // `a + b` on strings is concatenation before `flatten_concat` rewrites it.
             IrBinOp::Add => true,
@@ -1624,6 +1651,17 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                 )));
             }
             let arg = check_expr(&args[0], scope, fname, sigs)?;
+            if arg.ty == IrType::Str {
+                // Names the other builtin, because DP-L4 chose two names precisely so the
+                // unit is visible — a diagnostic that only says "wrong type" would leave the
+                // author to guess, and the guess ("length must be `len`") is the one this
+                // slice is trying to prevent.
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{LEN_BUILTIN}` takes an array, found string — use \
+                     `{BYTE_LEN_BUILTIN}(s)` for a string. The units differ: `{LEN_BUILTIN}` \
+                     counts ELEMENTS, `{BYTE_LEN_BUILTIN}` counts BYTES up to the NUL"
+                )));
+            }
             if !matches!(arg.ty, IrType::Array(_)) {
                 return Err(TypeError::new(format!(
                     "function '{fname}': `{LEN_BUILTIN}` takes an array, found {} — it reads \
@@ -1639,6 +1677,51 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             Ok(IrExpr {
                 ty: IrType::I32,
                 kind: IrExprKind::Len { array },
+            })
+        }
+        Expr::Call { name, args } if name == BYTE_LEN_BUILTIN => {
+            // Intercepted here for the same reason `len` is: it is not a `Sig`, because its
+            // argument type is fixed but its shape (parameter or literal) is not.
+            if args.len() != 1 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{BYTE_LEN_BUILTIN}` takes exactly one string \
+                     argument, found {}",
+                    args.len()
+                )));
+            }
+            let arg = check_expr(&args[0], scope, fname, sigs)?;
+            if matches!(arg.ty, IrType::Array(_)) {
+                // Points at the other builtin, so the pair teaches the units (DP-L4).
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{BYTE_LEN_BUILTIN}` takes a string, found {} — use \
+                     `{LEN_BUILTIN}(xs)` for an array. The units differ: \
+                     `{BYTE_LEN_BUILTIN}` counts BYTES up to the NUL, `{LEN_BUILTIN}` counts \
+                     ELEMENTS",
+                    arg.ty
+                )));
+            }
+            if arg.ty != IrType::Str {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{BYTE_LEN_BUILTIN}` takes a string, found {}",
+                    arg.ty
+                )));
+            }
+            // A BUILT string is not a pointer to bytes that exist — it is bytes this module
+            // writes into the caller's buffer at `return` time (DP-K3). Counting one would
+            // walk whatever the cast expression happened to evaluate to.
+            //
+            // This check was MISSING in the first implementation and the consequence was
+            // measured, not argued: `byte_len(x as string)` compiled all the way to a `.dll`.
+            // Every other string-consuming position already calls this — arguments and
+            // comparisons both do — so the omission was mine, not the design's.
+            reject_built_string(
+                &arg,
+                fname,
+                &format!("as the argument to `{BYTE_LEN_BUILTIN}`"),
+            )?;
+            Ok(IrExpr {
+                ty: IrType::I32,
+                kind: IrExprKind::ByteLen(Box::new(arg)),
             })
         }
         Expr::Call { name, args } => {

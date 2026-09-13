@@ -131,10 +131,10 @@ fn string_operations_that_do_not_exist_yet() {
         "string ordering",
         "export fn f(s: string, t: string) -> bool { return s < t }",
     );
-    rejected(
-        "string length",
-        "export fn f(s: string) -> i32 { return s.len }",
-    );
+    // 길이는 더 이상 공백이 아니다 — `byte_len(s)`가 2026-09-13에 들어왔다
+    // (`SPEC-string-length`). 그래서 `GAPS`에서 빠졌다. `s.len`은 **여전히** 거부되지만
+    // 그것은 길이가 없어서가 아니라 **필드 접근이 없어서**이고, 그 둘은 다른 공백이다 —
+    // §9-38.1이 그 구분을 실측으로 적었다.
     rejected(
         "f64 as string",
         "export fn f(x: f64) -> string! { return x as string }",
@@ -225,7 +225,6 @@ fn data_shapes_that_do_not_exist_yet() {
 const GAPS: &[(&str, &str)] = &[
     ("부분문자열", "substring"),
     ("순서 비교", "string ordering"),
-    ("길이", "string length"),
     ("포맷", "f64 as string"),
     ("지역 변수", "string local"),
     ("struct", "struct declaration"),

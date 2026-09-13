@@ -264,6 +264,14 @@ pub enum IrExprKind {
     Len {
         array: String,
     },
+    /// `byte_len(s)` — bytes up to the first NUL, the terminator NOT counted
+    /// (SPEC-string-length DP-L1).
+    ///
+    /// A different node from [`Len`] because it is a different computation, not just a
+    /// different type: an array's length is HANDED to the module alongside the pointer and
+    /// costs nothing, while this one WALKS to the NUL. It cannot fail either — there is no
+    /// condition to report — but the reason is not the array's (SPEC §2.3).
+    ByteLen(Box<IrExpr>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -307,9 +315,9 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
             IrExprKind::Index { array, index } => {
                 Some(in_expr(index).unwrap_or_else(|| array.clone()))
             }
-            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
-                in_expr(operand)
-            }
+            IrExprKind::Unary { operand, .. }
+            | IrExprKind::Cast { operand, .. }
+            | IrExprKind::ByteLen(operand) => in_expr(operand),
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs).or_else(|| in_expr(rhs)),
             IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => {
                 args.iter().find_map(in_expr)

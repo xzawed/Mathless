@@ -172,6 +172,7 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
 
     emit_string_helper(module, &mut out);
     emit_strout_helper(module, &mut out);
+    emit_slen_helper(module, &mut out);
     emit_concat_helpers(module, &mut out);
     emit_rounding_helpers(module, &mut out);
 
@@ -576,7 +577,11 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                 | IrExprKind::Unary { .. }
                 | IrExprKind::Binary { .. }
                 | IrExprKind::Index { .. }
-                | IrExprKind::Len { .. } => {
+                | IrExprKind::Len { .. }
+                // `byte_len` yields an `i32`, so typeck never lets it be a string return —
+                // but it is named here rather than lumped under a catch-all for the reason
+                // this arm exists: the fallback treats its operand as an address.
+                | IrExprKind::ByteLen(_) => {
                     let _ = writeln!(
                         out,
                         "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
@@ -747,6 +752,10 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         }
         // The companion, read straight out. Cannot fail, so no block and no early return.
         IrExprKind::Len { array } => format!("{array}_len"),
+        // `byte_len(s)` — the same NUL walk `==` and concatenation already do, exposed
+        // (SPEC-string-length DP-L1). The terminator is not counted: `""` is 0, not 1, which
+        // is deliberately a different number from Q12's `ml_needed` (§2.1).
+        IrExprKind::ByteLen(operand) => format!("ml_slen({})", emit_expr(operand, abi)),
         // A concatenation is not an expression in the emitted Rust: it has no value until it
         // is written into the caller's buffer, which is what `emit_concat_return` does. Typeck
         // confines it to `return` (DP-K3) precisely so this arm is unreachable.
@@ -1019,6 +1028,12 @@ fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
         IrExprKind::Index { .. } | IrExprKind::Len { .. } => {
             unreachable!("an array element is a scalar, so it is never a piece of a built string")
         }
+        // `byte_len` is an `i32`, so it reaches a concatenation only through a cast, and the
+        // `Cast` arm above takes that path. Bare, it would be an integer treated as a
+        // pointer — the exact confusion the two arms above exist to refuse.
+        IrExprKind::ByteLen(_) => {
+            unreachable!("byte_len is an i32, so it is never a piece of a built string")
+        }
         // Every piece is `Str` by the time codegen sees it (typeck flattens and checks), so
         // each of these is already a pointer. Spelled out so that a future string-shaped
         // variant has to say which it is instead of being assumed to be an address.
@@ -1099,10 +1114,58 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
 /// Exhaustive for the same reason [`compares_strings`] is — see the note there. This walker
 /// had two catch-alls, and the statement one was also short: `AssignOut` and `TryCall` carry
 /// ordinary expressions and were both falling to `_ => false`.
+/// Does anything in this module call `byte_len(s)`?
+///
+/// Its own predicate rather than a flag folded into [`builds_strings`]: `byte_len` does not
+/// build a string, it reads one, and saying otherwise would drag the whole concat helper set
+/// (`ml_ilen`, `ml_wstr`, `ml_wint`) into a module that needs none of it.
+///
+/// Exhaustive, like its neighbours, and for the reason [`compares_strings`] records: a
+/// catch-all here would silently drop a future variant's subtree and the generated crate
+/// would fail to compile for a user who wrote nothing wrong.
+fn uses_byte_len(module: &IrModule) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::ByteLen(_) => true,
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand)
+            }
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond) || in_stmts(body)
+            }
+            IrStmt::ResultLen(e) => in_expr(e),
+            IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
+            IrStmt::Return(e)
+            | IrStmt::Let { value: e, .. }
+            | IrStmt::Assign { value: e, .. }
+            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+            IrStmt::Fail(_) => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
 fn builds_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
             IrExprKind::Concat(_) => true,
+            // Reads a string, never builds one — but its operand is an ordinary expression,
+            // unlike `Len`'s bare array name, so the subtree is walked.
+            IrExprKind::ByteLen(operand) => in_expr(operand),
             // The index is an ordinary expression and could hold anything; the array name
             // cannot. `Len` has no subtree at all.
             IrExprKind::Index { index, .. } => in_expr(index),
@@ -1137,6 +1200,30 @@ fn builds_strings(module: &IrModule) -> bool {
     module.functions.iter().any(|f| in_stmts(&f.body))
 }
 
+/// `ml_slen` — bytes up to the NUL, terminator NOT counted.
+///
+/// Split out of [`emit_concat_helpers`] because it now has **two** callers with different
+/// gates: concatenation sizes its pieces with it, and surface `byte_len(s)` IS it
+/// (`SPEC-string-length` DP-L1). Leaving it inside the concat set would have meant a module
+/// that only calls `byte_len` gets no helper and the GENERATED crate fails to compile —
+/// `error[E0425]: cannot find function`, in code the user never wrote. That is the exact
+/// failure `compares_strings`' own note records from `ml_streq`, so it was not going to be a
+/// surprise twice; the pre-implementation review named it before a line was written.
+fn emit_slen_helper(module: &IrModule, out: &mut String) {
+    if !builds_strings(module) && !uses_byte_len(module) {
+        return;
+    }
+    out.push_str(
+        "fn ml_slen(src: *const u8) -> i32 {\n\
+         \x20   let mut n: i32 = 0;\n\
+         \x20   loop {\n\
+         \x20       if unsafe { *src.add(n as usize) } == 0 { return n; }\n\
+         \x20       n += 1;\n\
+         \x20   }\n\
+         }\n\n",
+    );
+}
+
 /// The three append helpers. Emitted only when the module concatenates.
 ///
 /// Every rule that keeps this safe is written next to the code that carries it, because the
@@ -1156,14 +1243,7 @@ fn emit_concat_helpers(module: &IrModule, out: &mut String) {
         return;
     }
     out.push_str(
-        "fn ml_slen(src: *const u8) -> i32 {\n\
-         \x20   let mut n: i32 = 0;\n\
-         \x20   loop {\n\
-         \x20       if unsafe { *src.add(n as usize) } == 0 { return n; }\n\
-         \x20       n += 1;\n\
-         \x20   }\n\
-         }\n\n\
-         fn ml_ilen(v: i32) -> i32 {\n\
+        "fn ml_ilen(v: i32) -> i32 {\n\
          \x20   // Width of the decimal form, sign included. `0` is one digit, not zero.\n\
          \x20   let neg = v < 0;\n\
          \x20   let mut m: u32 = if neg { (v as u32).wrapping_neg() } else { v as u32 };\n\
@@ -1233,6 +1313,9 @@ fn compares_strings(module: &IrModule) -> bool {
             // itself is an ordinary expression and could.
             IrExprKind::Index { index, .. } => in_expr(index),
             IrExprKind::Len { .. } => false,
+            // Reads a string without comparing it — but its operand is a subtree, so a
+            // comparison nested inside still has to be found.
+            IrExprKind::ByteLen(operand) => in_expr(operand),
             IrExprKind::Binary { op, lhs, rhs } => {
                 (matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str)
                     || in_expr(lhs)
@@ -1300,6 +1383,9 @@ fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
         match &e.kind {
             IrExprKind::Index { index, .. } => walk_expr(index, found),
             IrExprKind::Len { .. } => {}
+            // No rounder can be its operand (a string), but the subtree is walked anyway —
+            // this file's habit is that a node with children answers for its children.
+            IrExprKind::ByteLen(operand) => walk_expr(operand, found),
             IrExprKind::Call { name, args, .. } => {
                 if let Some(b) = crate::typeck::Rounder::from_name(name) {
                     if !found.contains(&b) {

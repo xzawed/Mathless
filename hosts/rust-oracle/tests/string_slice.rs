@@ -67,7 +67,11 @@ impl Canary {
 /// **Acceptance A, B and F** — the span is the bytes between the offsets, half-open.
 #[test]
 fn a_span_is_the_bytes_between_the_offsets() {
-    let (out, m) = build("val", "span", SRC);
+    // `_out` and not `_`: the underscore PREFIX binds the value and keeps the directory alive
+    // to the end of the scope, while a bare `_` would drop it here and delete the tree out
+    // from under the loaded module. Named this way because nothing reads it — cleanup is the
+    // Drop, which is the whole point of `TempOut`.
+    let (_out, m) = build("val", "span", SRC);
 
     // A — a literal span of a borrowed parameter.
     let head = spanner(&m, b"mlx_head\0");
@@ -110,7 +114,7 @@ fn a_span_is_the_bytes_between_the_offsets() {
 /// right that nothing in the SPEC forced them to, so both are measured.
 #[test]
 fn a_span_is_not_the_suffix() {
-    let (out, m) = build("suffix", "span", SRC);
+    let (_out, m) = build("suffix", "span", SRC);
     let long = c"1234567890";
 
     // Standalone.
@@ -153,7 +157,7 @@ fn a_span_is_not_the_suffix() {
 /// has to run before either is touched, which is what the canary measures.
 #[test]
 fn an_out_of_range_span_writes_nothing() {
-    let (out, m) = build("range", "span", SRC);
+    let (_out, m) = build("range", "span", SRC);
     let head = spanner(&m, b"mlx_head\0");
 
     // `to` is 3 and the string has two bytes: out of range, not a short answer.
@@ -201,7 +205,7 @@ fn an_out_of_range_span_writes_nothing() {
 /// **Acceptance G** — the Q12 probe works for a span exactly as it does for any other return.
 #[test]
 fn the_probe_protocol_works_for_a_span() {
-    let (out, m) = build("probe", "span", SRC);
+    let (_out, m) = build("probe", "span", SRC);
     let tail = spanner(&m, b"mlx_tail\0");
     let s = c"1234567890";
 
@@ -245,7 +249,7 @@ fn the_probe_protocol_works_for_a_span() {
 /// the builtin is spelled `byte_` and why this cost is measured rather than asserted.
 #[test]
 fn a_span_cuts_bytes_not_characters() {
-    let (out, m) = build("utf8", "span", SRC);
+    let (_out, m) = build("utf8", "span", SRC);
     let head = spanner(&m, b"mlx_head\0");
 
     let korean = c"한국";
@@ -270,7 +274,7 @@ fn a_span_cuts_bytes_not_characters() {
     // …and two bytes is not. The module reports success, because by DP-S2 there is nothing
     // for it to object to: it copied the bytes it was asked for.
     let two = "export fn f(s: string) -> string! { return byte_slice(s, 0, 2) }";
-    let (out2, m2) = build("utf8b", "half", two);
+    let (_out2, m2) = build("utf8b", "half", two);
     let f = spanner(&m2, b"mlx_f\0");
     let mut buf = Canary::new();
     let mut needed = -7i32;
@@ -297,7 +301,7 @@ fn a_span_cuts_bytes_not_characters() {
 /// function nobody calls is a shape whose wrong adapter would ship silently.
 #[test]
 fn the_account_example_cuts_the_string_the_host_used_to_cut() {
-    let (out, m) = build(
+    let (_out, m) = build(
         "example",
         "account",
         include_str!("../../../examples/account.mls"),

@@ -490,3 +490,135 @@ fn a_literal_backwards_span_is_refused_before_it_runs() {
     compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s, 2, 2) }")
         .expect("`from == to` is the empty string, which is a value");
 }
+
+/// **A span can be compared** — `SPEC-string-slice-compare` §2.1/§2.2.
+///
+/// `byte_slice` and `==` both existed and did not compose: the §7 sample's claim-code rule
+/// (`byte_slice(code, 0, 2) == "AB"`) was refused, and there was no in-module workaround, so
+/// the prefix check went to the host.
+#[test]
+fn a_span_can_be_compared_against_a_borrowed_string() {
+    compile_to_rust(
+        "export fn valid_claim(code: string) -> bool! { return byte_slice(code, 0, 2) == \"AB\" }",
+    )
+    .expect("the rule that motivated this slice must compile");
+
+    // Both sides, and the negated form.
+    compile_to_rust("export fn f(c: string) -> bool! { return \"AB\" == byte_slice(c, 0, 2) }")
+        .expect("the span may be on the right");
+    compile_to_rust("export fn f(c: string) -> bool! { return byte_slice(c, 0, 2) != \"AB\" }")
+        .expect("`!=` is the negated comparison, not a different rule");
+
+    // Against another `string` PARAMETER, not only a literal.
+    compile_to_rust(
+        "export fn f(c: string, want: string) -> bool! { return byte_slice(c, 0, 2) == want }",
+    )
+    .expect("a borrowed parameter is a real pointer, same as a literal");
+}
+
+/// **Comparing a span makes the function fallible** — §2.4 (DP-C2, confirmed).
+///
+/// The same rule array indexing already has, and the diagnostic says so in the same shape.
+/// An out-of-range span is `ML_ST_INDEX_OUT_OF_RANGE`, not `false`: answering `false` would
+/// make "the span was out of range" indistinguishable from "the bytes differ", which is the
+/// silent wrong answer D17's negative statuses exist to avoid.
+#[test]
+fn a_span_comparison_needs_the_bang() {
+    let err =
+        compile_to_rust("export fn f(c: string) -> bool { return byte_slice(c, 0, 2) == \"AB\" }")
+            .expect_err("a span can go out of range, so the function can fail")
+            .to_string();
+    assert!(
+        !err.contains("unknown function"),
+        "the builtin is not wired up; this would pass on the wrong diagnostic: {err}"
+    );
+    assert!(
+        err.contains("bool!"),
+        "the diagnostic must name the signature the author should write: {err}"
+    );
+}
+
+/// **Only `ByteSlice` is unlocked** — §2.1 (DP-C3).
+///
+/// The other two built strings name bytes that do not exist yet: a concatenation and an
+/// `i32 as string` only become bytes while they are written into the caller's buffer at
+/// `return`. A span points into a string that is already there. That difference is the whole
+/// reason this relaxation does not weaken the rule.
+#[test]
+fn the_other_built_strings_are_still_refused_in_a_comparison() {
+    for src in [
+        "export fn f(a: string, b: string) -> bool! { return (a + b) == \"x\" }",
+        "export fn f(n: i32) -> bool! { return (n as string) == \"1\" }",
+    ] {
+        let err = compile_to_rust(src)
+            .expect_err("these name bytes the module has not produced yet")
+            .to_string();
+        assert!(
+            err.contains("built string"),
+            "the refusal must still name the rule: {err}"
+        );
+    }
+
+    // Span-to-span is out of scope for this slice (DP-C5), and the diagnostic says so rather
+    // than falling through to a confusing message about built strings in general.
+    //
+    // Pinned in the TYPECHECKER on purpose. The comparison lowering peels ONE operand, so a
+    // second span would reach `emit_expr`'s `ByteSlice` arm and hit its `unreachable!` — a
+    // compiler panic instead of a diagnostic. This refusal is what keeps that arm out of
+    // reach, which is why the test asserts the message and not merely that it failed.
+    let err = compile_to_rust(
+        "export fn f(a: string, b: string) -> bool! { return byte_slice(a,0,1) == byte_slice(b,0,1) }",
+    )
+    .expect_err("two spans is a separate decision")
+    .to_string();
+    assert!(!err.contains("unknown function"), "{err}");
+    assert!(
+        err.contains("byte_slice") && err.contains("DP-C5"),
+        "the refusal must name the decision, not fall through to the built-string message: {err}"
+    );
+}
+
+/// **Each span helper reaches only the modules that call it** — the rule `emit_slen_helper`
+/// was split out for (§9-40), applied to the two the span slices added.
+///
+/// A widened gate over-emits as easily as a narrow one under-emits, and dead code in the
+/// module is dead code in the shipped `.dll`. Measured rather than assumed: the first version
+/// of the comparison emitted `ml_streq` into every module that compared a span, where nothing
+/// ever called it.
+#[test]
+fn the_span_helpers_are_only_emitted_where_they_are_called() {
+    // Compares a span: needs `ml_subeq` and `ml_sublen`, never `ml_wsub` or `ml_streq`.
+    let cmp =
+        compile_to_rust("export fn f(s: string) -> bool! { return byte_slice(s,0,2) == \"AB\" }")
+            .expect("compile");
+    assert!(cmp.contains("fn ml_subeq"), "the comparison helper:\n{cmp}");
+    assert!(cmp.contains("fn ml_sublen"), "the range check:\n{cmp}");
+    assert!(
+        !cmp.contains("fn ml_wsub"),
+        "the WRITER is never called here:\n{cmp}"
+    );
+    assert!(
+        !cmp.contains("fn ml_streq"),
+        "a span comparison lowers to ml_subeq, so ml_streq is dead:\n{cmp}"
+    );
+
+    // Returns a span: the mirror image.
+    let cut = compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s,0,2) }")
+        .expect("compile");
+    assert!(cut.contains("fn ml_wsub"), "{cut}");
+    assert!(
+        !cut.contains("fn ml_subeq"),
+        "nothing compares here:\n{cut}"
+    );
+
+    // Both, plus an ordinary string comparison — every helper is legitimately present.
+    let both = compile_to_rust(
+        "export fn f(s: string) -> bool! { return byte_slice(s,0,2) == \"AB\" }\n\
+         export fn g(s: string) -> string! { return byte_slice(s,0,2) }\n\
+         export fn h(s: string) -> bool { return s == \"x\" }",
+    )
+    .expect("compile");
+    for helper in ["fn ml_subeq", "fn ml_wsub", "fn ml_streq", "fn ml_sublen"] {
+        assert!(both.contains(helper), "{helper} missing:\n{both}");
+    }
+}

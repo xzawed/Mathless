@@ -368,6 +368,54 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
     })
 }
 
+/// Does this body compare a span anywhere? — `SPEC-string-slice-compare` DP-C2.
+///
+/// The companion to [`first_index`], and it exists for the same stated reason: `check_expr`
+/// cannot see the signature, so the question "may this function fail?" is a walk over the
+/// finished body. A span outside the string is `ML_ST_INDEX_OUT_OF_RANGE`, and D17 only gives
+/// a function a status when its signature says `!`.
+///
+/// Only an EQUALITY whose operand is a span counts. A span in a `return` does not: that is
+/// the string-return path, which is `-> string!` by construction.
+pub fn compares_a_span(body: &[IrStmt]) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::Binary { op, lhs, rhs } => {
+                (matches!(op, IrBinOp::Eq | IrBinOp::Ne)
+                    && (matches!(lhs.kind, IrExprKind::ByteSlice { .. })
+                        || matches!(rhs.kind, IrExprKind::ByteSlice { .. })))
+                    || in_expr(lhs)
+                    || in_expr(rhs)
+            }
+            IrExprKind::Unary { operand, .. }
+            | IrExprKind::Cast { operand, .. }
+            | IrExprKind::ByteLen(operand) => in_expr(operand),
+            IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    body.iter().any(|s| match s {
+        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+            in_expr(cond) || compares_a_span(body)
+        }
+        IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
+        IrStmt::ResultLen(e)
+        | IrStmt::Return(e)
+        | IrStmt::Let { value: e, .. }
+        | IrStmt::Assign { value: e, .. }
+        | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+        IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+        IrStmt::Fail(_) => false,
+    })
+}
+
 /// Whether a statement list is guaranteed to exit the function: its last statement is a
 /// `return` or (in a fallible function) a `fail`. An `if` without an `else` can fall through,
 /// and a `while` may run zero times, so a well-formed body must end in one of these. Shared

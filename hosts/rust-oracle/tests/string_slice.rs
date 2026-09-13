@@ -328,8 +328,26 @@ fn the_account_example_cuts_the_string_the_host_used_to_cut() {
     assert_eq!(&buf.bytes[..14], b"088-****-4567\0");
     assert_eq!(needed, 14);
 
-    // The module checks the length itself, so a short account is a DOMAIN failure — a
-    // positive D17 code, not the span's own -2.
+    // …and the rule the §7 sample could not write at all: which bank owns this account.
+    // Until spans could be compared, the module could only hand the first three bytes back
+    // and let the host decide.
+    let is_kookmin: extern "C" fn(*const c_char, *mut bool) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_is_kookmin\0").unwrap()) };
+    let mut yes = false;
+    assert_eq!(is_kookmin(c"0041234567".as_ptr(), &mut yes), 0);
+    assert!(yes, "a source longer than the span must still match");
+    assert_eq!(is_kookmin(acct.as_ptr(), &mut yes), 0);
+    assert!(!yes, "\"088…\" is not \"004\"");
+
+    // The module guards the length itself, so a short account is a DOMAIN failure — a
+    // positive D17 code, not the span's own -2. That distinction is why the predicate is
+    // fallible rather than answering `false`.
+    let mut yes = true;
+    assert!(
+        is_kookmin(c"00".as_ptr(), &mut yes) > 0,
+        "too short to have a bank code is the module's own error"
+    );
+
     let mut buf = Canary::new();
     needed = -7;
     let st = bank_code(c"08".as_ptr(), buf.ptr(), 64, &mut needed);
@@ -399,6 +417,152 @@ fn a_span_adds_no_import_over_a_concatenating_baseline() {
             "mlx_f".to_string(),
         ],
         "byte_slice is a builtin, not an export"
+    );
+
+    drop(m);
+    drop(base_m);
+}
+
+/// `int32_t mlx_f(const char* s, bool* out)` — a fallible predicate (D17).
+type PredFn = extern "C" fn(*const c_char, *mut bool) -> i32;
+
+const CMP: &str = "\
+export fn is_ab(c: string) -> bool! { return byte_slice(c, 0, 2) == \"AB\" }
+export fn is_ab_rhs(c: string) -> bool! { return \"AB\" == byte_slice(c, 0, 2) }
+export fn not_ab(c: string) -> bool! { return byte_slice(c, 0, 2) != \"AB\" }
+export fn is_abc(c: string) -> bool! { return byte_slice(c, 0, 2) == \"ABC\" }
+export fn three_is_ab(c: string) -> bool! { return byte_slice(c, 0, 3) == \"AB\" }
+export fn empty_is_empty(c: string) -> bool! { return byte_slice(c, 2, 2) == \"\" }
+export fn matches(c: string, want: string) -> bool! { return byte_slice(c, 0, 2) == want }
+";
+
+fn pred(m: &Module, sym: &[u8]) -> PredFn {
+    unsafe { std::mem::transmute(m.symbol(sym).unwrap()) }
+}
+
+fn ask(f: PredFn, s: &core::ffi::CStr) -> (i32, bool) {
+    let mut out = false;
+    let st = f(s.as_ptr(), &mut out);
+    (st, out)
+}
+
+/// **`SPEC-string-slice-compare` acceptance A, B, C, G and H — measured on a loaded module.**
+///
+/// C is the one that earns the slice, and the source is longer than the span on purpose:
+/// `ml_streq` walks to a NUL, so reusing it would compare all of `"ABZZZZZZ"` against `"AB"`
+/// and answer **false** where the truth is **true**. The wrong answer points the opposite way
+/// from the suffix bug the span slice had, which is why it needs its own case.
+#[test]
+fn a_span_compares_by_length_not_by_nul() {
+    let (_out, m) = build("cmp", "cmp", CMP);
+
+    // A — the rule that motivated the slice.
+    let is_ab = pred(&m, b"mlx_is_ab\0");
+    assert_eq!(ask(is_ab, c"AB123456"), (0, true));
+    assert_eq!(ask(is_ab, c"AX123456"), (0, false));
+
+    // C — a source LONGER than the span. This is the acceptance criterion, not a detail.
+    assert_eq!(
+        ask(is_ab, c"ABZZZZZZ"),
+        (0, true),
+        "a NUL-bounded compare would answer false here"
+    );
+
+    // B — a length mismatch is not equality, in BOTH directions.
+    assert_eq!(
+        ask(pred(&m, b"mlx_is_abc\0"), c"ABC12345"),
+        (0, false),
+        "a 2-byte span is not equal to a 3-byte literal"
+    );
+    assert_eq!(
+        ask(pred(&m, b"mlx_three_is_ab\0"), c"ABC12345"),
+        (0, false),
+        "…nor a 3-byte span to a 2-byte literal"
+    );
+
+    // G — the right-hand spelling and the negated form.
+    assert_eq!(ask(pred(&m, b"mlx_is_ab_rhs\0"), c"AB123456"), (0, true));
+    assert_eq!(ask(pred(&m, b"mlx_not_ab\0"), c"AB123456"), (0, false));
+    assert_eq!(ask(pred(&m, b"mlx_not_ab\0"), c"AX123456"), (0, true));
+
+    // H — an empty span equals the empty literal.
+    assert_eq!(
+        ask(pred(&m, b"mlx_empty_is_empty\0"), c"AB123456"),
+        (0, true)
+    );
+
+    drop(m);
+}
+
+/// **Acceptance D and I** — a borrowed parameter on the other side, and out of range is `-2`.
+#[test]
+fn an_out_of_range_span_comparison_is_a_status_not_false() {
+    let (_out, m) = build("cmprange", "cmp", CMP);
+
+    // I — compared against a `string` PARAMETER rather than a literal.
+    let matches: extern "C" fn(*const c_char, *const c_char, *mut bool) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_matches\0").unwrap()) };
+    let mut out = false;
+    assert_eq!(matches(c"AB1234".as_ptr(), c"AB".as_ptr(), &mut out), 0);
+    assert!(out);
+    assert_eq!(matches(c"AB1234".as_ptr(), c"XY".as_ptr(), &mut out), 0);
+    assert!(!out);
+
+    // D — the string is shorter than the span. NOT `false`: the host has to be able to tell
+    // "the range was wrong" from "the bytes differ", which is the whole of DP-C2.
+    let is_ab = pred(&m, b"mlx_is_ab\0");
+    let mut out = true;
+    let st = is_ab(c"A".as_ptr(), &mut out);
+    assert_eq!(
+        st,
+        mlc::abi::ML_ST_INDEX_OUT_OF_RANGE,
+        "an out-of-range span is a status, not a `false` answer"
+    );
+    let st = is_ab(c"".as_ptr(), &mut out);
+    assert_eq!(st, mlc::abi::ML_ST_INDEX_OUT_OF_RANGE);
+
+    drop(m);
+}
+
+/// **Acceptance J** — comparing a span adds no import and no export.
+#[test]
+fn a_span_comparison_adds_no_import_over_a_comparing_baseline() {
+    let (base_dir, base_m) = build(
+        "cbase",
+        "cbase",
+        "export fn f(s: string) -> bool { return s == \"AB\" }",
+    );
+    let baseline = pe::read_imports(&base_dir.join("cbase.dll")).expect("baseline imports");
+    assert!(!baseline.is_empty(), "a cdylib always imports CRT startup");
+
+    let (out, m) = build(
+        "cimp",
+        "cimp",
+        "export fn f(s: string) -> bool! { return byte_slice(s, 0, 2) == \"AB\" }",
+    );
+    let dll = out.join("cimp.dll");
+    let imports = pe::read_imports(&dll).expect("imports");
+    assert_eq!(
+        imports, baseline,
+        "`ml_subeq` is a byte loop, not a CRT call"
+    );
+    for banned in ["strcmp", "strncmp", "memcmp", "strlen"] {
+        assert!(
+            !imports.iter().any(|i| i.ends_with(&format!("!{banned}"))),
+            "{banned} must not be imported: {imports:?}"
+        );
+    }
+
+    let mut exports = pe::read_exports(&dll).expect("exports");
+    exports.sort();
+    assert_eq!(
+        exports,
+        vec![
+            "ml_iface_hash_cimp".to_string(),
+            "ml_module_abi_version".to_string(),
+            "mlx_f".to_string(),
+        ],
+        "the comparison is a builtin, not an export"
     );
 
     drop(m);

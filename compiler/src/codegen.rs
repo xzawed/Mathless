@@ -177,6 +177,7 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
     // After the concat set, because `ml_sublen` calls `ml_slen` — which `builds_strings` has
     // already pulled in, since a span IS a built string.
     emit_span_helpers(module, &mut out);
+    emit_span_compare_helper(module, &mut out);
     emit_rounding_helpers(module, &mut out);
 
     for f in &module.functions {
@@ -930,7 +931,60 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             // happens to hold exactly those bytes — the wrong answer, silently, with no
             // compile error. Route both directions through the byte-loop helper instead.
             if matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str {
-                let call = format!("ml_streq({}, {})", emit_expr(lhs, abi), emit_expr(rhs, abi));
+                // A SPAN cannot go through `ml_streq`: it has no NUL at `to`, so the helper
+                // would walk on into the rest of the source and compare the WHOLE remainder
+                // against the other side — answering `false` for `"ABZZZZ"` vs `"AB"` where
+                // the span `(0, 2)` is exactly `"AB"`. The oppposite of the truth, silently
+                // (`SPEC-string-slice-compare` §2.3).
+                //
+                // So the whole comparison is lowered here, and `IrExprKind::ByteSlice` stays
+                // `unreachable!` as a standalone expression — if it ever produced a bare
+                // `s.add(from)`, every NUL-walker in the emitted crate would read past `to`.
+                // That is the hazard the pre-verification named, and this is where it is
+                // closed (§2.5).
+                let span = match (&lhs.kind, &rhs.kind) {
+                    (IrExprKind::ByteSlice { s, from, to }, _) => Some((s, from, to, rhs)),
+                    (_, IrExprKind::ByteSlice { s, from, to }) => Some((s, from, to, lhs)),
+                    _ => None,
+                };
+                let call = match span {
+                    Some((s, from, to, other)) => {
+                        // The bail is chosen from the RETURN ABI, exactly as the `Index` arm
+                        // above does. Writing `return -2` here would be the `StringOut` form,
+                        // and this slice's whole motivation is a `-> bool!` predicate, whose
+                        // body returns `Result<bool, i32>`. The generated crate would not
+                        // compile — caught in the SPEC's own snippet by review, before it was
+                        // written down as code.
+                        let bail = match abi {
+                            RetAbi::Fallible => {
+                                format!("return Err({});", crate::abi::ML_ST_INDEX_OUT_OF_RANGE)
+                            }
+                            RetAbi::StringOut | RetAbi::ArrayOut(_) => {
+                                format!("return {};", crate::abi::ML_ST_INDEX_OUT_OF_RANGE)
+                            }
+                            RetAbi::Plain => unreachable!(
+                                "comparing a span requires `-> T!` — typeck rejects it in an \
+                                 infallible function"
+                            ),
+                        };
+                        // `s` is BOUND, not emitted twice. Today it can only be a parameter
+                        // or a literal, so the cost would be nothing — but the concat
+                        // emitter measured the other version of this exact mistake
+                        // (`ml_fn_score(…)` called once per pass) and the note there is that
+                        // two emissions are also the mechanism by which two reads could
+                        // disagree. One binding, two uses.
+                        format!(
+                            "{{ let __ss = {}; let __sf = {}; \
+                             let __sl = ml_sublen(__ss, __sf, {}); \
+                             if __sl < 0 {{ {bail} }} ml_subeq(__ss, __sf, __sl, {}) }}",
+                            emit_expr(s, abi),
+                            emit_expr(from, abi),
+                            emit_expr(to, abi),
+                            emit_expr(other, abi)
+                        )
+                    }
+                    None => format!("ml_streq({}, {})", emit_expr(lhs, abi), emit_expr(rhs, abi)),
+                };
                 return if matches!(op, IrBinOp::Eq) {
                     call
                 } else {
@@ -1400,7 +1454,15 @@ fn compares_strings(module: &IrModule) -> bool {
             // comparison nested inside still has to be found.
             IrExprKind::ByteLen(operand) => in_expr(operand),
             IrExprKind::Binary { op, lhs, rhs } => {
-                (matches!(op, IrBinOp::Eq | IrBinOp::Ne) && lhs.ty == IrType::Str)
+                // A SPAN comparison does not use `ml_streq` — it lowers to `ml_subeq`, which
+                // `emit_span_helpers` provides. Counting it here would emit `ml_streq` into a
+                // module that never calls it, and a widened gate over-emits as easily as a
+                // narrow one under-emits: dead code in the module is dead code in the
+                // shipped `.dll` (`the_helper_is_only_emitted_when_a_comparison_exists`).
+                (matches!(op, IrBinOp::Eq | IrBinOp::Ne)
+                    && lhs.ty == IrType::Str
+                    && !matches!(lhs.kind, IrExprKind::ByteSlice { .. })
+                    && !matches!(rhs.kind, IrExprKind::ByteSlice { .. }))
                     || in_expr(lhs)
                     || in_expr(rhs)
             }
@@ -1521,8 +1583,13 @@ fn emit_span_helpers(module: &IrModule, out: &mut String) {
          \x20   // past the NUL is refused rather than reading whatever follows it.\n\
          \x20   if to > ml_slen(src) { return -1; }\n\
          \x20   to - from\n\
-         }\n\n\
-         fn ml_wsub(buf: *mut u8, off: i32, src: *const u8, from: i32, n: i32, cap: i32) -> i32 {\n\
+         }\n\n",
+    );
+    if !returns_a_span(module) {
+        return;
+    }
+    out.push_str(
+        "fn ml_wsub(buf: *mut u8, off: i32, src: *const u8, from: i32, n: i32, cap: i32) -> i32 {\n\
          \x20   // `n` bytes, and the source NUL is NOT consulted: that is the whole point.\n\
          \x20   // `cap` is still a hard stop for the same aliasing case `ml_wstr` documents —\n\
          \x20   // nothing in the C ABI forbids a host from passing a string that overlaps its\n\
@@ -1534,6 +1601,73 @@ fn emit_span_helpers(module: &IrModule, out: &mut String) {
          \x20       i += 1;\n\
          \x20   }\n\
          \x20   off + n\n\
+         }\n\n",
+    );
+}
+
+/// Does a span reach a `return` — alone, or as a piece of a concatenation?
+///
+/// That is the only path `ml_wsub` is called from (`emit_concat_return`), so it is the gate.
+/// A module that only COMPARES spans never writes one.
+fn returns_a_span(module: &IrModule) -> bool {
+    // Two `if let`s rather than a match with a wildcard, and for the reason `i32_literal`
+    // records: this file's rule is that a walker's every variant must ANSWER, but "does this
+    // reach the buffer writer?" has one correct default for anything added later, which is
+    // `no` — a new expression kind cannot be a concat piece without saying so.
+    fn is_span_piece(e: &IrExpr) -> bool {
+        if matches!(e.kind, IrExprKind::ByteSlice { .. }) {
+            return true;
+        }
+        if let IrExprKind::Concat(pieces) = &e.kind {
+            return pieces.iter().any(is_span_piece);
+        }
+        false
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| {
+            if let IrStmt::If { body, .. } | IrStmt::While { body, .. } = s {
+                return in_stmts(body);
+            }
+            if let IrStmt::Return(e) = s {
+                return is_span_piece(e);
+            }
+            false
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
+/// `ml_subeq` — emitted only for a module that COMPARES a span.
+///
+/// Split from the writer above for the reason `emit_slen_helper` was split from the concat
+/// set (§9-40): a module that only cuts a span never calls this, and a module that only
+/// compares one never calls `ml_wsub`. A widened gate over-emits as easily as a narrow one
+/// under-emits, and dead code in the module is dead code in the shipped `.dll`.
+fn emit_span_compare_helper(module: &IrModule, out: &mut String) {
+    if !module
+        .functions
+        .iter()
+        .any(|f| crate::ir::compares_a_span(&f.body))
+    {
+        return;
+    }
+    out.push_str(
+        "fn ml_subeq(a: *const u8, from: i32, n: i32, b: *const u8) -> bool {\n\
+         \x20   // `n` bytes of `a` against the NUL-terminated `b`, and the LENGTHS must match\n\
+         \x20   // too. Two tests do that, and dropping either one makes the answer wrong in a\n\
+         \x20   // different direction: the `y == 0` inside the loop catches a `b` that is\n\
+         \x20   // SHORTER than the span, and the check after the loop catches a `b` that is\n\
+         \x20   // LONGER. Without them `byte_slice(s, 0, 2) == \"ABC\"` would be true.\n\
+         \x20   //\n\
+         \x20   // `ml_streq` is not reusable here: it walks `a` to a NUL, and a span has none\n\
+         \x20   // at `to`.\n\
+         \x20   let mut i: i32 = 0;\n\
+         \x20   while i < n {\n\
+         \x20       let (x, y) = unsafe { (*a.add((from + i) as usize), *b.add(i as usize)) };\n\
+         \x20       if y == 0 || x != y { return false; }\n\
+         \x20       i += 1;\n\
+         \x20   }\n\
+         \x20   unsafe { *b.add(n as usize) == 0 }\n\
          }\n\n",
     );
 }

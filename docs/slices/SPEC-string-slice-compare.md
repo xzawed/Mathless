@@ -1,6 +1,20 @@
 # SPEC — 스팬 비교 `byte_slice(s, a, b) == "…"`
 
-- **상태: 초안 · 사용자 확인 대기.** DP-C1~C5에 권고가 붙어 있다.
+- **상태: 확정 · 구현 완료 (2026-09-13).** **DP-C1~C5를 사용자가 확인했다** — 다섯 다 권고대로다.
+  - 갈리는 둘을 따로 물었다: **DP-C1 스팬 비교**(`starts_with` 내장이 아니라), **DP-C2 `-2` → `!`**.
+    나머지 셋(`ByteSlice`만 · `ml_subeq` 신규 · 스팬 대 스팬 제외)은 살아 있는 대안이 없어 함께 확인됐다.
+  - **수용 A~L 전부 닫혔다.** 어느 테스트가 어느 기준을 닫았는지 §3에 적었다.
+
+  > **📌 §5.2의 첫 줄을 정정한다 — 위험이 둘로 갈린다(실측).** 방출기를 되돌려 **두 가지 방식으로**
+  > 깨 봤다:
+  >
+  > | 무엇을 뺐나 | 결과 |
+  > |---|---|
+  > | 비교 lowering만 | **`unreachable!` 패닉** — 조용하지 않다. `ByteSlice`를 식으로 낼 길이 없다 |
+  > | 비교 lowering **+** `ByteSlice` 팔에 맨 포인터 | **조용한 오답 `(0, false)`** (진실은 `(0, true)`) |
+  >
+  > **즉 두 보호가 겹쳐야만 안전하다.** `unreachable!` 하나만으로는 충분하고, 그것을 채우는
+  > 순간 수용 C가 유일한 방어가 된다. 검증이 짚은 그대로다.
 - 선행: `SPEC-string-slice.md`(#229/#230 — `byte_slice`) · `SPEC-string-input.md`(**DP-S2 불투명 바이트** ·
   **DP-S3 연산 범위** · `==`의 의미) · `SPEC-array-input.md`(**인덱싱이 함수를 `!`로 만든다**)
 - 관련 결정: **D16**(할당자 없음) · **D17**(i32 status) · **DP-S2** · **DP-S3**
@@ -205,6 +219,24 @@ fn ml_subeq(a: *const u8, from: i32, n: i32, b: *const u8) -> bool {
 - **K. 호스트 두 곳.** 오라클 + **실제 C 호스트**(수용 D 게이트).
 - **L. `ByteSlice`가 식에서 맨 포인터가 되지 않는다.** `emit_expr`의 팔이 여전히 `unreachable!`이고,
   생성 Rust에 `ml_subeq` 없이 스팬 포인터가 나가는 자리가 없다.
+
+> **닫힌 자리 (2026-09-13 실측).**
+>
+> | 수용 | 닫은 것 |
+> |---|---|
+> | A·B·**C**·G·H | `a_span_compares_by_length_not_by_nul` — **소스가 스팬보다 길다** |
+> | D·I | `an_out_of_range_span_comparison_is_a_status_not_false` |
+> | E | `a_span_comparison_needs_the_bang` (컴파일러) |
+> | F | `the_other_built_strings_are_still_refused_in_a_comparison` |
+> | J | `a_span_comparison_adds_no_import_over_a_comparing_baseline` — **테스트로 고정** |
+> | **K** | **`hosts/c-host/host.c`의 `is_kookmin` 블록** — §7의 R2 규칙 자체 |
+> | L | 위 📌의 두 갈래 파괴 실측 + `emit_expr` 팔이 `unreachable!` 그대로 |
+>
+> **덤으로 하나 더 닫았다**: `the_span_helpers_are_only_emitted_where_they_are_called`.
+> 첫 구현이 스팬을 비교하는 모든 모듈에 **`ml_streq`를 죽은 채로** 넣고 있었다 —
+> `compares_strings`가 스팬 비교까지 세고 있었기 때문이다. `ml_wsub`도 비교만 하는 모듈에서
+> 죽어 있었다. 셋을 각자 게이트로 갈랐고(§9-40이 `emit_slen_helper`를 가른 것과 같은 이유),
+> 골든 diff가 **+40줄에서 +30줄로** 줄었다.
 
 ### 3.1 반드시 거부되는 것
 

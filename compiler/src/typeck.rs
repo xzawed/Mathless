@@ -721,6 +721,19 @@ fn check_function(
                 f.name, ret
             )));
         }
+        // The same question about a span, asked the same way and for the same reason
+        // (`SPEC-string-slice-compare` DP-C2). A span outside the string is a status rather
+        // than `false`, because `false` would make "out of range" and "the bytes differ"
+        // indistinguishable to the host — the silent wrong answer this repository has closed
+        // four times by clamping.
+        if crate::ir::compares_a_span(&body) {
+            return Err(TypeError::new(format!(
+                "function '{}' compares a `{BYTE_SLICE_BUILTIN}`, so it can fail — declare it \
+                 `-> {}!`. A span outside the string is reported as a reserved negative \
+                 status, and D17 only gives a function a status when its signature says `!`",
+                f.name, ret
+            )));
+        }
     }
 
     Ok(IrFunction {
@@ -1640,6 +1653,16 @@ fn reject_negative_index(index: &IrExpr, fname: &str) -> Result<(), TypeError> {
     Ok(())
 }
 
+/// Is this expression a span — `byte_slice(s, from, to)`?
+///
+/// Its own predicate rather than an inline `matches!`, because the comparison arm asks the
+/// question three times and the answer decides three different things: whether the built-string
+/// rule applies, whether the enclosing function must be fallible, and whether this is the
+/// span-to-span case DP-C5 leaves out.
+fn is_span(e: &IrExpr) -> bool {
+    matches!(e.kind, IrExprKind::ByteSlice { .. })
+}
+
 fn reject_built_string(e: &IrExpr, fname: &str, position: &str) -> Result<(), TypeError> {
     if is_built_string(e) {
         return Err(TypeError::new(format!(
@@ -2060,9 +2083,34 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             // Comparing a BUILT string would need its bytes to exist before the caller's
             // buffer is in play (DP-K3). Concatenating two of them is fine — that is one
             // longer append, not a second place to live.
+            //
+            // A SPAN is the exception, and the reason is the whole of DP-C3: a concatenation
+            // and an `i32 as string` name bytes the module has not produced yet, while
+            // `byte_slice(s, …)` names bytes already sitting inside a borrowed `s`. So the
+            // relaxation does not weaken the rule for the other two — their refusal is
+            // "there are no bytes", which has not changed.
             if matches!(op, BinOp::Eq | BinOp::Ne) {
-                reject_built_string(&lhs, fname, "on the left of a comparison")?;
-                reject_built_string(&rhs, fname, "on the right of a comparison")?;
+                let spans = usize::from(is_span(&lhs)) + usize::from(is_span(&rhs));
+                if spans == 2 {
+                    // DP-C5: two spans need two range checks and two lengths. Smallest thing
+                    // first (`SPEC-string-return` §0.2), and the diagnostic says which
+                    // decision this is rather than falling through to the generic message.
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': comparing one `{BYTE_SLICE_BUILTIN}` against \
+                         another is not in the language yet — compare a span against a \
+                         literal or a `string` parameter \
+                         (`SPEC-string-slice-compare` DP-C5)"
+                    )));
+                }
+                if !is_span(&lhs) {
+                    reject_built_string(&lhs, fname, "on the left of a comparison")?;
+                }
+                if !is_span(&rhs) {
+                    reject_built_string(&rhs, fname, "on the right of a comparison")?;
+                }
+                // DP-C2 (an out-of-range span is a status, not `false`) is enforced where
+                // indexing's identical rule is: a walk over the finished body, because this
+                // function cannot see the signature. See `first_span_compare`.
             }
             let (irop, ty) = check_binop(*op, lhs.ty, rhs.ty, fname)?;
             Ok(IrExpr {

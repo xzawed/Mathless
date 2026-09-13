@@ -196,3 +196,113 @@ fn an_empty_array_is_a_normal_path() {
     )
     .expect("a loop that may run zero times is ordinary");
 }
+
+/// **A literal negative index is refused at compile time, not at run time.**
+///
+/// It was accepted until 2026-09-13: `xs[-1]` compiled, and the bounds check turned it into
+/// `ML_ST_INDEX_OUT_OF_RANGE` when the function ran. Safe, but the diagnostic had been
+/// demoted to a status for something fully known while compiling — `-1` is out of range for
+/// every array a host could pass.
+///
+/// Found by measuring, not by reading: the string-slice slice added exactly this check for
+/// `byte_slice(s, -1, …)` after `-1` turned out to be a unary negation rather than a
+/// `ConstI32` literal. The same blind spot was one slice over, and older.
+///
+/// The boundary is deliberately narrow and matches `byte_slice`'s: a literal, or a negated
+/// literal. `xs[0-1]` is arithmetic and stays a run-time status, because folding expressions
+/// is a different feature and the line has to be somewhere a reader can predict.
+#[test]
+fn a_literal_negative_index_is_refused_while_compiling() {
+    let err = compile_to_ir("export fn f(xs: [i32]) -> i32! { return xs[-1] }")
+        .expect_err("`-1` cannot index any array, and that is knowable here");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("-1"),
+        "the diagnostic must show the offending index: {msg}"
+    );
+    assert!(
+        msg.to_lowercase().contains("negative"),
+        "…and say what is wrong with it: {msg}"
+    );
+
+    // The same rule the span builtin follows, so the two cannot drift apart.
+    let err = compile_to_ir("export fn f(s: string) -> string! { return byte_slice(s, -1, 2) }")
+        .expect_err("`byte_slice` already refuses this");
+    assert!(format!("{err:?}").to_lowercase().contains("negative"));
+
+    // …and what stays a RUN-TIME status, so the boundary is pinned rather than implied.
+    compile_to_rust("export fn f(xs: [i32]) -> i32! { return xs[0 - 1] }")
+        .expect("arithmetic is not folded — that is a different feature");
+    compile_to_rust("export fn f(xs: [i32], i: i32) -> i32! { return xs[i] }")
+        .expect("a variable index is a run-time question by definition");
+    compile_to_rust("export fn f(xs: [i32]) -> i32! { return xs[99] }")
+        .expect("a POSITIVE literal depends on the host's length and stays a status");
+}
+
+/// The write side takes the same rule — `result[-1] = v` is refused too.
+///
+/// Both sites were edited together on purpose. A check on the read alone would have left the
+/// array-RETURN slice able to write through a negative literal, which is the half that
+/// touches the caller's buffer rather than merely reading it.
+#[test]
+fn a_literal_negative_result_index_is_refused_too() {
+    let err = compile_to_ir(
+        "export fn f() -> [i32]! {\n\
+         \x20 result 1\n\
+         \x20 result[-1] = 5\n\
+         }",
+    )
+    .expect_err("writing through a negative literal must not compile");
+    let msg = format!("{err:?}").to_lowercase();
+    assert!(msg.contains("negative") && msg.contains("-1"), "{err:?}");
+
+    // The ordinary write still compiles.
+    compile_to_rust(
+        "export fn f() -> [i32]! {\n\
+         \x20 result 1\n\
+         \x20 result[0] = 5\n\
+         }",
+    )
+    .expect("a non-negative literal write is ordinary");
+}
+
+/// **The boundary: a negative LENGTH is not a negative INDEX.**
+///
+/// `result -1` stays legal and means an empty result — `SPEC-array-return` §5.2-3 decided
+/// that, in the same words the `ml_cap` rule uses. A length can honestly compute to zero or
+/// less; an index addresses nothing at any length. Pinned here so the index rule above cannot
+/// quietly grow into "negative numbers are refused" and reverse a recorded decision.
+#[test]
+fn a_negative_result_length_is_still_an_empty_result() {
+    compile_to_rust(
+        "export fn f() -> [i32]! {\n\
+         \x20 result -1\n\
+         }",
+    )
+    .expect("SPEC-array-return section 5.2-3: a negative length is an empty result, not an error");
+}
+
+/// **The compile-time check is a diagnostic, and the run-time check is what makes it safe.**
+///
+/// Two spellings step around `i32_literal` on purpose — a cast, and a local. Looking through
+/// either would need constant propagation, and then the line between "refused while
+/// compiling" and "reported as a status" would depend on how far the compiler happens to
+/// propagate, which an author cannot predict.
+///
+/// So they must still COMPILE, and the emitted bounds check must still be there. Review named
+/// the danger precisely: a later "typeck already refuses negatives" shortcut in codegen would
+/// turn exactly these two into writes past the host's buffer.
+#[test]
+fn the_bounds_check_is_what_makes_a_negative_index_safe() {
+    for src in [
+        "export fn f(xs: [i32]) -> i32! { return xs[-1 as i32] }",
+        "export fn f(xs: [i32]) -> i32! { let i = -1\n return xs[i] }",
+    ] {
+        let rust = compile_to_rust(src)
+            .unwrap_or_else(|e| panic!("must still compile — the check is narrow on purpose: {e}"));
+        assert!(
+            rust.contains("__i < 0"),
+            "the run-time bounds check must survive; it is the safety, not the diagnostic:\n{rust}"
+        );
+    }
+}

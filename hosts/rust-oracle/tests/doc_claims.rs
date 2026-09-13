@@ -1196,16 +1196,27 @@ fn no_test_creates_a_temp_directory_by_hand() {
     // Assembled for the same reason, and it bit the same way: written literally, this file
     // counted as a THIRD definition of the helper.
     let defines_helper = format!("pub struct {}", "TempOut");
+    let drops_it = format!("impl {} for", "Drop");
+    let removes = format!("remove_{}", "dir_all");
 
     let root = repo_root();
     let mut offenders = Vec::new();
     // RECURSIVE, and that is not incidental: `common/` is itself a subdirectory, so a
     // top-level-only walk would miss a leaky helper copied into exactly the place a helper
     // most plausibly goes. (Review named this; it was a hole, not a boundary.)
-    let mut stack: Vec<PathBuf> = ["hosts/rust-oracle/tests", "compiler/tests"]
-        .iter()
-        .map(|d| root.join(d))
-        .collect();
+    // `src/bin` is in scope, and that was measured the hard way: `mlprobe` landed in the same
+    // session as this guard, created its scratch tree by hand, and left 27 of them — in the
+    // one directory a `tests/`-only walk does not reach. A developer-run binary is the same
+    // kind of thing as a test for this purpose. Library code stages its own builds with its
+    // own documented cleanup (`emit.rs`), which is a different question this does not answer.
+    let mut stack: Vec<PathBuf> = [
+        "hosts/rust-oracle/tests",
+        "compiler/tests",
+        "compiler/src/bin",
+    ]
+    .iter()
+    .map(|d| root.join(d))
+    .collect();
     let mut seen_files = 0usize;
     let mut helpers = 0usize;
     while let Some(dir) = stack.pop() {
@@ -1231,6 +1242,16 @@ fn no_test_creates_a_temp_directory_by_hand() {
             // not a name: a file stops being exempt the moment it stops being the helper.
             if text.contains(&defines_helper) {
                 helpers += 1;
+                continue;
+            }
+            // A file that removes its own tree in a `Drop` has answered the question. Checked
+            // as a property, like the helper exemption above: a binary cannot import the test
+            // helper, so it has to carry its own, and what matters is that cleanup survives an
+            // unwind — not which type provides it.
+            // …and the Drop must actually REMOVE something. `impl Drop for` alone is too
+            // loose: a file with an unrelated Drop would be exempt without cleaning anything
+            // up. Review named that; it costs one more substring to close.
+            if text.contains(&drops_it) && text.contains(&removes) {
                 continue;
             }
             for (n, line) in text.lines().enumerate() {

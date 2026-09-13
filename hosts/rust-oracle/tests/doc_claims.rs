@@ -1166,3 +1166,165 @@ fn the_c_host_can_gate_every_module_name_the_compiler_accepts() {
          prefix, or this guard checks a constant nothing uses"
     );
 }
+
+/// Every integer constant `compiler/src/abi.rs` declares, as `(name, value)`.
+///
+/// Parsed rather than imported on purpose. `mlc::abi::ML_MAX_MODULE_NAME` would give the
+/// value, but not the NAME as it is spelled — and the spelling is what a document writes.
+fn abi_constants() -> Vec<(String, i64)> {
+    let src = read("compiler/src/abi.rs");
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let Some(rest) = line.trim_start().strip_prefix("pub const ") else {
+            continue;
+        };
+        let Some((name, rest)) = rest.split_once(':') else {
+            continue;
+        };
+        let Some((_ty, value)) = rest.split_once('=') else {
+            continue;
+        };
+        if let Ok(v) = value.trim().trim_end_matches(';').trim().parse::<i64>() {
+            out.push((name.trim().to_string(), v));
+        }
+    }
+    out
+}
+
+fn is_ident(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+/// Every value this line assigns to `name`, in the shapes markdown actually uses:
+/// `NAME = -2`, `` `NAME = -2` ``, `**NAME = 64**`, `NAME (-1)`-style parentheses.
+///
+/// Numbers are returned, not spellings, because `-122` and `-1` share a prefix — a substring
+/// search would have called the rejected alternative in `SPEC-string-return` §T6 a match for
+/// the chosen value and passed a line it had not actually checked.
+fn assigned_on_line(line: &str, name: &str) -> Vec<i64> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(i) = line[from..].find(name) {
+        let start = from + i;
+        let end = start + name.len();
+        from = end;
+
+        // A longer identifier that merely CONTAINS this one is a different constant.
+        if line[..start].chars().next_back().is_some_and(is_ident) {
+            continue;
+        }
+        let after = &line[end..];
+        if after.chars().next().is_some_and(is_ident) {
+            continue;
+        }
+
+        // Markdown puts decoration between the name and the `=`; step over it.
+        let Some(rest) = after.trim_start_matches([' ', '`', '*']).strip_prefix('=') else {
+            continue;
+        };
+        let rest = rest.trim_start_matches([' ', '`', '*', '(']);
+        let neg = rest.starts_with('-');
+        let digits: String = rest[usize::from(neg)..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if digits.is_empty() {
+            continue;
+        }
+        let v: i64 = digits.parse().expect("ascii digits");
+        out.push(if neg { -v } else { v });
+    }
+    out
+}
+
+/// Every `.md` in the working tree, as `(path relative to the root, contents)`.
+///
+/// Walked rather than listed. Every other guard in this file names its documents, and that
+/// is the failure mode the global rule warns about — whatever is outside the hand-written
+/// list rots quietly. A document added tomorrow is covered by this one without being
+/// remembered.
+fn every_markdown_file() -> Vec<(String, String)> {
+    let root = repo_root();
+    let mut out = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read a directory") {
+            let entry = entry.expect("a directory entry");
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.is_dir() {
+                if name != "target" && name != ".git" {
+                    stack.push(path);
+                }
+            } else if name.ends_with(".md") {
+                let rel = path
+                    .strip_prefix(&root)
+                    .expect("a path under the root")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((
+                    rel,
+                    std::fs::read_to_string(&path).expect("read a document"),
+                ));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// **No document states a value for an `abi.rs` constant that `abi.rs` does not state.**
+///
+/// This file's own header says the repository watched a measured number drift three times
+/// and that until it existed nothing checked the numbers. It still did not check THESE
+/// numbers, and the hole was measured rather than argued: lowering `ML_MAX_MODULE_NAME`
+/// from 64 to 48 left the whole workspace — 516 tests, four gates required — green, while
+/// three documents went on saying 64 in the present tense, one of them in the very table
+/// cell that reads "**문서에 숫자를 적지 않는다**".
+///
+/// The rule the global instructions give is "put the number in a machine-checkable form or
+/// do not put it in a document". This is that form: the document may carry the number, and
+/// the source decides whether it is still true.
+///
+/// **A line that also states the true value passes.** A decision table that shows a rejected
+/// alternative beside the chosen one (`SPEC-string-return` §T6 weighs `-122` against `-1`)
+/// is not drift — it is the record of a choice, and erasing it would cost more than it saves.
+#[test]
+fn no_document_states_a_stale_value_for_an_abi_constant() {
+    let constants = abi_constants();
+    assert!(
+        constants.len() >= 4,
+        "compiler/src/abi.rs declared {} integer constants — it had four, so either the \
+         parse broke or the constants moved, and in both cases this guard is now checking \
+         nothing",
+        constants.len()
+    );
+
+    let mut stale = Vec::new();
+    for (path, text) in every_markdown_file() {
+        for (n, line) in text.lines().enumerate() {
+            for (name, value) in &constants {
+                let found = assigned_on_line(line, name);
+                // The line states the truth somewhere on it; anything else beside it is a
+                // rejected alternative, not a stale claim.
+                if found.is_empty() || found.contains(value) {
+                    continue;
+                }
+                for wrong in found {
+                    stale.push(format!(
+                        "{path}:{} says `{name} = {wrong}` — compiler/src/abi.rs says {value}",
+                        n + 1
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        stale.is_empty(),
+        "a document states a value the source no longer holds. The source is \
+         compiler/src/abi.rs; fix the document, or drop the number and let the source say \
+         it:\n{}",
+        stale.join("\n")
+    );
+}

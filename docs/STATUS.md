@@ -1943,6 +1943,66 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 > **CI가 부르는 방식 그대로 부를 것**, **verify에 "내가 안 물어본 것 중 가장 위험한 것"을 따로 물을 것**,
 > **가드는 만든 뒤 일부러 깨서 실패를 볼 것.** 세 번째를 지키지 않은 가드가 이번에 두 개 실패했다.
 
+### 9-43. 내가 §9-42에 적은 주석이 틀렸고, 그것을 확인하다 결함이 하나 더 나왔다 (2026-09-13, E2)
+
+§9-42의 가드 주석에 이렇게 적었다: *"이 파일의 다른 가드는 **전부** 문서 목록을 손으로 적는다."*
+**이번 세션의 교훈이 바로 그 모양이라서** 재 봤다 — `doc_claims.rs`의 `read_dir` 호출은 **다섯 개**고,
+그중 `the_slice_index_is_one_table_and_lists_every_spec`은 **`docs/slices/`를 훑는다.** 문서를 스스로
+찾는 가드가 이미 있었다. **주석을 고쳤다.**
+
+> **이것이 다섯째다.** §9-40이 셋, §9-41이 넷째, 그리고 이것. 다섯 다 같은 자리에서 났다 —
+> **재지 않고 적은 문장.** 이번 것은 *가드를 만든 커밋의 주석*이었다.
+
+#### 9-43.1 확인하다 나온 것 — 권리를 주는 문장이 **한 문서 건너** 적게 나열하고 있었다
+
+다른 가드들의 범위도 같이 쟀다. 두 개는 온전했다(`로드하는 모듈 N개`는 **3개 문서 전부**가 목록 안,
+크기 가드의 제외는 *"각자 그 시점의 기록"* 이라는 같은 논리). **산출물 가드가 아니었다.**
+
+`every_artifact_the_emitter_writes_is_named_in_the_docs`의 주석이 이렇게 적혀 있다:
+
+> *"D23 enumerated four items while `LICENSE-OUTPUT-EXCEPTION` §1 listed five … a grant that
+> under-lists what it grants is the worst place for this drift, and it sat outside this guard
+> until 2026-09-05."*
+
+**같은 문장이 한 문서 건너 그대로 남아 있었다.** `OPEN_QUESTIONS.md`의 "✅ Q15 닫힘" 절이 같은
+권리를 **`.dll`·`.h`·`.pas`·중간 Rust** 로 요약한다 — 또 넷, `.lib`가 없다. `DECISIONS.md`는
+09-05에 고쳐졌고 **이쪽은 가드 목록 밖이었다.**
+
+| 실측 | |
+|---|---|
+| `LICENSE-OUTPUT-EXCEPTION`을 인용하는 문서 | **7개** |
+| 그중 `.lib`를 적은 것 | **6개** |
+| 빠뜨린 것 | **`docs/OPEN_QUESTIONS.md`** |
+
+**권리 범위는 바뀌지 않았다** — 라이선스 본문이 *"together with any future generated artifact of
+the same kind"* 라고 적었다. **열거만 낡았다**(09-02에 썼고 `.lib`는 09-03에 왔다). 그래도 요약을
+읽고 *"내 `.lib`는 포함인가"* 를 판단하는 사람에게는 **좁은 허가로 읽힌다.**
+
+#### 9-43.2 가드는 **범위를 자백하는 문서**를 고른다
+
+`every_document_that_cites_the_output_licence_lists_what_it_covers`
+
+- 산출물 가드는 목록을 손으로 적을 수밖에 없다 — `` `.dll` `` 은 **열거가 아닌 산문에도** 나오므로
+  훑으면 오탐이 쏟아진다. **needle이 스스로를 밝히지 않는다.**
+- 그런데 이 결함에는 **자백하는 범위**가 있다: **`LICENSE-OUTPUT-EXCEPTION`을 이름으로 부르는 문서**.
+  그렇게 부르는 순간 그 문서는 *"나는 이 허가를 설명한다"* 고 말한 것이다.
+- 확장자 목록은 **라이선스 §1에서 파싱한다.** 권리를 주는 문서가 무엇을 덮는지 말하는 자리다.
+
+#### 9-43.3 Red가 인위적이지 않았다
+
+이 가드는 **`main`에 실제로 있던 결함에서 빨개졌다.** 주입한 것이 아니라 `git checkout HEAD --
+docs/OPEN_QUESTIONS.md` 한 상태에서 돌렸다:
+
+```
+docs/OPEN_QUESTIONS.md cites LICENSE-OUTPUT-EXCEPTION but never mentions `.lib`,
+which the licence grants rights over. … the licence covers [".dll", ".h", ".pas", ".lib"]
+```
+
+> ⚠ **첫 시도는 잘못된 Red였다.** 수정을 되돌리기만 했는데 **통과했다** — 같이 적은 📌 주석이
+> `` `.lib` `` 를 언급해서 **문서 단위** 검사를 만족시켰기 때문이다. 가드가 문서 단위인 것은
+> 기존 산출물 가드와 같은 설계이고 그대로 두었지만, **깨 보는 방법이 틀리면 초록이 증거가 되지
+> 않는다**는 것은 적어 둔다.
+
 ### 9-42. 숫자를 지키는 파일이 정작 **그 숫자들**을 안 지키고 있었다 (2026-09-13, E2)
 
 §9-41이 이번 슬라이스의 오류 넷에 공통점 하나를 붙였다 — **"그럴 것이다"로 적고 재지 않은 자리.**

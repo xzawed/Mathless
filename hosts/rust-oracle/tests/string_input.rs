@@ -198,3 +198,62 @@ fn byte_len_counts_bytes_up_to_the_nul_and_not_characters() {
     drop(m);
     let _ = std::fs::remove_dir_all(out);
 }
+
+/// **Acceptance D of `SPEC-string-length`: `byte_len` adds no import and no export.**
+///
+/// The SPEC's reason is that the count is a byte loop rather than a `strlen` call — the same
+/// argument the `==` slice made, and the same one the protection proxy (D04/D05) turns into a
+/// number. A CRT entry appearing here would mean the emitted helper had been replaced by
+/// something that links against the runtime.
+///
+/// **This was written AFTER the SPEC had already claimed acceptance A–H were all closed.**
+/// D had in fact only been reasoned about; the number came from a one-off `dumpbin` run, and
+/// review pointed out that a one-off measurement is not a guard — a later helper, or an LLVM
+/// idiom that recognises the loop and calls `strlen`, would grow the import set with nothing
+/// in CI to notice.
+#[test]
+fn byte_len_adds_no_import_over_a_scalar_baseline() {
+    let (base_dir, base_m) = build_named(
+        "blbase",
+        "blbase",
+        "export fn f(x: f64) -> f64 { return x * 2.0 }",
+    );
+    let base_dll = base_dir.join("blbase.dll");
+    let baseline = pe::read_imports(&base_dll).expect("baseline imports");
+    assert!(
+        !baseline.is_empty(),
+        "a cdylib always imports CRT startup — an empty read means the reader failed, and \
+         two empty sets would compare equal while measuring nothing"
+    );
+
+    let (out, m) = build_named(
+        "blimp",
+        "blimp",
+        "export fn n(s: string) -> i32 { return byte_len(s) }",
+    );
+    let dll = out.join("blimp.dll");
+    let imports = pe::read_imports(&dll).expect("imports");
+    println!("byte_len imports = {imports:?}");
+    assert_eq!(
+        imports, baseline,
+        "byte_len must not add an import — it is a byte loop, not a `strlen` call"
+    );
+
+    // …and the protection proxy is untouched: still exactly the three D18 exports.
+    let mut exports = pe::read_exports(&dll).expect("exports");
+    exports.sort();
+    assert_eq!(
+        exports,
+        vec![
+            "ml_iface_hash_blimp".to_string(),
+            "ml_module_abi_version".to_string(),
+            "mlx_n".to_string(),
+        ],
+        "byte_len is a builtin, not an export"
+    );
+
+    drop(m);
+    drop(base_m);
+    let _ = std::fs::remove_dir_all(out);
+    let _ = std::fs::remove_dir_all(base_dir);
+}

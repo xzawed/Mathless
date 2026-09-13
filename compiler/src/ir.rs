@@ -264,6 +264,21 @@ pub enum IrExprKind {
     Len {
         array: String,
     },
+    /// `byte_slice(s, from, to)` — the half-open span `[from, to)` of a BORROWED string.
+    ///
+    /// `to` is an end offset, not a length (DP-B2), so `byte_slice(s, 2, byte_len(s))` is
+    /// "from byte 2 to the end" and the two builtins measure the same space.
+    ///
+    /// This is a BUILT string: the bytes it names are copied into the caller's buffer at
+    /// `return` time, exactly like a concatenation, so `is_built_string` must answer `true`
+    /// for it. And it is LENGTH-bounded, not NUL-bounded — every writer emitted before this
+    /// slice stopped at the source NUL, and reusing one of those would silently return the
+    /// suffix (`SPEC-string-slice` §2.5).
+    ByteSlice {
+        s: Box<IrExpr>,
+        from: Box<IrExpr>,
+        to: Box<IrExpr>,
+    },
     /// `byte_len(s)` — bytes up to the first NUL, the terminator NOT counted
     /// (SPEC-string-length DP-L1).
     ///
@@ -318,6 +333,12 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
             IrExprKind::Unary { operand, .. }
             | IrExprKind::Cast { operand, .. }
             | IrExprKind::ByteLen(operand) => in_expr(operand),
+            // A span's offsets are ordinary expressions and an index can hide in either, so
+            // all three children answer. (`byte_slice` itself needs `-> T!` for its own
+            // out-of-range status, but that is DP-B4's business, not this walker's.)
+            IrExprKind::ByteSlice { s, from, to } => {
+                in_expr(s).or_else(|| in_expr(from)).or_else(|| in_expr(to))
+            }
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs).or_else(|| in_expr(rhs)),
             IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => {
                 args.iter().find_map(in_expr)

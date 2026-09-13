@@ -174,6 +174,9 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
     emit_strout_helper(module, &mut out);
     emit_slen_helper(module, &mut out);
     emit_concat_helpers(module, &mut out);
+    // After the concat set, because `ml_sublen` calls `ml_slen` — which `builds_strings` has
+    // already pulled in, since a span IS a built string.
+    emit_span_helpers(module, &mut out);
     emit_rounding_helpers(module, &mut out);
 
     for f in &module.functions {
@@ -563,6 +566,15 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             RetAbi::StringOut => match &e.kind {
                 // Built here: pieces appended in order (SPEC-string-concat §2.3).
                 IrExprKind::Concat(pieces) => emit_concat_return(pieces, indent, out),
+                // A lone span goes through the SAME emitter as a concatenation, as a
+                // one-piece list. It could have had its own path, but then the length-bounded
+                // copy would exist in two places and only one of them would be covered by the
+                // test that uses `+`. The comment below predicted this arm's hazard exactly —
+                // "a new string-shaped one would be handed to `ml_strout` as if it were an
+                // address" — and a span has no NUL at `to`, so that would return the suffix.
+                IrExprKind::ByteSlice { .. } => {
+                    emit_concat_return(core::slice::from_ref(e), indent, out)
+                }
                 // Borrowed: one pointer, the #92 path, unchanged. Spelled out rather than
                 // `_`, because "everything else is already a pointer" is a fact about
                 // today's variants, not about the enum — a new string-shaped one would be
@@ -762,6 +774,12 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         IrExprKind::Concat(_) => unreachable!(
             "a built string is only lowered at `return` — typeck rejects every other position"
         ),
+        // Same reason, same rule: a span has no value until it is copied into the caller's
+        // buffer. `is_built_string` answers `true` for it, so typeck confines it to `return`
+        // and this arm is unreachable from source.
+        IrExprKind::ByteSlice { .. } => {
+            unreachable!("a span is only lowered at `return` — typeck rejects every other position")
+        }
         // A static, NUL-terminated byte array: no allocation, and the NUL makes the module's
         // view of the bytes identical to the C caller's (SPEC-string-input DP-S1).
         IrExprKind::ConstStr(s) => format!("b\"{s}\\0\".as_ptr()"),
@@ -1017,11 +1035,22 @@ enum PieceKind<'a> {
     /// Bytes the module borrows — from a literal or from the host. Counted by `ml_slen`,
     /// copied by `ml_wstr`.
     Bytes,
+    /// A half-open span of borrowed bytes: `byte_slice(s, from, to)`.
+    ///
+    /// Its own kind because it is the one piece that is **not** NUL-bounded. `ml_slen` and
+    /// `ml_wstr` both stop at the source's NUL, so counting or copying a span with them would
+    /// take the whole suffix and ignore `to` — status 0, no warning (`SPEC-string-slice` §2.5).
+    Span {
+        s: &'a IrExpr,
+        from: &'a IrExpr,
+        to: &'a IrExpr,
+    },
 }
 
 fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
     match &p.kind {
         IrExprKind::Cast { operand, .. } => PieceKind::Digits { operand },
+        IrExprKind::ByteSlice { s, from, to } => PieceKind::Span { s, from, to },
         // Array elements are scalars, so neither of these is ever `Str` and neither can reach
         // a concatenation. Named rather than lumped in below, because "already a pointer" is
         // false for both — treating one as an address is the bug this match exists to prevent.
@@ -1067,8 +1096,40 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             // construction (SPEC-string-concat 2.3).
             PieceKind::Digits { operand } => emit_expr(operand, RetAbi::StringOut),
             PieceKind::Bytes => emit_expr(p, RetAbi::StringOut),
+            // A span binds three values, not one, and is emitted separately below so the
+            // offsets are evaluated exactly once — the same guarantee the note above earns
+            // for the other kinds.
+            PieceKind::Span { .. } => continue,
         };
         let _ = writeln!(out, "{pad}let __p{i} = {e};");
+    }
+    // Spans: bind, then VALIDATE — before `*ml_needed` is written and before anything is
+    // copied. `SPEC-string-slice` §2.4: an out-of-range span is a failure, not a clamp, and
+    // D17 says a failed call leaves `*ml_needed` alone, so the check cannot come later.
+    for (i, p) in pieces.iter().enumerate() {
+        if let PieceKind::Span { s, from, to } = piece_kind(p) {
+            let _ = writeln!(
+                out,
+                "{pad}let __s{i} = {};",
+                emit_expr(s, RetAbi::StringOut)
+            );
+            let _ = writeln!(
+                out,
+                "{pad}let __f{i} = {};",
+                emit_expr(from, RetAbi::StringOut)
+            );
+            let _ = writeln!(
+                out,
+                "{pad}let __t{i} = {};",
+                emit_expr(to, RetAbi::StringOut)
+            );
+            let _ = writeln!(out, "{pad}let __l{i} = ml_sublen(__s{i}, __f{i}, __t{i});");
+            let _ = writeln!(
+                out,
+                "{pad}if __l{i} < 0 {{ return {}; }}",
+                crate::abi::ML_ST_INDEX_OUT_OF_RANGE
+            );
+        }
     }
     // Pass 1 — count. One byte for the NUL is always needed, so `__n` starts at 1 and an
     // empty result is 1, never 0. That keeps `*needed == 0` impossible, exactly as #92.
@@ -1080,6 +1141,11 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             }
             PieceKind::Bytes => {
                 let _ = writeln!(out, "{pad}__n += ml_slen(__p{i});");
+            }
+            // `to - from`, already computed and already proved in range. NOT `ml_slen`, which
+            // would count to the source's NUL and size the buffer for the whole suffix.
+            PieceKind::Span { .. } => {
+                let _ = writeln!(out, "{pad}__n += __l{i};");
             }
         }
     }
@@ -1102,6 +1168,14 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             }
             PieceKind::Bytes => {
                 let _ = writeln!(out, "{pad}__o = ml_wstr(ml_buf, __o, __p{i}, ml_cap);");
+            }
+            // Length-bounded, not NUL-bounded. `ml_cap` is still a hard stop for the aliasing
+            // case the note above describes.
+            PieceKind::Span { .. } => {
+                let _ = writeln!(
+                    out,
+                    "{pad}__o = ml_wsub(ml_buf, __o, __s{i}, __f{i}, __l{i}, ml_cap);"
+                );
             }
         }
     }
@@ -1127,6 +1201,9 @@ fn uses_byte_len(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
             IrExprKind::ByteLen(_) => true,
+            // A span does not itself call `byte_len`, but its offsets can — and typically do
+            // (`byte_slice(s, 2, byte_len(s))` is the idiom DP-B2 was chosen for).
+            IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
             IrExprKind::Index { index, .. } => in_expr(index),
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
             IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
@@ -1163,6 +1240,9 @@ fn builds_strings(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
             IrExprKind::Concat(_) => true,
+            // A span IS a built string (`is_built_string` says so), and it is emitted through
+            // the concat writer, so the module needs the whole helper set.
+            IrExprKind::ByteSlice { .. } => true,
             // Reads a string, never builds one — but its operand is an ordinary expression,
             // unlike `Len`'s bare array name, so the subtree is walked.
             IrExprKind::ByteLen(operand) => in_expr(operand),
@@ -1313,6 +1393,9 @@ fn compares_strings(module: &IrModule) -> bool {
             // itself is an ordinary expression and could.
             IrExprKind::Index { index, .. } => in_expr(index),
             IrExprKind::Len { .. } => false,
+            // Builds a string without comparing one — but all three children are subtrees, so
+            // a comparison nested in an offset still has to be found.
+            IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
             // Reads a string without comparing it — but its operand is a subtree, so a
             // comparison nested inside still has to be found.
             IrExprKind::ByteLen(operand) => in_expr(operand),
@@ -1377,6 +1460,84 @@ fn emit_string_helper(module: &IrModule, out: &mut String) {
     );
 }
 
+/// Does anything in this module take a span? Only then are the two span helpers emitted.
+///
+/// Its own predicate, like [`uses_byte_len`], and for the same accounting reason: a module
+/// that only concatenates must stay byte-for-byte what it was, or the golden tests and the
+/// import/size acceptance would move for a feature that module does not use.
+fn uses_byte_slice(module: &IrModule) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::ByteSlice { .. } => true,
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            IrExprKind::Unary { operand, .. }
+            | IrExprKind::Cast { operand, .. }
+            | IrExprKind::ByteLen(operand) => in_expr(operand),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond) || in_stmts(body)
+            }
+            IrStmt::ResultLen(e) => in_expr(e),
+            IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
+            IrStmt::Return(e)
+            | IrStmt::Let { value: e, .. }
+            | IrStmt::Assign { value: e, .. }
+            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+            IrStmt::Fail(_) => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
+/// The two helpers a span needs, and the reason they are two rather than a reuse.
+///
+/// Everything emitted before this slice stops at the SOURCE NUL: `ml_slen` counts to it,
+/// `ml_wstr` copies to it. A span is bounded by a LENGTH instead, so counting or copying one
+/// with those would take the whole suffix and ignore `to` — status 0, no warning
+/// (`SPEC-string-slice` §2.5).
+fn emit_span_helpers(module: &IrModule, out: &mut String) {
+    if !uses_byte_slice(module) {
+        return;
+    }
+    out.push_str(
+        "fn ml_sublen(src: *const u8, from: i32, to: i32) -> i32 {\n\
+         \x20   // The span's length, or -1 if it is not a span of THIS string. The caller\n\
+         \x20   // turns that into ML_ST_INDEX_OUT_OF_RANGE, because a clamp would be the\n\
+         \x20   // silent wrong answer D17's negative statuses exist to avoid (DP-B4).\n\
+         \x20   if from < 0 || to < from { return -1; }\n\
+         \x20   // `to` is compared against the string's actual length, so a span that runs\n\
+         \x20   // past the NUL is refused rather than reading whatever follows it.\n\
+         \x20   if to > ml_slen(src) { return -1; }\n\
+         \x20   to - from\n\
+         }\n\n\
+         fn ml_wsub(buf: *mut u8, off: i32, src: *const u8, from: i32, n: i32, cap: i32) -> i32 {\n\
+         \x20   // `n` bytes, and the source NUL is NOT consulted: that is the whole point.\n\
+         \x20   // `cap` is still a hard stop for the same aliasing case `ml_wstr` documents —\n\
+         \x20   // nothing in the C ABI forbids a host from passing a string that overlaps its\n\
+         \x20   // own output buffer. One byte is left for the terminator.\n\
+         \x20   let mut i: i32 = 0;\n\
+         \x20   while i < n {\n\
+         \x20       if off + i >= cap - 1 { return off + i; }\n\
+         \x20       unsafe { *buf.add((off + i) as usize) = *src.add((from + i) as usize); }\n\
+         \x20       i += 1;\n\
+         \x20   }\n\
+         \x20   off + n\n\
+         }\n\n",
+    );
+}
+
 /// Which built-in rounders this module actually calls, so an unused one is not emitted.
 fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
     fn walk_expr(e: &IrExpr, found: &mut Vec<crate::typeck::Rounder>) {
@@ -1386,6 +1547,13 @@ fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
             // No rounder can be its operand (a string), but the subtree is walked anyway —
             // this file's habit is that a node with children answers for its children.
             IrExprKind::ByteLen(operand) => walk_expr(operand, found),
+            // The offsets are i32 and a rounder is f64 -> f64, so one can only appear through
+            // a cast — which is a child, and children are walked.
+            IrExprKind::ByteSlice { s, from, to } => {
+                walk_expr(s, found);
+                walk_expr(from, found);
+                walk_expr(to, found);
+            }
             IrExprKind::Call { name, args, .. } => {
                 if let Some(b) = crate::typeck::Rounder::from_name(name) {
                     if !found.contains(&b) {

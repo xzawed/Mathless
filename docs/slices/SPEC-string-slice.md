@@ -1,6 +1,17 @@
 # SPEC — 부분문자열 `byte_slice(s, from, to)`
 
-- **상태: 초안 · 사용자 확인 대기.** DP-B1~B6에 권고가 붙어 있다.
+- **상태: 확정 · 구현 완료 (2026-09-13).** **DP-B1~B6을 사용자가 확인했다** — 여섯 다 권고대로다.
+  - 갈리는 둘을 따로 물었다: **DP-B2 반열림 `(from, to)`**, **DP-B3 내장 함수**.
+    나머지 넷(바이트 · `-2` 실패 · 빌트 문자열 · 바인딩 무변경)은 살아 있는 대안이 없어 함께 확인됐다.
+  - **수용 A~L 전부 닫혔다 — 그리고 이번에는 L까지 실제로 쟀다.** 지난 슬라이스가 수용 D를
+    재지 않고 "전부"라고 적었으므로(§9-41), 각 기준이 **어느 테스트로** 닫혔는지 §3에 적는다.
+
+  > **📌 구현 중 §2.5의 서술 하나를 정정했다.** 이 문서는 *"기본값이 틀린 경로가 둘"* 이라고
+  > 적었는데, 실제로는 **컴파일러가 둘 다 강제했다** — `IrStmt::Return`도 `piece_kind`도
+  > `_` 포괄이 아니라 **손으로 적은 팔**이라, 새 변종을 넣자 **여덟 곳이 컴파일 에러**가 됐다.
+  > 위험은 *조용히 샌다*가 아니라 **그 여덟 곳에서 내가 틀리게 답한다**였다. 저장소가 포괄 팔을
+  > 지운 이유가 바로 이것이고, `IrStmt::Return`의 주석은 이 사고를 **미리 적어 두고 있었다** —
+  > *"a new string-shaped one would be handed to `ml_strout` as if it were an address."*
 - 선행: `SPEC-string-input.md`(#88/#89 — DP-S1 NUL 종료 · **DP-S2 불투명 바이트** · **DP-S3 연산 범위**) ·
   `SPEC-string-return.md`(#91/#92 — **Q12 caller-allocates**) ·
   `SPEC-string-concat.md`(#107/#108 — DP-S3를 **연결에 대해** 열었다) ·
@@ -211,6 +222,21 @@ NUL을 보지 않는다.** 1패스의 길이 기여분도 `to - from`이지 *"NU
 - **K. 거부(§3.1).**
 - **L. 호스트 두 곳.** 오라클 + **실제 C 호스트**(수용 D 게이트)에서 같은 값.
 
+> **닫힌 자리 (2026-09-13 실측).** 지난 슬라이스가 수용 하나를 재지 않고 "전부"라고 적었으므로,
+> 각 기준을 **무엇이** 닫았는지 적는다.
+>
+> | 수용 | 닫은 것 |
+> |---|---|
+> | A·B·F | `a_span_is_the_bytes_between_the_offsets` (오라클) |
+> | **C·J** | `a_span_is_not_the_suffix` — **소스가 스팬보다 길다**, 독립·연결 두 경로 |
+> | D·E(런타임) | `an_out_of_range_span_writes_nothing` — canary 전 바이트 + `*ml_needed` 미변경 |
+> | E(컴파일 타임) | `a_literal_backwards_span_is_refused_before_it_runs` (컴파일러) |
+> | G | `the_probe_protocol_works_for_a_span` — `cap=0` probe → 정확한 `needed` → 재시도 성공 |
+> | H | `a_span_cuts_bytes_not_characters` — `한국`에서 2바이트는 **UTF-8이 아니다**(실측) |
+> | I | `a_span_adds_no_import_over_a_concatenating_baseline` — **테스트로 고정**, 일회성 덤프 아님 |
+> | K | `byte_slice_refuses_*` 넷 (컴파일러) |
+> | **L** | **`hosts/c-host/host.c`의 `account.dll` 블록** — 게이트 모듈 18 → **19**개 |
+
 ### 3.1 반드시 거부되는 것
 
 | 소스 | 이유 |
@@ -269,6 +295,34 @@ NUL을 보지 않는다.** 1패스의 길이 기여분도 `to - from`이지 *"NU
 | **S5** | 문서: `LANGUAGE.md` · `language_gaps.rs` · `HOST_ABI.md` · 슬라이스 색인 | §2.2 함정이 생성 `.h` 주석에 있다 |
 
 ---
+
+## 6.1 구현 중 실측이 잡은 것 (2026-09-13, E2)
+
+넷이다. **전부 "그럴 것이다"로 적고 재지 않은 자리**이며, 이번에는 **하나도 초록으로 새지 않았다**
+— 넷 중 셋을 컴파일러·테스트가 먼저 잡았다.
+
+| # | 무엇 | 어떻게 드러났나 |
+|---|---|---|
+| 1 | **`-1`은 `ConstI32`가 아니다.** 파서가 **단항 부정**으로 만든다(`(1i32).wrapping_neg()`) | DP-B2의 컴파일 타임 완화가 `byte_slice(s, -1, 2)`를 **통과시켰다.** 테스트가 빨개졌고, 부정 하나를 접는 것으로 고쳤다. 런타임은 원래 안전했지만 **진단이 status로 강등돼 있었다** |
+| 2 | **반환 문자열 모양 검사를 빠뜨렸다.** WBS가 세 자리를 적었는데 넷째가 있었다 | `a returned string must be a literal, a string parameter, or a concatenation…` 이 `byte_slice`를 거부했다. 컴파일 에러가 아니라 **테스트 실패**로 나왔다 |
+| 3 | **거부 needle이 §7-3의 함정에 걸려 있었다.** `contains("byte_slice")`는 *"unknown function 'byte_slice'"* 도 만족한다 | **첫 Red의 메시지를 읽어서** 잡았다 — 개수만 봤으면 구현 없이 초록이 될 자리가 있었다. 모든 거부에 `!contains("unknown function")`을 더했다 |
+| 4 | **`memcpy`는 베이스라인에도 있다.** 모든 cdylib의 DllMain 뼈대다 | import 금지 목록에 넣었다가 **정상 모듈에서 빨개졌다.** 집합 동일성이 진짜 가드이고 금지 목록은 덤이라는 것을 주석에 적었다 |
+
+### 6.2 접미사 오답을 **심어 봤다**
+
+§2.5가 이 슬라이스의 진짜 위험이라고 적은 것을, 방출기를 NUL 기준으로 되돌려 실제로 만들어 봤다:
+
+```
+__n += ml_slen(__s0);                         (틀린 1패스)
+__o = ml_wstr(ml_buf, __o, __s0, ml_cap);     (틀린 2패스)
+```
+
+**오라클 6개 중 4개가 빨개졌고**, `a_span_is_not_the_suffix`가 정확히 그 문장으로 실패했다 —
+*"a NUL-bounded writer would size this at 11 — the whole string plus its NUL"*.
+
+> **그리고 둘은 초록으로 남았다**(범위 테스트와 import 테스트). **검증이 짚은 그대로다**:
+> 소스가 스팬보다 **길어야만** 이 오답이 보인다. C 호스트 게이트도 같은 방식으로 깨 봤다 —
+> 기대값을 접미사로 바꾸니 `FAIL bank_code cuts three bytes, not the whole string`.
 
 ## 7. 정직한 반론 (기록)
 

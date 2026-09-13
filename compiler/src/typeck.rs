@@ -130,6 +130,9 @@ pub const LEN_BUILTIN: &str = "len";
 /// scale (DP-L4, reversed before implementation).
 pub const BYTE_LEN_BUILTIN: &str = "byte_len";
 
+/// `byte_slice(s, from, to)` — the half-open span of a borrowed string (`SPEC-string-slice`).
+pub const BYTE_SLICE_BUILTIN: &str = "byte_slice";
+
 /// The name that means "the array this function returns" (SPEC-array-return DP-R7).
 ///
 /// **Not a keyword.** It follows `len` rather than `if`: the name only means the return buffer
@@ -270,6 +273,16 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 "function '{}' collides with the built-in `{BYTE_LEN_BUILTIN}` — rename it \
                  (`{BYTE_LEN_BUILTIN}(s)` counts a string's bytes up to the NUL and returns \
                  i32)",
+                f.name
+            )));
+        }
+        // …and the third one, added at the same time as the builtin rather than after review
+        // found it missing. That omission is one slice old (`byte_len`, above).
+        if f.name == BYTE_SLICE_BUILTIN {
+            return Err(TypeError::new(format!(
+                "function '{}' collides with the built-in `{BYTE_SLICE_BUILTIN}` — rename it \
+                 (`{BYTE_SLICE_BUILTIN}(s, from, to)` returns the half-open byte span \
+                 `[from, to)` of a string)",
                 f.name
             )));
         }
@@ -1285,12 +1298,21 @@ fn check_stmt(
             if ret == IrType::Str
                 && !matches!(
                     e.kind,
-                    IrExprKind::ConstStr(_) | IrExprKind::Var { .. } | IrExprKind::Concat(_)
+                    IrExprKind::ConstStr(_)
+                        | IrExprKind::Var { .. }
+                        | IrExprKind::Concat(_)
+                        // A span is the third built form (SPEC-string-slice). Like a
+                        // concatenation it has no value until `return` copies it into the
+                        // caller's buffer, which is why this is the only position it may
+                        // appear in — and unlike one, it does not produce any bytes of its
+                        // own, so DP-S2 stays exactly as narrow as DP-K9 left it.
+                        | IrExprKind::ByteSlice { .. }
                 )
             {
                 return Err(TypeError::new(format!(
                     "function '{fname}': a returned string must be a literal, a `string` \
-                     parameter, or a concatenation of those and `i32 as string`"
+                     parameter, a `{BYTE_SLICE_BUILTIN}` of one, or a concatenation of those \
+                     and `i32 as string`"
                 )));
             }
             Ok(IrStmt::Return(e))
@@ -1495,6 +1517,13 @@ fn is_built_string(e: &IrExpr) -> bool {
         // Pieces appended into the caller's buffer, and the digits of `n as string` — both
         // are bytes this module produces.
         IrExprKind::Concat(_) | IrExprKind::Cast { .. } => true,
+        // A span is bytes COPIED into the caller's buffer at `return`, not a pointer into the
+        // borrowed string: there is no NUL at `to`, so handing `s + from` to anything that
+        // expects a C string would read past the span. The SPEC calls this the slice's
+        // memory-safety half (§2.6), and the reason it is spelled out here rather than
+        // inherited is that `byte_len` answered this question wrong one slice ago and
+        // `byte_len(x as string)` compiled to a `.dll`.
+        IrExprKind::ByteSlice { .. } => true,
         // Unreachable behind the `e.ty != Str` guard above — an array element is a scalar and
         // a length is an i32 — but spelled out rather than lumped into the `false` list, so a
         // string-shaped array would have to answer this question instead of inheriting `no`.
@@ -1722,6 +1751,102 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             Ok(IrExpr {
                 ty: IrType::I32,
                 kind: IrExprKind::ByteLen(Box::new(arg)),
+            })
+        }
+        Expr::Call { name, args } if name == BYTE_SLICE_BUILTIN => {
+            // Intercepted beside `byte_len` and for the same reason: the argument types are
+            // fixed but the shape is not, so it is not a `Sig`.
+            if args.len() != 3 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{BYTE_SLICE_BUILTIN}` takes exactly three arguments \
+                     — a string, a start offset and an END offset — found {}",
+                    args.len()
+                )));
+            }
+            let s = check_expr(&args[0], scope, fname, sigs)?;
+            if s.ty != IrType::Str {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{BYTE_SLICE_BUILTIN}` takes a string, found {}",
+                    s.ty
+                )));
+            }
+            // The same rule `byte_len` needed, for the same reason (DP-B5): a built string is
+            // bytes this module will write at `return`, not a pointer to bytes that exist.
+            reject_built_string(
+                &s,
+                fname,
+                &format!("as the string argument to `{BYTE_SLICE_BUILTIN}`"),
+            )?;
+
+            let mut bounds = Vec::with_capacity(2);
+            for (i, which) in [(1usize, "start"), (2usize, "end")] {
+                let e = check_expr(&args[i], scope, fname, sigs)?;
+                if e.ty != IrType::I32 {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': the {which} offset of `{BYTE_SLICE_BUILTIN}` must \
+                         be i32, found {} — there is no implicit conversion (write \
+                         `{} as i32` if that is what you mean)",
+                        e.ty, e.ty
+                    )));
+                }
+                bounds.push(e);
+            }
+            let to = bounds.pop().expect("two bounds");
+            let from = bounds.pop().expect("two bounds");
+
+            // The literal half of DP-B2's mitigation. `to` is an END, not a length, so
+            // `byte_slice(s, 2, 3)` is one byte — and the way that mistake shows up first is
+            // a span that runs backwards. Caught here, where the diagnostic can show both
+            // numbers; the rest becomes ML_ST_INDEX_OUT_OF_RANGE at run time.
+            // `-1` is NOT a `ConstI32`: the parser builds a unary negation of `1`, and the
+            // emitted Rust says `(1i32).wrapping_neg()`. Measured — the first version of this
+            // check matched only `ConstI32` and `byte_slice(s, -1, 2)` compiled, leaving the
+            // whole mitigation to run time. Folding one negation here is the difference
+            // between a diagnostic and a status.
+            //
+            // Written as two `if let`s rather than a match with a wildcard: this file's rule
+            // is that a new variant must ANSWER every match, and that rule is right for the
+            // walkers — but "is this a literal?" has one correct default for anything added
+            // later, which is `no`. A wildcard arm would also be refused by clippy here.
+            fn literal(e: &IrExpr) -> Option<i32> {
+                if let IrExprKind::ConstI32(n) = &e.kind {
+                    return Some(*n);
+                }
+                if let IrExprKind::Unary {
+                    op: IrUnOp::Neg,
+                    operand,
+                } = &e.kind
+                {
+                    return literal(operand).map(i32::wrapping_neg);
+                }
+                None
+            }
+            if let Some(f) = literal(&from) {
+                if f < 0 {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': `{BYTE_SLICE_BUILTIN}` was given a negative start \
+                         offset ({f}) — offsets count bytes from the front of the string"
+                    )));
+                }
+                if let Some(t) = literal(&to) {
+                    if t < f {
+                        return Err(TypeError::new(format!(
+                            "function '{fname}': `{BYTE_SLICE_BUILTIN}(s, {f}, {t})` runs \
+                             backwards — the third argument is the END offset, not a length, \
+                             so the span is `[{f}, {t})`. For {t} bytes starting at {f}, \
+                             write `{BYTE_SLICE_BUILTIN}(s, {f}, {})`",
+                            f + t
+                        )));
+                    }
+                }
+            }
+            Ok(IrExpr {
+                ty: IrType::Str,
+                kind: IrExprKind::ByteSlice {
+                    s: Box::new(s),
+                    from: Box::new(from),
+                    to: Box::new(to),
+                },
             })
         }
         Expr::Call { name, args } => {

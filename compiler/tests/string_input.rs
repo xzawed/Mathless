@@ -350,3 +350,143 @@ fn byte_len_refuses_a_built_string() {
     compile_to_rust("export fn n(s: string) -> i32 { return byte_len(s) }")
         .expect("a borrowed parameter is a real pointer and must still work");
 }
+
+/// **`byte_slice(s, from, to)` — a span of a borrowed string** (`SPEC-string-slice`).
+///
+/// Half-open on purpose (DP-B2, confirmed): `to` is an end OFFSET, not a length, so
+/// `byte_len(s)` drops straight in as "to the end". The two builtins then measure the same
+/// space — which is the repository's answer to its own three-times-measured trap of one name
+/// carrying two units (`ml_cap` bytes vs elements, `ml_needed` NUL-inclusive vs `byte_len`
+/// NUL-exclusive).
+#[test]
+fn byte_slice_takes_a_string_and_two_offsets() {
+    compile_to_rust(
+        "export fn bank_prefix(acct: string) -> string! { return byte_slice(acct, 0, 3) }",
+    )
+    .expect("a literal span of a borrowed parameter must compile");
+
+    // `byte_len(s)` as the end is the composition DP-B2 was chosen for.
+    compile_to_rust(
+        "export fn tail(s: string) -> string! { return byte_slice(s, 2, byte_len(s)) }",
+    )
+    .expect("`byte_len(s)` must be usable as the end offset");
+}
+
+/// A user function may not shadow `byte_slice` — `SPEC-string-slice` §3.1.
+///
+/// `byte_len` was added as a builtin and NOT added to the collision check beside `len`, so
+/// `export fn byte_len(...)` compiled and shadowed it until review found it. That is one
+/// slice old; this test exists so the third builtin does not repeat the second's omission.
+#[test]
+fn a_user_function_may_not_shadow_byte_slice() {
+    let err = compile_to_rust("export fn byte_slice(x: i32) -> i32 { return x }")
+        .expect_err("`byte_slice` is a builtin — a user function must not take the name")
+        .to_string();
+    assert!(
+        err.contains("byte_slice") && err.contains("built-in"),
+        "the refusal must name the builtin it collides with: {err}"
+    );
+}
+
+/// **`byte_slice` refuses a BUILT string** — `SPEC-string-slice` §2.6, the memory-safety half.
+///
+/// `is_built_string` is an exhaustive match whose arms are all spelled out, and a new IR kind
+/// that answers `false` there silently opens every position `reject_built_string` guards.
+/// That is not hypothetical: it is exactly how `byte_len(x as string)` compiled to a `.dll`
+/// one slice ago.
+#[test]
+fn byte_slice_refuses_a_built_string() {
+    for src in [
+        "export fn f(x: i32) -> string! { return byte_slice(x as string, 0, 1) }",
+        "export fn f(a: string, b: string) -> string! { return byte_slice(a + b, 0, 1) }",
+    ] {
+        let err = compile_to_rust(src)
+            .expect_err("a built string has no bytes to point at yet — it must be refused")
+            .to_string();
+        // `contains("byte_slice")` alone is NOT enough, and this was measured on the first
+        // Red: before the builtin existed, every one of these refusals read "unknown function
+        // 'byte_slice'" — which satisfies that needle while enforcing nothing (STATUS §7-3).
+        assert!(
+            !err.contains("unknown function"),
+            "the builtin is not wired up; this test would pass on the wrong diagnostic: {err}"
+        );
+        assert!(
+            err.contains("built string") && err.contains("byte_slice"),
+            "must name the rule AND the position: {err}"
+        );
+    }
+
+    // …and the result of a slice is itself built, so it cannot be read back as borrowed bytes.
+    let err =
+        compile_to_rust("export fn f(s: string) -> i32 { return byte_len(byte_slice(s, 0, 3)) }")
+            .expect_err("a slice is bytes this module writes at `return`, not a pointer")
+            .to_string();
+    assert!(err.contains("byte_len"), "must name the position: {err}");
+}
+
+/// The refusals in `SPEC-string-slice` §3.1 that are about the SHAPE of the call.
+///
+/// Each message is read, not just counted: a diagnostic that merely echoes the source token
+/// can satisfy a `contains` needle while enforcing nothing (STATUS §7-3).
+#[test]
+fn byte_slice_refuses_the_wrong_shapes() {
+    // An array is not a string, and the diagnostic says which builtin the caller wanted.
+    let err = compile_to_rust("export fn f(xs: [i32]) -> string! { return byte_slice(xs, 0, 1) }")
+        .expect_err("`byte_slice` is the STRING builtin")
+        .to_string();
+    assert!(!err.contains("unknown function"), "{err}");
+    assert!(err.contains("string"), "{err}");
+
+    // Wrong arity, both directions. The needle is the WORD, not the name: "unknown function
+    // 'byte_slice'" carries the name and would otherwise pass this with nothing implemented.
+    for src in [
+        "export fn f(s: string) -> string! { return byte_slice(s, 0) }",
+        "export fn f(s: string) -> string! { return byte_slice(s, 0, 1, 2) }",
+    ] {
+        let err = compile_to_rust(src)
+            .expect_err("`byte_slice` takes exactly three arguments")
+            .to_string();
+        assert!(!err.contains("unknown function"), "{err}");
+        assert!(
+            err.contains("three") && err.contains("byte_slice"),
+            "the refusal must say how many arguments it wanted: {err}"
+        );
+    }
+
+    // A string local stays refused — the slice does not invent a place for one to live.
+    let err = compile_to_rust(
+        "export fn f(s: string) -> string! { let t = byte_slice(s, 0, 3) return t }",
+    )
+    .expect_err("a `string` local has nowhere to live: the module has no allocator")
+    .to_string();
+    assert!(err.contains("local"), "{err}");
+}
+
+/// **`to < from` is refused at COMPILE time when both are literals** — `SPEC-string-slice` §2.2.
+///
+/// This is the mitigation half-open indexing was accepted with (DP-B2). The trap is real —
+/// `byte_slice(s, 2, 3)` is one byte, not three — so the cheap half of it is caught where the
+/// diagnostic is good, and the rest becomes a runtime status.
+#[test]
+fn a_literal_backwards_span_is_refused_before_it_runs() {
+    let err = compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s, 3, 2) }")
+        .expect_err("a backwards literal span cannot be anything but a mistake")
+        .to_string();
+    assert!(
+        err.contains('3') && err.contains('2'),
+        "the diagnostic must show BOTH offsets, or it does not teach the unit: {err}"
+    );
+
+    let err = compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s, -1, 2) }")
+        .expect_err("a negative start cannot be anything but a mistake")
+        .to_string();
+    assert!(!err.contains("unknown function"), "{err}");
+    assert!(
+        err.contains("byte_slice") && err.contains("negative"),
+        "{err}"
+    );
+
+    // An empty span is legal — it is the empty string, not an error (acceptance F).
+    compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s, 2, 2) }")
+        .expect("`from == to` is the empty string, which is a value");
+}

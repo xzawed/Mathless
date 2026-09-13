@@ -5,12 +5,12 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 #[test]
 fn oracle_loads_and_calls_a_module_using_a_local() {
     let src = include_str!("../../../examples/discount2.mls");
-    let out = std::env::temp_dir().join(format!("mlc_let_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("let");
     let arts = emit_artifacts(src, "discount2", &out).expect("emit discount2");
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load discount2.dll");
@@ -35,5 +35,4 @@ fn oracle_loads_and_calls_a_module_using_a_local() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }

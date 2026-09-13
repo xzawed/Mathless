@@ -11,11 +11,11 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
-fn build(name: &str) -> (std::path::PathBuf, Module) {
+mod common;
+
+fn build(name: &str) -> (common::TempOut, Module) {
     let src = include_str!("../../../examples/pack.mls");
-    let out = std::env::temp_dir().join(format!("mlc_{name}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(name);
     let arts = emit_artifacts(src, "pack", &out).expect("emit pack");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load pack.dll");
     (out, m)
@@ -23,7 +23,7 @@ fn build(name: &str) -> (std::path::PathBuf, Module) {
 
 #[test]
 fn division_and_remainder_match_integer_semantics() {
-    let (out, m) = build("div");
+    let (_out, m) = build("div");
     let boxes: extern "C" fn(i32, i32) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_boxes\0").unwrap()) };
     let loose: extern "C" fn(i32, i32) -> i32 =
@@ -44,12 +44,11 @@ fn division_and_remainder_match_integer_semantics() {
     assert_eq!(boxes(2147483647, 3), 715827882);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
 fn the_two_edges_return_instead_of_hanging() {
-    let (out, m) = build("edge");
+    let (_out, m) = build("edge");
     let boxes: extern "C" fn(i32, i32) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_boxes\0").unwrap()) };
     let loose: extern "C" fn(i32, i32) -> i32 =
@@ -73,14 +72,13 @@ fn the_two_edges_return_instead_of_hanging() {
     assert_ne!(boxes(i32::MIN, -1), i32::MAX, "not the f64 saturation");
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
 fn the_boundary_pattern_reports_a_domain_error() {
     // Section 4: total operators do not take the fallible route away — they leave it to the
     // caller, at the export where D17's `fail` is legal.
-    let (out, m) = build("checked");
+    let (_out, m) = build("checked");
     let checked: extern "C" fn(i32, i32, *mut i32) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_boxes_checked\0").unwrap()) };
 
@@ -93,7 +91,6 @@ fn the_boundary_pattern_reports_a_domain_error() {
     assert_eq!(untouched, -999, "DP-E3: out-param untouched on failure");
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -126,6 +123,4 @@ fn the_export_surface_is_unchanged_in_shape() {
     let size = std::fs::metadata(&dll).unwrap().len();
     println!("pack.dll = {size} B");
     assert!(size < 60_000, "still a small stripped module: {size}");
-
-    let _ = std::fs::remove_dir_all(&out);
 }

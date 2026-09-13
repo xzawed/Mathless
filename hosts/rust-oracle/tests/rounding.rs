@@ -9,11 +9,11 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
-fn build(tag: &str) -> (std::path::PathBuf, Module) {
+mod common;
+
+fn build(tag: &str) -> (common::TempOut, Module) {
     let src = include_str!("../../../examples/deduction.mls");
-    let out = std::env::temp_dir().join(format!("mlc_rnd_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("rnd_{tag}"));
     let arts = emit_artifacts(src, "deduction", &out).expect("emit deduction");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load deduction.dll");
     (out, m)
@@ -46,7 +46,7 @@ const CASES: &[f64] = &[
 
 #[test]
 fn the_builtins_match_std_bit_for_bit() {
-    let (out, m) = build("bits");
+    let (_out, m) = build("bits");
     let sym = |n: &[u8]| -> extern "C" fn(f64) -> f64 {
         unsafe { std::mem::transmute(m.symbol(n).unwrap()) }
     };
@@ -71,14 +71,13 @@ fn the_builtins_match_std_bit_for_bit() {
     }
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
 fn the_saturation_that_motivated_the_slice_is_gone() {
     // Section 3-B2. These are the measured numbers from the SPEC: the `as i32` workaround
     // returned 2,147,483,647 for both of the last two.
-    let (out, m) = build("sat");
+    let (_out, m) = build("sat");
     let deduction: extern "C" fn(f64) -> f64 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_deduction\0").unwrap()) };
 
@@ -92,7 +91,6 @@ fn the_saturation_that_motivated_the_slice_is_gone() {
     assert_eq!(deduction(1_000_000_000_000.0), 45_000_000_000.0);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -118,6 +116,4 @@ fn the_export_surface_is_unchanged_in_shape() {
     let size = std::fs::metadata(&dll).unwrap().len();
     println!("deduction.dll = {size} B");
     assert!(size < 60_000, "still a small stripped module: {size}");
-
-    let _ = std::fs::remove_dir_all(&out);
 }

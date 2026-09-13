@@ -15,12 +15,11 @@
 
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 fn builds(tag: &str, src: &str) {
-    let out = std::env::temp_dir().join(format!("mlc_cb_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("cb_{tag}"));
     let r = emit_artifacts(src, tag, &out);
-    let _ = std::fs::remove_dir_all(&out);
     if let Err(e) = r {
         panic!("this program type-checks but does not build:\n{src}\n\n{e}");
     }

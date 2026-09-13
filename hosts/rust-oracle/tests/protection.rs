@@ -6,6 +6,8 @@
 use ml_oracle::pe;
 use mlc::{codegen::build_cdylib, compile_to_rust_named};
 
+mod common;
+
 /// Measured sizes of the stripped `no_std` `discount` module, in bytes.
 ///
 /// **This number is machine-dependent, and that was measured, not assumed.** D3 was decided
@@ -53,9 +55,15 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
     // measures, and the count is what the documents state.
     let module = "discount_w6";
     let rust = compile_to_rust_named(src, module).expect("compile");
-    // Isolate the build tree per test process (build_cdylib expects a unique workdir).
-    let workdir = std::env::temp_dir().join(format!("mlc_w6_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&workdir);
+    // Isolate the build tree per test process (build_cdylib expects a unique workdir), and
+    // hold it in `common::TempOut` so it is removed on DROP.
+    //
+    // This file cleared at the START and again at the very end, which is the shape
+    // `STATUS.md` §5-5.7 measured: the name carries the pid, so clearing at the start removes
+    // nothing the next run will reuse, and the line at the end never runs when a test panics.
+    // Seven leftover `mlc_w6_*` trees were counted in this working directory, more than any
+    // other prefix — and every leftover in it belonged to a file still using this pattern.
+    let workdir = common::TempOut::new("w6");
     let dll = build_cdylib(&rust, module, &workdir).expect("build").dll;
 
     // Export table = exactly the two reserved symbols + the mlx_ function (D18).
@@ -165,6 +173,5 @@ fn produced_module_exports_only_intended_symbols_and_is_stripped() {
 
     println!("W6 measured: size={size} bytes on {environment}, exports={exports:?}");
 
-    // Nothing holds the file open here (we read bytes, not LoadLibrary) — clean up.
-    let _ = std::fs::remove_dir_all(&workdir);
+    // Cleanup is `workdir`'s Drop, which also runs when an assertion above fails.
 }

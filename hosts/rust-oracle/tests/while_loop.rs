@@ -5,12 +5,12 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 #[test]
 fn oracle_loads_and_calls_a_module_with_a_loop() {
     let src = include_str!("../../../examples/sum_to.mls");
-    let out = std::env::temp_dir().join(format!("mlc_while_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("while");
     let arts = emit_artifacts(src, "sum_to", &out).expect("emit sum_to");
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load sum_to.dll");
@@ -37,5 +37,4 @@ fn oracle_loads_and_calls_a_module_with_a_loop() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }

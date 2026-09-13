@@ -5,12 +5,12 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 #[test]
 fn oracle_loads_and_calls_a_module_using_unary_operators() {
     let src = include_str!("../../../examples/negate_if.mls");
-    let out = std::env::temp_dir().join(format!("mlc_unary_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("unary");
     let arts = emit_artifacts(src, "negate_if", &out).expect("emit negate_if");
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load negate_if.dll");
@@ -34,7 +34,6 @@ fn oracle_loads_and_calls_a_module_using_unary_operators() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -42,9 +41,7 @@ fn negating_i32_min_wraps_to_itself() {
     // DP-U4: unary `-` follows the same wrapping rule as the rest of i32 arithmetic (DP-I4).
     // Measured rather than assumed — this is the one case where `-x` cannot produce the
     // mathematically correct answer.
-    let out = std::env::temp_dir().join(format!("mlc_unary_min_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("unary_min");
     let arts = emit_artifacts("export fn neg(x: i32) -> i32 { return -x }", "neg", &out)
         .expect("emit neg");
 
@@ -60,5 +57,4 @@ fn negating_i32_min_wraps_to_itself() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }

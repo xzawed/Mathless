@@ -6,6 +6,8 @@ use std::process::Command;
 
 use mlc::{compile_to_ir, compile_to_rust, CompileError};
 
+mod common;
+
 #[test]
 fn compile_error_display_keeps_the_parse_position() {
     let err = compile_to_ir("export fn f(mut: f64) -> f64 { return 0.0 }").unwrap_err();
@@ -99,22 +101,19 @@ fn emit_error_does_not_wrap_the_message_in_debug() {
 
 /// Run the real `mlc build` on `source` and return its stderr, asserting it failed.
 fn cli_stderr_for(tag: &str, source: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("mlc_diag_cli_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = common::TempOut::new(&format!("diag_cli_{tag}"));
     let src = dir.join("bad.mls");
     std::fs::write(&src, source).unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_mlc"))
         .args(["build".as_ref(), src.as_os_str()])
         .arg("-o")
-        .arg(&dir)
+        .arg(dir.path())
         .output()
         .expect("run mlc");
     assert!(!out.status.success(), "the build should fail");
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
 
-    let _ = std::fs::remove_dir_all(&dir);
     stderr
 }
 

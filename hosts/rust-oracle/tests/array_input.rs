@@ -13,14 +13,14 @@ use ml_oracle::Module;
 use mlc::abi::ML_ST_INDEX_OUT_OF_RANGE;
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 /// The domain code `examples/basket.mls` declares.
 const ML_BASKET_ERR_E_LENGTH_MISMATCH: i32 = 1;
 
-fn build(tag: &str) -> (std::path::PathBuf, Module) {
+fn build(tag: &str) -> (common::TempOut, Module) {
     let src = include_str!("../../../examples/basket.mls");
-    let out = std::env::temp_dir().join(format!("mlc_arr_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("arr_{tag}"));
     let arts = emit_artifacts(src, "basket", &out).expect("emit basket");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load basket.dll");
     (out, m)
@@ -36,7 +36,7 @@ type AnySet = extern "C" fn(*const bool, i32, *mut bool) -> i32;
 /// array, in ONE call.
 #[test]
 fn a_host_gets_the_right_answer_from_one_call() {
-    let (out, m) = build("value");
+    let (_out, m) = build("value");
     let total: BasketTotal =
         unsafe { std::mem::transmute(m.symbol(b"mlx_basket_total\0").unwrap()) };
 
@@ -73,7 +73,6 @@ fn a_host_gets_the_right_answer_from_one_call() {
         "D17: a failed call writes no out-param, domain error included"
     );
     drop(m);
-    let _ = std::fs::remove_dir_all(out);
 }
 
 /// Acceptance C: out of range is the reserved NEGATIVE, and it writes nothing.
@@ -82,7 +81,7 @@ fn a_host_gets_the_right_answer_from_one_call() {
 /// a value; a written out-param is a host reading garbage it was told to ignore (DP-E3).
 #[test]
 fn an_out_of_range_index_is_the_reserved_negative_and_writes_nothing() {
-    let (out, m) = build("bounds");
+    let (_out, m) = build("bounds");
     let pick: Pick = unsafe { std::mem::transmute(m.symbol(b"mlx_pick\0").unwrap()) };
     let xs = [10i32, 20, 30];
 
@@ -112,7 +111,6 @@ fn an_out_of_range_index_is_the_reserved_negative_and_writes_nothing() {
     );
     assert_eq!(canary, 0x5A5A_5A5A);
     drop(m);
-    let _ = std::fs::remove_dir_all(out);
 }
 
 /// Acceptance H: empty is an ordinary answer. This is the case a host's own idiom breaks on
@@ -120,7 +118,7 @@ fn an_out_of_range_index_is_the_reserved_negative_and_writes_nothing() {
 /// the host side in the Pascal host.
 #[test]
 fn an_empty_array_is_a_normal_answer() {
-    let (out, m) = build("empty");
+    let (_out, m) = build("empty");
     let largest: Largest = unsafe { std::mem::transmute(m.symbol(b"mlx_largest\0").unwrap()) };
 
     let xs = [1.5f64, 9.25, -3.0];
@@ -134,20 +132,18 @@ fn an_empty_array_is_a_normal_answer() {
     assert_eq!(largest(xs.as_ptr(), 0, 42.0, &mut got), 0);
     assert_eq!(got, 42.0, "an empty array returns the seed, not an error");
     drop(m);
-    let _ = std::fs::remove_dir_all(out);
 }
 
 /// `len` reads the companion the caller passed — not a NUL scan, not a stored count.
 #[test]
 fn len_is_the_number_the_host_passed() {
-    let (out, m) = build("len");
+    let (_out, m) = build("len");
     let how_many: HowMany = unsafe { std::mem::transmute(m.symbol(b"mlx_how_many\0").unwrap()) };
     let flags = [true, false, true, true];
     for n in 0..=4i32 {
         assert_eq!(how_many(flags.as_ptr(), n), n, "len({n})");
     }
     drop(m);
-    let _ = std::fs::remove_dir_all(out);
 }
 
 /// A `[bool]` is one byte per element on both sides.
@@ -158,7 +154,7 @@ fn len_is_the_number_the_host_passed() {
 /// is pinned by reading elements the host wrote as single bytes.
 #[test]
 fn a_bool_array_is_one_byte_per_element() {
-    let (out, m) = build("bools");
+    let (_out, m) = build("bools");
     let any: AnySet = unsafe { std::mem::transmute(m.symbol(b"mlx_any_set\0").unwrap()) };
 
     assert_eq!(
@@ -179,7 +175,6 @@ fn a_bool_array_is_one_byte_per_element() {
     assert_eq!(any(last.as_ptr(), 4, &mut got), 0);
     assert!(got, "the fourth element is set, and it is one byte along");
     drop(m);
-    let _ = std::fs::remove_dir_all(out);
 }
 
 /// **The borrowed pointer must not have pulled anything in.** Measured, not assumed.
@@ -196,9 +191,7 @@ fn a_bool_array_is_one_byte_per_element() {
 fn an_array_parameter_adds_no_import_over_a_scalar_baseline() {
     use ml_oracle::pe;
 
-    let out = std::env::temp_dir().join(format!("mlc_arrin_imports_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("arrin_imports");
 
     let base = mlc::emit::emit_artifacts(
         "export fn f(x: f64) -> f64 { return x * 2.0 }",
@@ -225,5 +218,4 @@ fn an_array_parameter_adds_no_import_over_a_scalar_baseline() {
             "{banned} must not be imported: {imports:?}"
         );
     }
-    let _ = std::fs::remove_dir_all(&out);
 }

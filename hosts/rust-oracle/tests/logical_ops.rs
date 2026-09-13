@@ -11,9 +11,7 @@ mod common;
 #[test]
 fn oracle_loads_and_calls_a_module_using_logical_operators() {
     let src = include_str!("../../../examples/count_bounded.mls");
-    let out = std::env::temp_dir().join(format!("mlc_logic_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("logic");
     let arts = emit_artifacts(src, "count_bounded", &out).expect("emit count_bounded");
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load count_bounded.dll");
@@ -52,9 +50,7 @@ fn or_returns_the_right_value_for_every_combination() {
     // observation arrived with array input (#200); `short_circuit_is_observable_through_an_
     // out_of_range_index` below now measures it. A test NAME is a claim too: this one was
     // asserting an open debt in every run's output.
-    let out = std::env::temp_dir().join(format!("mlc_logic_or_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("logic_or");
     let arts = emit_artifacts(
         "export fn any(a: bool, b: bool) -> bool { return a || b }",
         "any",

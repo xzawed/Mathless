@@ -375,9 +375,7 @@ fn rejects_a_module_name_that_delphi_reserves() {
 #[cfg(windows)]
 #[test]
 fn a_build_ignores_whatever_cargo_variables_are_already_set() {
-    let dir = std::env::temp_dir().join(format!("mlc_amb_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("temp dir");
+    let dir = common::TempOut::new("amb");
     let src = dir.join("amb.mls");
     std::fs::write(&src, "export fn bump(x: i32) -> i32 { return x + 1 }\n").expect("write src");
     let hostile_dir = dir.join("someone_elses_target");

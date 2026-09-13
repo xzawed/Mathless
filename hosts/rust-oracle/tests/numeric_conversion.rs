@@ -7,12 +7,12 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 #[test]
 fn oracle_loads_and_calls_a_module_using_a_cast() {
     let src = include_str!("../../../examples/line_total.mls");
-    let out = std::env::temp_dir().join(format!("mlc_cast_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("cast");
     let arts = emit_artifacts(src, "line_total", &out).expect("emit line_total");
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load line_total.dll");
@@ -36,7 +36,6 @@ fn oracle_loads_and_calls_a_module_using_a_cast() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -44,9 +43,7 @@ fn f64_to_i32_truncates_saturates_and_maps_nan_to_zero() {
     // SPEC section 2.3 is a Mathless rule, so it is measured here rather than inherited from
     // whatever the backend happens to do. `huge` and `nan` are built inside the module from
     // f64 division, which is the only way to reach infinity and NaN today.
-    let out = std::env::temp_dir().join(format!("mlc_cast_edge_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("cast_edge");
     let arts = emit_artifacts(
         // Named `cast_trunc`, not `trunc`: the rounding slice made `trunc` a built-in, and a
         // user function may not shadow one (SPEC-rounding DP-R1). That rule caught this very
@@ -88,7 +85,6 @@ fn f64_to_i32_truncates_saturates_and_maps_nan_to_zero() {
     assert_eq!(widen(i32::MIN), -2147483648.0);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -98,9 +94,7 @@ fn the_cast_precedence_choice_is_observable_and_pinned() {
     // way round and the two forms disagree at exactly one input — i32::MIN, with opposite
     // signs. Both values stay measured here: the flip made the divergence a matter of which
     // form you write, not which language you came from.
-    let out = std::env::temp_dir().join(format!("mlc_cast_prec_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("cast_prec");
     let arts = emit_artifacts(
         "export fn bare(x: i32) -> f64 { return -x as f64 }\n\
          export fn parens(x: i32) -> f64 { return (-x) as f64 }\n\
@@ -132,5 +126,4 @@ fn the_cast_precedence_choice_is_observable_and_pinned() {
     assert_eq!(inner(i32::MIN), 2147483648.0, "-(MIN as f64)");
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }

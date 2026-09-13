@@ -6,6 +6,8 @@
 use ml_oracle::Module;
 use mlc::{codegen::build_cdylib, compile_to_rust_named};
 
+mod common;
+
 #[test]
 fn compiles_discount_mls_and_calls_it_via_oracle() {
     // A: source → emitted Rust → native DLL, produced by the compiler.
@@ -16,8 +18,7 @@ fn compiles_discount_mls_and_calls_it_via_oracle() {
     let rust = compile_to_rust_named(src, "discount").expect("compile discount.mls");
     // Isolate the build tree per test process (build_cdylib expects a unique workdir); a
     // fixed name would race two concurrent `cargo test` runs.
-    let workdir = std::env::temp_dir().join(format!("mlc_e2e_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&workdir);
+    let workdir = common::TempOut::new("e2e");
     let dll = build_cdylib(&rust, "discount", &workdir)
         .expect("build cdylib")
         .dll;
@@ -37,5 +38,4 @@ fn compiles_discount_mls_and_calls_it_via_oracle() {
 
     // Release the loaded DLL (Windows locks it) before removing the isolated build tree.
     drop(m);
-    let _ = std::fs::remove_dir_all(&workdir);
 }

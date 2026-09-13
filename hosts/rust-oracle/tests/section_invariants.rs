@@ -15,14 +15,14 @@
 use ml_oracle::pe;
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 /// Build one example and report `(exports, .text virtual size, outlined function count)`.
 ///
 /// `.pdata` on x64 holds one 12-byte RUNTIME_FUNCTION per function the linker kept
 /// out-of-line, so `.pdata / 12` answers "did the adapter get inlined" directly.
 fn measure(name: &str, src: &str) -> (Vec<String>, u32, u32, u64) {
-    let out = std::env::temp_dir().join(format!("mlc_sect_{name}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("sect_{name}"));
     let arts = emit_artifacts(src, name, &out).unwrap_or_else(|e| panic!("{name}: {e}"));
     let mut exports = pe::read_exports(&arts.dll).expect("exports");
     exports.sort();
@@ -34,7 +34,6 @@ fn measure(name: &str, src: &str) -> (Vec<String>, u32, u32, u64) {
         .map(|s| s.virtual_size / 12)
         .unwrap_or(0);
     let size = std::fs::metadata(&arts.dll).unwrap().len();
-    let _ = std::fs::remove_dir_all(&out);
     (exports, text.virtual_size, pdata, size)
 }
 

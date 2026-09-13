@@ -7,12 +7,12 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 #[test]
 fn an_internal_helper_never_reaches_the_export_table() {
     let src = include_str!("../../../examples/discount4.mls");
-    let out = std::env::temp_dir().join(format!("mlc_calls_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("calls");
     let arts = emit_artifacts(src, "discount4", &out).expect("emit discount4");
 
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load discount4.dll");
@@ -49,5 +49,4 @@ fn an_internal_helper_never_reaches_the_export_table() {
     assert!(!unit.contains("vip_rate"), "{unit}");
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }

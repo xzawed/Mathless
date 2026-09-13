@@ -1167,6 +1167,114 @@ fn the_c_host_can_gate_every_module_name_the_compiler_accepts() {
     );
 }
 
+/// **No test creates a temp directory by hand — `common::TempOut` is the only way.**
+///
+/// This has recurred twice. `STATUS.md` §5-5.7 measured the first version (clear at the
+/// START, never at the end: 1,720 trees / 976 MB on one development machine), and #219
+/// answered it with `TempOut`, whose Drop also runs when a test panics and whose removal
+/// retries past the Windows DLL-lock race. Then a NEW file copied the older helper it had
+/// replaced, and eight trees were left behind in a single afternoon (§9-44.3).
+///
+/// Twice means the helper existing is not enough, because nothing made a new file use it.
+/// This is what makes it stick. Measured before it was written: every leftover tree in the
+/// working directory — `mlc_w6` ×7, `mlc_gco_*` ×6, `mlc_arr_*`, `mlc_calls`, `mlc_str_*`,
+/// `mlc_amb` — belonged to a file still building its path by hand, and none to a converted one.
+///
+/// The needle is `create_dir_all`, not `temp_dir()`: a test may legitimately NAME a temp path
+/// it never creates (`diagnostics.rs` builds one only to watch the compiler refuse before
+/// anything is written). Creating is what leaves something behind.
+#[test]
+fn no_test_creates_a_temp_directory_by_hand() {
+    // The needles are ASSEMBLED, not written. Spelled literally they appear in this file — in
+    // the search itself — and the guard reported its own source as an offender. Exempting
+    // this file by name would have worked and would have been worse: an exemption hides a
+    // real offender the day someone adds one here. Same problem the gated-module guard above
+    // records ("it cannot tell a CLAIM from a QUOTATION"), answered the same way, by making
+    // the text not match rather than by carving out a hole.
+    let creates = format!("fs::{}", "create_dir_all");
+    let names_temp = format!("env::{}()", "temp_dir");
+    // Assembled for the same reason, and it bit the same way: written literally, this file
+    // counted as a THIRD definition of the helper.
+    let defines_helper = format!("pub struct {}", "TempOut");
+
+    let root = repo_root();
+    let mut offenders = Vec::new();
+    // RECURSIVE, and that is not incidental: `common/` is itself a subdirectory, so a
+    // top-level-only walk would miss a leaky helper copied into exactly the place a helper
+    // most plausibly goes. (Review named this; it was a hole, not a boundary.)
+    let mut stack: Vec<PathBuf> = ["hosts/rust-oracle/tests", "compiler/tests"]
+        .iter()
+        .map(|d| root.join(d))
+        .collect();
+    let mut seen_files = 0usize;
+    let mut helpers = 0usize;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            panic!(
+                "{} is missing — this guard would pass by checking nothing",
+                dir.display()
+            );
+        };
+        for entry in entries {
+            let path = entry.expect("a directory entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            seen_files += 1;
+            let text = std::fs::read_to_string(&path).expect("read a test file");
+            // The file that DEFINES the helper is the one place a create belongs. Recognised
+            // by that definition rather than by its path, so the exemption is a property and
+            // not a name: a file stops being exempt the moment it stops being the helper.
+            if text.contains(&defines_helper) {
+                helpers += 1;
+                continue;
+            }
+            for (n, line) in text.lines().enumerate() {
+                // A create on a path the same file derived from the system temp directory.
+                if line.contains(&creates) && text.contains(&names_temp) {
+                    let rel = path
+                        .strip_prefix(&root)
+                        .expect("a path under the root")
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    offenders.push(format!("{rel}:{}", n + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        seen_files >= 30,
+        "only {seen_files} test files were read — the walk is checking almost nothing"
+    );
+    assert_eq!(
+        helpers, 2,
+        "expected exactly the two byte-identical copies of tests/common/mod.rs to define \
+         `TempOut`, found {helpers} — a third definition would be a third exemption, and \
+         nothing else asked for one"
+    );
+    assert!(
+        offenders.is_empty(),
+        "these build a temp directory by hand instead of holding `common::TempOut`, so the \
+         tree survives whenever the test panics — which is exactly when you are iterating \
+         (STATUS §5-5.7, §9-44.3):\n  {}\n\nUse `common::TempOut::new(\"<tag>\")` and drop the \
+         manual cleanup; bind it as `_out` if nothing reads it, never `_`, which would delete \
+         the tree while the module is still loaded.",
+        offenders.join("\n  ")
+    );
+}
+
+#[allow(dead_code)]
+fn file_name(p: &Path) -> String {
+    p.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// Every integer constant `compiler/src/abi.rs` declares, as `(name, value)`.
 ///
 /// Parsed rather than imported on purpose. `mlc::abi::ML_MAX_MODULE_NAME` would give the

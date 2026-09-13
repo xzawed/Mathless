@@ -13,14 +13,14 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
+mod common;
+
 const E_BAD_QTY: i32 = 1;
 const E_DIV0: i32 = 2;
 
-fn build(tag: &str) -> (std::path::PathBuf, Module) {
+fn build(tag: &str) -> (common::TempOut, Module) {
     let src = include_str!("../../../examples/quote.mls");
-    let out = std::env::temp_dir().join(format!("mlc_fc_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("fc_{tag}"));
     let arts = emit_artifacts(src, "quote", &out).expect("emit quote");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load quote.dll");
     (out, m)
@@ -28,7 +28,7 @@ fn build(tag: &str) -> (std::path::PathBuf, Module) {
 
 #[test]
 fn the_success_path_returns_the_right_value() {
-    let (out, m) = build("b");
+    let (_out, m) = build("b");
     let unit_price: extern "C" fn(f64, i32, *mut f64) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_unit_price\0").unwrap()) };
 
@@ -37,7 +37,6 @@ fn the_success_path_returns_the_right_value() {
     assert_eq!(v, 25.0);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -46,7 +45,7 @@ fn a_propagated_status_arrives_unchanged() {
     // must be the callee's own code — not renumbered, not offset, not collapsed into one
     // "something failed" value. The error table is module-scoped, so caller and callee share
     // it; the propagation is a pass-through by construction, and this proves it.
-    let (out, m) = build("b2");
+    let (_out, m) = build("b2");
     let unit_price: extern "C" fn(f64, i32, *mut f64) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_unit_price\0").unwrap()) };
 
@@ -74,7 +73,6 @@ fn a_propagated_status_arrives_unchanged() {
     // divisor, and `q as f64` is zero only if q is zero, which check_qty rejects. So this
     // path is unreachable from unit_price by design; measured through line_check instead.
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -83,7 +81,7 @@ fn a_declared_out_composes_with_a_propagating_call() {
     // before reaching the assignment, so it is not. DP-O3 is explicit that outs are NOT
     // rolled back — what matters is that the host must not read them on a non-zero status,
     // and this measures which of the two happened rather than assuming.
-    let (out, m) = build("b3");
+    let (_out, m) = build("b3");
     let line_check: extern "C" fn(i32, *mut i32, *mut i32) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_line_check\0").unwrap()) };
 
@@ -101,7 +99,6 @@ fn a_declared_out_composes_with_a_propagating_call() {
     assert_eq!(v, -7, "and out_value is untouched");
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -116,9 +113,7 @@ fn the_second_helper_propagates_its_own_code() {
                          let g = try guard(a)\n\
                          return try divide(g, b)\n\
                        }";
-    let out = std::env::temp_dir().join(format!("mlc_fc_two_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("fc_two");
     let arts = emit_artifacts(SRC, "two", &out).expect("emit two");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load two.dll");
     let f: extern "C" fn(f64, f64, *mut f64) -> i32 =
@@ -137,7 +132,6 @@ fn the_second_helper_propagates_its_own_code() {
     assert_eq!(v, -7.0);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -166,8 +160,6 @@ fn the_helpers_stay_out_of_the_export_table() {
     let size = std::fs::metadata(&dll).unwrap().len();
     println!("quote.dll = {size} B, exports = {names:?}");
     assert!(size < 60_000, "still a small stripped module: {size}");
-
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -180,9 +172,7 @@ fn a_three_level_chain_carries_the_deepest_code() {
                        fn b(x: i32) -> i32! { let y = try c(x) return y + 1 }\n\
                        fn a(x: i32) -> i32! { let y = try b(x) return y + 1 }\n\
                        export fn f(x: i32) -> i32! { return try a(x) }";
-    let out = std::env::temp_dir().join(format!("mlc_fc_deep_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("fc_deep");
     let arts = emit_artifacts(SRC, "deep", &out).expect("emit deep");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load deep.dll");
     let f: extern "C" fn(i32, *mut i32) -> i32 =
@@ -197,7 +187,6 @@ fn a_three_level_chain_carries_the_deepest_code() {
     assert_eq!(v, -7);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 /// DP-F5, unlocked by the wrapper refactor: a rule can be exposed to the host AND reused
@@ -218,9 +207,7 @@ fn an_exported_rule_can_be_reused_inside_the_module_and_called_from_outside() {
                          let v = try check(x)\n\
                          return v * 2\n\
                        }";
-    let out = std::env::temp_dir().join(format!("mlc_fc_dpf5_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("fc_dpf5");
     let arts = emit_artifacts(SRC, "reuse", &out).expect("emit reuse");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load reuse.dll");
 
@@ -262,6 +249,4 @@ fn an_exported_rule_can_be_reused_inside_the_module_and_called_from_outside() {
             "mlx_doubled".to_string(),
         ]
     );
-
-    let _ = std::fs::remove_dir_all(&out);
 }

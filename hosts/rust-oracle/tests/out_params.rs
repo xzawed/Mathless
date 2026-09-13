@@ -9,11 +9,11 @@
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
-fn build(tag: &str) -> (std::path::PathBuf, Module) {
+mod common;
+
+fn build(tag: &str) -> (common::TempOut, Module) {
     let src = include_str!("../../../examples/commission.mls");
-    let out = std::env::temp_dir().join(format!("mlc_out_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new(&format!("out_{tag}"));
     let arts = emit_artifacts(src, "commission", &out).expect("emit commission");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load commission.dll");
     (out, m)
@@ -21,7 +21,7 @@ fn build(tag: &str) -> (std::path::PathBuf, Module) {
 
 #[test]
 fn a_second_value_actually_comes_back() {
-    let (out, m) = build("basic");
+    let (_out, m) = build("basic");
     let commission: extern "C" fn(f64, *mut i32) -> f64 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_commission\0").unwrap()) };
 
@@ -44,13 +44,12 @@ fn a_second_value_actually_comes_back() {
     assert_eq!(tier, 3);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
 fn a_declared_out_composes_with_the_d17_out_value() {
     // Section 3-B2. The signature is (inputs…, declared outs…, out_value) — DP-O1.
-    let (out, m) = build("compose");
+    let (_out, m) = build("compose");
     let checked: extern "C" fn(f64, *mut i32, *mut f64) -> i32 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_commission_checked\0").unwrap()) };
 
@@ -69,7 +68,6 @@ fn a_declared_out_composes_with_the_d17_out_value() {
     assert_eq!(fee, -7.0, "out_value untouched on failure");
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -93,8 +91,6 @@ fn the_export_surface_is_unchanged_in_shape() {
     let size = std::fs::metadata(&dll).unwrap().len();
     println!("commission.dll = {size} B");
     assert!(size < 60_000, "still a small stripped module: {size}");
-
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 /// DP-O3 declined to GUARANTEE that a failing call leaves the declared out untouched — it
@@ -114,9 +110,7 @@ fn a_failing_call_may_leave_a_declared_out_written() {
                          if qty > 100 { fail E_TOO_BIG }\n\
                          return 0\n\
                        }";
-    let out = std::env::temp_dir().join(format!("mlc_out_o3_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+    let out = common::TempOut::new("out_o3");
     let arts = emit_artifacts(SRC, "order_check", &out).expect("emit order_check");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load order_check.dll");
 
@@ -145,5 +139,4 @@ fn a_failing_call_may_leave_a_declared_out_written() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }

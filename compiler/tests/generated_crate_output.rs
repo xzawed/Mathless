@@ -18,11 +18,10 @@
 use mlc::codegen::build_cdylib;
 use mlc::compile_to_rust;
 
-fn workdir(tag: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("mlc_gco_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+mod common;
+
+fn workdir(tag: &str) -> common::TempOut {
+    common::TempOut::new(&format!("gco_{tag}"))
 }
 
 #[test]
@@ -67,8 +66,6 @@ fn a_failing_generated_crate_reports_what_rustc_said() {
         msg.contains("src/lib.rs") || msg.contains("src\\lib.rs"),
         "the carried diagnostic should include the generated file's positions: {msg}"
     );
-
-    let _ = std::fs::remove_dir_all(&d);
 }
 
 /// The module's name reaches `build_cdylib` twice — baked into the source by `emit`, and
@@ -100,7 +97,6 @@ fn build_cdylib_refuses_a_source_whose_fingerprint_names_another_module() {
         !d.join("discount").exists(),
         "the crate directory must not be created for a source that is refused"
     );
-    let _ = std::fs::remove_dir_all(&d);
 }
 
 // Windows-only, and the reason is worth stating: `build_cdylib` looks for
@@ -130,6 +126,4 @@ fn a_successful_build_still_produces_a_dll() {
     // The import library is the linker's second output for the same invocation, and
     // `build_cdylib` fails if it is missing — so a valid crate produces both.
     assert!(dll.import_lib.exists(), "{}", dll.import_lib.display());
-
-    let _ = std::fs::remove_dir_all(&d);
 }

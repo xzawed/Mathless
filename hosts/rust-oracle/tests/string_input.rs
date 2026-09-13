@@ -13,16 +13,16 @@ use core::ffi::c_char;
 use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
-fn build_named(tag: &str, name: &str, src: &str) -> (std::path::PathBuf, Module) {
-    let out = std::env::temp_dir().join(format!("mlc_str_{tag}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(&out).unwrap();
+mod common;
+
+fn build_named(tag: &str, name: &str, src: &str) -> (common::TempOut, Module) {
+    let out = common::TempOut::new(&format!("str_{tag}"));
     let arts = emit_artifacts(src, name, &out).unwrap_or_else(|e| panic!("emit {name}: {e}"));
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load the dll");
     (out, m)
 }
 
-fn build(tag: &str) -> (std::path::PathBuf, Module) {
+fn build(tag: &str) -> (common::TempOut, Module) {
     build_named(tag, "vat", include_str!("../../../examples/vat.mls"))
 }
 
@@ -31,7 +31,7 @@ fn the_measured_rule_returns_the_right_rate() {
     // Section 3-B. A `c"KR"` literal is exactly the `const char*` a C host passes, and the
     // pointer type here is spelled `c_char` for the same reason: it is what the generated
     // header declares (DP-S1), so a change of shape shows up as a type error.
-    let (out, m) = build("b");
+    let (_out, m) = build("b");
     let vat: extern "C" fn(*const c_char) -> f64 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_vat_rate\0").unwrap()) };
 
@@ -54,14 +54,13 @@ fn the_measured_rule_returns_the_right_rate() {
     assert!(is_export(c"EXP".as_ptr()));
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
 fn equality_is_bytes_to_the_nul_and_nothing_looser() {
     // Section 3-B2. Each of these passes under some plausible-but-wrong implementation:
     // case-insensitive compare, a length-0 shortcut, a prefix compare, or a fixed-length one.
-    let (out, m) = build("b2");
+    let (_out, m) = build("b2");
     let vat: extern "C" fn(*const c_char) -> f64 =
         unsafe { std::mem::transmute(m.symbol(b"mlx_vat_rate\0").unwrap()) };
 
@@ -85,7 +84,6 @@ fn equality_is_bytes_to_the_nul_and_nothing_looser() {
     assert_eq!(vat(c"KRX".as_ptr()), 0.0);
 
     drop(m);
-    let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
@@ -142,9 +140,6 @@ fn the_module_gains_no_export_and_no_import() {
     let size = std::fs::metadata(&dll).unwrap().len();
     println!("vat.dll = {size} B, {} imports", imports.len());
     assert!(size < 60_000, "still a small stripped module: {size}");
-
-    let _ = std::fs::remove_dir_all(&out);
-    let _ = std::fs::remove_dir_all(&base_out);
 }
 
 /// **`byte_len(s)` measured on a real module** — acceptance A and G of `SPEC-string-length`.
@@ -159,7 +154,7 @@ fn the_module_gains_no_export_and_no_import() {
 /// sentence from being a guess.
 #[test]
 fn byte_len_counts_bytes_up_to_the_nul_and_not_characters() {
-    let (out, m) = build_named(
+    let (_out, m) = build_named(
         "blen",
         "blen",
         "export fn n(s: string) -> i32 { return byte_len(s) }",
@@ -196,7 +191,6 @@ fn byte_len_counts_bytes_up_to_the_nul_and_not_characters() {
     );
 
     drop(m);
-    let _ = std::fs::remove_dir_all(out);
 }
 
 /// **Acceptance D of `SPEC-string-length`: `byte_len` adds no import and no export.**
@@ -254,6 +248,4 @@ fn byte_len_adds_no_import_over_a_scalar_baseline() {
 
     drop(m);
     drop(base_m);
-    let _ = std::fs::remove_dir_all(out);
-    let _ = std::fs::remove_dir_all(base_dir);
 }

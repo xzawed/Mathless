@@ -10,6 +10,8 @@
 use ml_oracle::{pe, Module};
 use mlc::{codegen::build_cdylib, compile_to_ir, iface};
 
+mod common;
+
 /// The two modules from the drift experiment in SPEC §0.1. `v1` is what the host was built
 /// against; `v2` is an ordinary edit a rule author would make.
 const V1: &str = "\
@@ -41,7 +43,9 @@ const MODULE: &str = "iface";
 const HASH_SYMBOL: &[u8] = b"ml_iface_hash_iface\0";
 
 struct Built {
-    dir: std::path::PathBuf,
+    /// Held, not read: dropping it removes the build tree, including on a panic.
+    #[allow(dead_code)]
+    dir: common::TempOut,
     dll: std::path::PathBuf,
     /// What the compiler says the fingerprint should be.
     expected: u64,
@@ -51,8 +55,7 @@ fn build(src: &str, tag: &str) -> Built {
     let ir = compile_to_ir(src).expect("compile");
     let expected = iface::fingerprint(&ir);
     let rust = mlc::codegen::emit(&ir, MODULE).expect("codegen");
-    let dir = std::env::temp_dir().join(format!("mlc_iface_{}_{}", tag, std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = common::TempOut::new(&format!("iface_{tag}"));
     let dll = build_cdylib(&rust, MODULE, &dir).expect("build cdylib").dll;
     Built { dir, dll, expected }
 }
@@ -79,7 +82,6 @@ fn the_module_reports_the_fingerprint_the_compiler_computed() {
         b.expected,
         "exported value must match codegen"
     );
-    let _ = std::fs::remove_dir_all(&b.dir);
 }
 
 #[test]
@@ -118,8 +120,6 @@ fn a_drifted_module_reports_a_different_fingerprint() {
     );
 
     println!("measured: v1={h1:#018X} v2={h2:#018X} (abi version equal, exports equal)");
-    let _ = std::fs::remove_dir_all(&v1.dir);
-    let _ = std::fs::remove_dir_all(&v2.dir);
 }
 
 #[test]
@@ -134,8 +134,6 @@ fn a_body_only_edit_keeps_the_fingerprint_on_the_real_dll() {
         hash_of(&b.dll),
         "a threshold edit must remain loadable by an unmodified host"
     );
-    let _ = std::fs::remove_dir_all(&a.dir);
-    let _ = std::fs::remove_dir_all(&b.dir);
 }
 
 #[test]
@@ -165,9 +163,6 @@ fn a_host_that_checks_refuses_the_drifted_module_and_calls_nothing() {
         called_anything = true;
     }
     assert!(called_anything, "the matching module must still be usable");
-
-    let _ = std::fs::remove_dir_all(&v1.dir);
-    let _ = std::fs::remove_dir_all(&v2.dir);
 }
 
 #[test]
@@ -182,6 +177,4 @@ fn the_fingerprint_export_does_not_pull_in_new_imports() {
     a.sort();
     b.sort();
     assert_eq!(a, b, "the fingerprint export must not add an import");
-    let _ = std::fs::remove_dir_all(&with.dir);
-    let _ = std::fs::remove_dir_all(&without.dir);
 }

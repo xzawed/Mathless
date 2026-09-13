@@ -146,3 +146,55 @@ fn the_module_gains_no_export_and_no_import() {
     let _ = std::fs::remove_dir_all(&out);
     let _ = std::fs::remove_dir_all(&base_out);
 }
+
+/// **`byte_len(s)` measured on a real module** — acceptance A and G of `SPEC-string-length`.
+///
+/// A is the value: NUL EXCLUDED, so `""` is 0 and `"UPSN"` is 4. That is deliberately a
+/// different number from Q12's `*ml_needed`, which is NUL-INCLUSIVE and answers 1 for the
+/// empty string — one is a length, the other an allocation size (SPEC §2.1).
+///
+/// G is the cost, measured rather than asserted. Bytes are not characters (DP-L2): the module
+/// never interprets an encoding (DP-S2), so a UTF-8 host sending two Korean characters gets
+/// **6**, not 2. The SPEC says this is the slice's only new risk; a test is what stops that
+/// sentence from being a guess.
+#[test]
+fn byte_len_counts_bytes_up_to_the_nul_and_not_characters() {
+    let (out, m) = build_named(
+        "blen",
+        "blen",
+        "export fn n(s: string) -> i32 { return byte_len(s) }",
+    );
+    let n: extern "C" fn(*const c_char) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_n\0").unwrap()) };
+
+    // A — the terminator is not counted. `c"…"` literals, the same idiom the rest of this
+    // file uses, because that is exactly the `const char*` a C host passes.
+    assert_eq!(n(c"".as_ptr()), 0, "the empty string is 0, not 1");
+    assert_eq!(n(c"UPSN".as_ptr()), 4, "\"UPSN\" is 4");
+    assert_eq!(n(c"x".as_ptr()), 1);
+
+    // …and it stops AT the NUL rather than running to the end of the buffer. A raw byte
+    // slice here on purpose: a `c"…"` literal cannot hold an interior NUL, which is the
+    // whole point of this case.
+    let embedded: &[u8] = b"ab\0cd\0";
+    assert_eq!(
+        n(embedded.as_ptr().cast::<c_char>()),
+        2,
+        "the walk must stop at the first NUL, not scan the whole allocation"
+    );
+
+    // G — the cost, in the same run so it cannot drift from the value above. Two Korean
+    // characters in UTF-8 are six bytes; an author who reads `byte_len` as "characters"
+    // gets 6 where they meant 2, and the module cannot tell the difference because DP-S2
+    // leaves it holding opaque bytes.
+    let utf8 = c"한국";
+    assert_eq!(utf8.to_bytes().len(), 6, "control: 2 chars = 6 bytes");
+    assert_eq!(
+        n(utf8.as_ptr()),
+        6,
+        "byte_len answers BYTES — this is DP-L2's cost, measured rather than claimed"
+    );
+
+    drop(m);
+    let _ = std::fs::remove_dir_all(out);
+}

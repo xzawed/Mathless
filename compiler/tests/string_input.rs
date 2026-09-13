@@ -248,3 +248,105 @@ fn every_helper_the_generated_crate_calls_is_also_defined_in_it() {
         );
     }
 }
+
+/// **`byte_len(s)` — the string's length in bytes, NUL excluded** (`SPEC-string-length`).
+///
+/// DP-S3 closed string operations at `==`/`!=` and named length as out of scope; the user
+/// reopened it on 2026-09-13 for length alone (substring drags the whole Q12 protocol along,
+/// so it is a separate slice — DP-L5).
+///
+/// **The name is the design.** DP-L4 first recommended `len(s)`, sharing the array builtin's
+/// name, and the pre-implementation review reversed it: bytes-are-not-characters (§2.2) is
+/// this slice's only new risk and **the name is its only compiler-visible defence** —
+/// everything else is a comment, and `SPEC-array-return` §5.2-1 already records that comments
+/// are not enforced. This repository has made the same-name-different-unit trade once
+/// already: `ml_cap` counts bytes for a string return and elements for an array return, and
+/// §2.2 there describes the resulting overrun as possibly silent.
+#[test]
+fn byte_len_reads_a_string_parameter() {
+    let rust = compile_to_rust(
+        "export fn valid_bizno(bizno: string) -> bool { return byte_len(bizno) == 10 }",
+    )
+    .expect("byte_len on a string must compile");
+    assert!(
+        rust.contains("ml_slen"),
+        "the emitted code must reuse the existing NUL-exclusive counter:\n{rust}"
+    );
+}
+
+/// Acceptance H — the wrong name is refused, and the diagnostic names the right one.
+///
+/// This is not politeness. DP-L4's whole justification is "the name is the only
+/// compiler-visible defence", so a guard has to show that the defence actually SPEAKS.
+#[test]
+fn the_wrong_length_builtin_names_the_right_one() {
+    let err = compile_to_rust("export fn f(s: string) -> i32 { return len(s) }")
+        .expect_err("`len` is the ARRAY builtin — a string must be refused")
+        .to_string();
+    assert!(
+        err.contains("byte_len"),
+        "refusing `len(s)` must point at `byte_len`, or the name is not a defence: {err}"
+    );
+
+    let err = compile_to_rust("export fn f(xs: [i32]) -> i32! { return byte_len(xs) }")
+        .expect_err("`byte_len` is the STRING builtin — an array must be refused")
+        .to_string();
+    assert!(
+        err.contains("len"),
+        "refusing `byte_len(xs)` must point at `len`: {err}"
+    );
+}
+
+/// A user function may not shadow `byte_len` — SPEC-string-length §3.1.
+///
+/// **This was missed on the first pass.** `byte_len` was added as a builtin and not added to
+/// the collision check beside `len`, so `export fn byte_len(x: i32) -> i32` compiled and
+/// quietly shadowed it. Found by running the SPEC's own §3.1 row rather than by reading the
+/// code — which is the argument for writing that row down before implementing.
+#[test]
+fn a_user_function_may_not_shadow_byte_len() {
+    let err = compile_to_rust("export fn byte_len(x: i32) -> i32 { return x }")
+        .expect_err("`byte_len` is a builtin — a user function must not take the name")
+        .to_string();
+    assert!(
+        err.contains("byte_len") && err.contains("built-in"),
+        "the refusal must name the builtin it collides with: {err}"
+    );
+    // The array builtin has had this since #200; both must keep it.
+    let err = compile_to_rust("export fn len(x: i32) -> i32 { return x }")
+        .expect_err("`len` is a builtin too")
+        .to_string();
+    assert!(err.contains("built-in"), "{err}");
+}
+
+/// **`byte_len` refuses a BUILT string** — the memory-safety half of DP-K3.
+///
+/// A built string (`n as string`, or a concatenation) is bytes this module produces into the
+/// caller's buffer at `return` time; it is not a pointer to bytes that exist yet. Every other
+/// string-consuming position calls `reject_built_string` for that reason — arguments and
+/// comparisons both do.
+///
+/// **The first implementation of `byte_len` did not**, and the consequence was measured, not
+/// imagined: `byte_len(x as string)` COMPILED, all the way to a `.dll`. Review found it after
+/// the three claims I had asked about all came back CONFIRMED — the answer to "what did you
+/// not ask about".
+#[test]
+fn byte_len_refuses_a_built_string() {
+    let err = compile_to_rust("export fn n(x: i32) -> i32 { return byte_len(x as string) }")
+        .expect_err("a built string is not a pointer to bytes that exist — it must be refused")
+        .to_string();
+    assert!(
+        err.contains("byte_len"),
+        "the refusal must name the position: {err}"
+    );
+
+    let err =
+        compile_to_rust("export fn n(a: string, b: string) -> i32 { return byte_len(a + b) }")
+            .expect_err("a concatenation is a built string too")
+            .to_string();
+    assert!(err.contains("byte_len"), "{err}");
+
+    // A BORROWED string is still fine — that is the whole point of the distinction.
+    compile_to_rust("export fn n(s: string) -> i32 { return byte_len(s) }")
+        .expect("a borrowed parameter is a real pointer and must still work");
+}

@@ -168,6 +168,16 @@ fn string_operations_that_do_not_exist_yet() {
     // …and the proof that it is the syntax and not the feature.
     mlc::compile_to_rust("export fn f(s: string) -> string! { return byte_slice(s, 0, 2) }")
         .expect("the same span is available as a builtin");
+
+    // Comparing a span against a BORROWED string arrived on 2026-09-13; comparing two spans
+    // did not (DP-C5 — two range checks, smallest thing first). Same distinction the two
+    // entries above draw: what is missing is the narrower case, not the feature.
+    rejected(
+        "span to span",
+        "export fn f(a: string, b: string) -> bool! { return byte_slice(a,0,1) == byte_slice(b,0,1) }",
+    );
+    mlc::compile_to_rust("export fn f(c: string) -> bool! { return byte_slice(c,0,2) == \"AB\" }")
+        .expect("a span against a literal is available");
 }
 
 // ------------------------------------------------------------------ conversions
@@ -234,6 +244,9 @@ const GAPS: &[(&str, &str)] = &[
     // 대신 **범위 문법**이 공백이고, 그것이 `s[0..3]`을 거부하는 진짜 이유다. `byte_len`이
     // 들어온 뒤에도 `s.len`이 거부된 것과 같은 구분이며, §9-38.1이 그 구분을 실측으로 적었다.
     ("범위 문법", "range syntax"),
+    // 스팬 대 스팬은 DP-C5가 이번 범위 밖으로 둔 것이고, 스팬 대 빌린 문자열은 2026-09-13에
+    // 들어왔다. 공백은 **둘 중 앞의 것**이다.
+    ("스팬 대 스팬 비교", "span to span"),
     ("순서 비교", "string ordering"),
     ("포맷", "f64 as string"),
     ("지역 변수", "string local"),

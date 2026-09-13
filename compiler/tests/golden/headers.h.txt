@@ -29,7 +29,7 @@
  *
  * A change to a function BODY does not change this value; a change to a name,
  * type, parameter order, out-ness or error code does. */
-#define ML_ACCOUNT_IFACE_HASH 0xFA128D9907AB2DB3ULL
+#define ML_ACCOUNT_IFACE_HASH 0x81CD1855111FFE55ULL
 
 /* Q12 caller-allocates protocol: a buffer too small to hold the
  * result, NUL included. Truncation is a FAILURE, not a short
@@ -53,6 +53,8 @@ int32_t mlx_bank_code(const char* /* acct */, char* ml_buf, int32_t ml_cap, int3
 int32_t mlx_account_body(const char* /* acct */, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);
 /* may fail with: ML_ACCOUNT_ERR_E_SHORT_ACCOUNT */
 int32_t mlx_masked(const char* /* acct */, char* ml_buf, int32_t ml_cap, int32_t* ml_needed);
+/* may fail with: ML_ACCOUNT_ERR_E_SHORT_ACCOUNT */
+int32_t mlx_is_kookmin(const char* /* acct */, bool* out_value);
 
 #ifdef __cplusplus
 }

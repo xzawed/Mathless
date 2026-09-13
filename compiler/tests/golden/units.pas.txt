@@ -43,7 +43,7 @@ interface
 
 const
   ML_MODULE = 'account.dll';
-  ML_ACCOUNT_IFACE_HASH: UInt64 = UInt64($FA128D9907AB2DB3);
+  ML_ACCOUNT_IFACE_HASH: UInt64 = UInt64($81CD1855111FFE55);
   ML_ACCOUNT_ERR_E_SHORT_ACCOUNT = 1;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
     NUL included. Truncation is a FAILURE, not a short success - nothing is written,
@@ -55,6 +55,7 @@ function ml_iface_hash_account: UInt64; cdecl; external ML_MODULE;
 function mlx_bank_code(acct: PAnsiChar; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_account_body(acct: PAnsiChar; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
 function mlx_masked(acct: PAnsiChar; ml_buf: PByte; ml_cap: Integer; out ml_needed: Integer): Integer; cdecl; external ML_MODULE;
+function mlx_is_kookmin(acct: PAnsiChar; out out_value: Boolean): Integer; cdecl; external ML_MODULE;
 
 implementation
 

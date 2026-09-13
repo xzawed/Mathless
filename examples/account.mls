@@ -34,3 +34,17 @@ export fn masked(acct: string) -> string! {
   if byte_len(acct) < 7 { fail E_SHORT_ACCOUNT }
   return byte_slice(acct, 0, 3) + "-****-" + byte_slice(acct, byte_len(acct) - 4, byte_len(acct))
 }
+
+// The rule the section 7 sample could not write (STATUS section 9-46, R2): does this account
+// belong to a particular bank? Until spans could be compared, the module could only hand the
+// first three bytes back and let the HOST decide - which is the coupling the module exists to
+// remove, since adding a bank then means changing two things instead of one.
+//
+// `-> bool!` and not `-> bool`: a span can be out of range, and the host has to be able to
+// tell "this account is too short to have a bank code" from "it is not this bank"
+// (SPEC-string-slice-compare DP-C2). The length guard above means the first answer only
+// reaches a host that skipped it.
+export fn is_kookmin(acct: string) -> bool! {
+  if byte_len(acct) < 3 { fail E_SHORT_ACCOUNT }
+  return byte_slice(acct, 0, 3) == "004"
+}

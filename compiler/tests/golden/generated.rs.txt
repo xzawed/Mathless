@@ -15,7 +15,7 @@
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash_account() -> u64 { 0xFA128D9907AB2DB3 }
+pub extern "C" fn ml_iface_hash_account() -> u64 { 0x81CD1855111FFE55 }
 
 fn ml_strout(src: *const u8, buf: *mut u8, cap: i32, needed: *mut i32) -> i32 {
     // Pass 1: count to the NUL, inclusive. `n` ends at >= 1 for every string.
@@ -118,6 +118,24 @@ fn ml_wsub(buf: *mut u8, off: i32, src: *const u8, from: i32, n: i32, cap: i32) 
     off + n
 }
 
+fn ml_subeq(a: *const u8, from: i32, n: i32, b: *const u8) -> bool {
+    // `n` bytes of `a` against the NUL-terminated `b`, and the LENGTHS must match
+    // too. Two tests do that, and dropping either one makes the answer wrong in a
+    // different direction: the `y == 0` inside the loop catches a `b` that is
+    // SHORTER than the span, and the check after the loop catches a `b` that is
+    // LONGER. Without them `byte_slice(s, 0, 2) == "ABC"` would be true.
+    //
+    // `ml_streq` is not reusable here: it walks `a` to a NUL, and a span has none
+    // at `to`.
+    let mut i: i32 = 0;
+    while i < n {
+        let (x, y) = unsafe { (*a.add((from + i) as usize), *b.add(i as usize)) };
+        if y == 0 || x != y { return false; }
+        i += 1;
+    }
+    unsafe { *b.add(n as usize) == 0 }
+}
+
 fn ml_fn_bank_code(acct: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
     if (ml_slen(acct) < 3i32) {
         return 1;
@@ -195,6 +213,17 @@ fn ml_fn_masked(acct: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i
 #[no_mangle]
 pub extern "C" fn mlx_masked(acct: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
     ml_fn_masked(acct, ml_buf, ml_cap, ml_needed)
+}
+
+fn ml_fn_is_kookmin(acct: *const u8) -> Result<bool, i32> {
+    if (ml_slen(acct) < 3i32) {
+        return Err(1);
+    }
+    return Ok({ let __ss = acct; let __sf = 0i32; let __sl = ml_sublen(__ss, __sf, 3i32); if __sl < 0 { return Err(-2); } ml_subeq(__ss, __sf, __sl, b"004\0".as_ptr()) });
+}
+#[no_mangle]
+pub extern "C" fn mlx_is_kookmin(acct: *const u8, out_value: *mut bool) -> i32 {
+    match ml_fn_is_kookmin(acct) { Ok(__v) => { unsafe { *out_value = __v; } 0 } Err(__e) => __e }
 }
 
 #[panic_handler]

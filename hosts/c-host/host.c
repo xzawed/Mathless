@@ -114,6 +114,10 @@ typedef int32_t (*carrier_label_fn)(const char *, int32_t *, char *, int32_t, in
    same Q12 triple a literal is. Same shape as carrier_name, declared separately so that a
    change to one is not silently accepted by the other's typedef. */
 typedef int32_t (*bank_code_fn)(const char *, char *, int32_t, int32_t *);
+/* Comparing a span does not change the C ABI either: it is an ordinary D17 fallible
+   predicate, status out of the return and the answer through an out-param. If the span's
+   offsets or length had leaked into the boundary, this typedef would stop matching. */
+typedef int32_t (*is_bank_fn)(const char *, bool *);
 typedef int32_t (*unit_price_fn)(double, int32_t, double *);
 typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
 /* The concat slice does not change the C ABI: a built string is declared exactly like a
@@ -233,6 +237,8 @@ _Static_assert(_Generic(&mlx_bank_code, bank_code_fn: 1, default: 0),
                "generated mlx_bank_code signature changed");
 _Static_assert(_Generic(&mlx_masked, bank_code_fn: 1, default: 0),
                "generated mlx_masked signature changed");
+_Static_assert(_Generic(&mlx_is_kookmin, is_bank_fn: 1, default: 0),
+               "generated mlx_is_kookmin signature changed");
 /* The fallible-calls slice must not touch the C ABI at all: a function that propagates a
    helper's status is declared exactly like any other D17 fallible export. If the internal
    Result shape ever leaked into the boundary, these two would stop matching. */
@@ -753,6 +759,27 @@ int main(int argc, char **argv) {
         st = masked("0881234567", NULL, 0, &needed);
         check(st == ML_ST_INSUFFICIENT_BUFFER, "probe (NULL, 0) does not crash");
         check(needed == 14, "\"088-****-4567\" is 13 bytes plus the NUL");
+
+        /* Comparing a span (SPEC-string-slice-compare acceptance K). The source is longer
+           than the span, which is the acceptance criterion: a compare bounded by the source
+           NUL would put all ten bytes against "004" and answer false. */
+        is_bank_fn is_kookmin = (is_bank_fn)sym(ac, "mlx_is_kookmin");
+        if (is_kookmin) {
+            bool yes = false;
+            st = is_kookmin("0041234567", &yes);
+            check(st == 0 && yes, "is_kookmin(\"0041234567\") is true, not a suffix compare");
+            yes = true;
+            st = is_kookmin("0881234567", &yes);
+            check(st == 0 && !yes, "a different bank code is false, and still status 0");
+
+            /* The module guards the length itself, so a short account is its own DOMAIN
+               error - the host can tell that apart from "not this bank", which is the whole
+               reason the predicate is fallible rather than answering false. */
+            yes = true;
+            st = is_kookmin("00", &yes);
+            check(st == ML_ACCOUNT_ERR_E_SHORT_ACCOUNT,
+                  "too short to have a bank code is a domain failure, not `false`");
+        }
     }
 
     /* --- quote.dll: a status propagated out of a reused internal helper

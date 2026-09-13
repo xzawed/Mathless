@@ -1235,6 +1235,7 @@ fn check_stmt(
                     index.ty, index.ty
                 )));
             }
+            reject_negative_index(&index, fname)?;
             let value = check_expr(value, scope, fname, sigs)?;
             let want = elem.scalar();
             if value.ty != want {
@@ -1563,6 +1564,82 @@ fn is_built_string(e: &IrExpr) -> bool {
 }
 
 /// Refuse a built string outside `return`, naming the position so the message is actionable.
+/// The `i32` this expression is, if it is one written in the source.
+///
+/// **`-1` is NOT a `ConstI32`.** The parser builds a unary negation of `1`, and the emitted
+/// Rust says `(1i32).wrapping_neg()`. Measured, not assumed: the first version of the span
+/// check matched only `ConstI32`, so `byte_slice(s, -1, 2)` compiled and the whole mitigation
+/// fell through to run time. One folded negation is the difference between a diagnostic and a
+/// status — and the same blind spot was already sitting one slice over in array indexing.
+///
+/// **The boundary stops here on purpose.** `xs[0 - 1]` is arithmetic and is not folded: the
+/// line between "refused while compiling" and "reported as a status" has to be somewhere an
+/// author can predict without knowing what the compiler happens to constant-fold.
+///
+/// Written as two `if let`s rather than a match with a wildcard: this file's rule is that a
+/// new variant must ANSWER every match, and that rule is right for the walkers — but "is this
+/// a literal?" has one correct default for anything added later, which is `no`.
+fn i32_literal(e: &IrExpr) -> Option<i32> {
+    if let IrExprKind::ConstI32(n) = &e.kind {
+        return Some(*n);
+    }
+    if let IrExprKind::Unary {
+        op: IrUnOp::Neg,
+        operand,
+    } = &e.kind
+    {
+        return i32_literal(operand).map(i32::wrapping_neg);
+    }
+    None
+}
+
+/// **A negative literal index is out of range for every array, so it is refused here.**
+///
+/// Only the negative half. `xs[99]` depends on the length the host supplies and stays a
+/// run-time question, exactly as `byte_slice`'s `to > byte_len(s)` does — the compiler knows
+/// the sign of a literal and nothing about the host's array.
+///
+/// This compiled until 2026-09-13 and failed at run time with `ML_ST_INDEX_OUT_OF_RANGE`:
+/// safe, but a diagnostic demoted to a status for something fully known while compiling. The
+/// string-slice slice added the same check for `byte_slice(s, -1, …)` first; the blind spot
+/// here was older, and both now read `i32_literal` so they cannot drift apart.
+///
+/// **The rule is about an INDEX, not about negative numbers.** `result -1` — a negative
+/// declared LENGTH — stays legal and means an empty result, because `SPEC-array-return` §5.2-3
+/// decided exactly that ("`cap` 규칙과 같게 `0`으로 본다"). A length is a quantity that can
+/// honestly be computed as zero or less; an index addresses nothing at any length. Measured
+/// before this check was written, so the decision was not reversed by accident.
+///
+/// # This is a DIAGNOSTIC, not a safety mechanism
+///
+/// It sees one spelling. Both of these compile today and are meant to (measured):
+///
+/// ```text
+/// xs[-1 as i32]          // a Cast, which `i32_literal` deliberately does not look through
+/// let i = -1  xs[i]      // a local, which would need constant propagation
+/// ```
+///
+/// Looking through either would make the line between "refused here" and "reported as a
+/// status" depend on how far the compiler happens to propagate, which is precisely what an
+/// author cannot predict. **So the bounds check in `codegen.rs` stays the thing that makes
+/// this safe** — `if __i < 0 || __i >= {array}_len`. Nothing here licenses removing it, and
+/// a future "typeck already refuses negatives" shortcut would turn these two spellings into
+/// writes past the host's buffer. Review named that risk; it is written down rather than
+/// widened.
+fn reject_negative_index(index: &IrExpr, fname: &str) -> Result<(), TypeError> {
+    if let Some(i) = i32_literal(index) {
+        if i < 0 {
+            return Err(TypeError::new(format!(
+                "function '{fname}': the index {i} is negative, so it is out of range for \
+                 every array — indices count elements from the front. This used to compile \
+                 and fail at run time with ML_ST_INDEX_OUT_OF_RANGE ({})",
+                crate::abi::ML_ST_INDEX_OUT_OF_RANGE
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn reject_built_string(e: &IrExpr, fname: &str, position: &str) -> Result<(), TypeError> {
     if is_built_string(e) {
         return Err(TypeError::new(format!(
@@ -1662,6 +1739,7 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
                     index.ty, index.ty
                 )));
             }
+            reject_negative_index(&index, fname)?;
             Ok(IrExpr {
                 ty: elem.scalar(),
                 kind: IrExprKind::Index {
@@ -1798,37 +1876,14 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             // `byte_slice(s, 2, 3)` is one byte — and the way that mistake shows up first is
             // a span that runs backwards. Caught here, where the diagnostic can show both
             // numbers; the rest becomes ML_ST_INDEX_OUT_OF_RANGE at run time.
-            // `-1` is NOT a `ConstI32`: the parser builds a unary negation of `1`, and the
-            // emitted Rust says `(1i32).wrapping_neg()`. Measured — the first version of this
-            // check matched only `ConstI32` and `byte_slice(s, -1, 2)` compiled, leaving the
-            // whole mitigation to run time. Folding one negation here is the difference
-            // between a diagnostic and a status.
-            //
-            // Written as two `if let`s rather than a match with a wildcard: this file's rule
-            // is that a new variant must ANSWER every match, and that rule is right for the
-            // walkers — but "is this a literal?" has one correct default for anything added
-            // later, which is `no`. A wildcard arm would also be refused by clippy here.
-            fn literal(e: &IrExpr) -> Option<i32> {
-                if let IrExprKind::ConstI32(n) = &e.kind {
-                    return Some(*n);
-                }
-                if let IrExprKind::Unary {
-                    op: IrUnOp::Neg,
-                    operand,
-                } = &e.kind
-                {
-                    return literal(operand).map(i32::wrapping_neg);
-                }
-                None
-            }
-            if let Some(f) = literal(&from) {
+            if let Some(f) = i32_literal(&from) {
                 if f < 0 {
                     return Err(TypeError::new(format!(
                         "function '{fname}': `{BYTE_SLICE_BUILTIN}` was given a negative start \
                          offset ({f}) — offsets count bytes from the front of the string"
                     )));
                 }
-                if let Some(t) = literal(&to) {
+                if let Some(t) = i32_literal(&to) {
                     if t < f {
                         return Err(TypeError::new(format!(
                             "function '{fname}': `{BYTE_SLICE_BUILTIN}(s, {f}, {t})` runs \

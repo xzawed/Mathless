@@ -622,3 +622,70 @@ fn the_span_helpers_are_only_emitted_where_they_are_called() {
         assert!(both.contains(helper), "{helper} missing:\n{both}");
     }
 }
+
+/// **Every status a function can return has a NAME in its bindings.**
+///
+/// The C header's own comment sets this rule: *"A host that had to retype `-2` is a host
+/// holding a number the header never promised."* Both the header and the Delphi unit gate
+/// `ML_ST_INDEX_OUT_OF_RANGE` on whether the module INDEXES AN ARRAY — which was the only way
+/// to produce `-2` until the span-comparison slice added a second.
+///
+/// Measured, not supposed: a module whose only `-2` comes from a span comparison shipped a
+/// `.h` and a `.pas` that never named the constant, while `mlprobe` showed the function
+/// answering `status = -2`. That is the header promising less than the module does.
+#[test]
+fn a_span_comparison_makes_the_bindings_name_the_status_it_can_return() {
+    let ir =
+        compile_to_ir("export fn is_ab(c: string) -> bool! { return byte_slice(c,0,2) == \"AB\" }")
+            .expect("compile");
+    let h = mlc::header::emit_c_header(&ir, "spanonly");
+    let pas = mlc::header::emit_delphi_unit(&ir, "spanonly");
+    assert!(
+        h.contains("ML_ST_INDEX_OUT_OF_RANGE"),
+        "this function can return -2 and the header must say so:\n{h}"
+    );
+    assert!(
+        pas.contains("ML_ST_INDEX_OUT_OF_RANGE"),
+        "…and so must the Delphi unit:\n{pas}"
+    );
+
+    // …and the two the first fix still missed, found by asking review what I had not asked
+    // about. Both were measured by building the module and reading its `.h`: zero mentions of
+    // a constant the function can return.
+    for (src, why) in [
+        (
+            "export fn head(s: string) -> string! { return byte_slice(s, 0, 3) }",
+            "a span in a RETURN bails through emit_concat_return's ml_sublen check",
+        ),
+        (
+            "export fn f() -> [i32]! {\n  result 2\n  result[9] = 1\n}",
+            "`result[i]` is bounds-checked against the DECLARED length — the case \
+             SPEC-array-return named as THE example, and the gate missed it",
+        ),
+    ] {
+        let ir = compile_to_ir(src).expect("compile");
+        assert!(
+            mlc::header::emit_c_header(&ir, "m").contains("ML_ST_INDEX_OUT_OF_RANGE"),
+            "{why}:\n{src}"
+        );
+        assert!(
+            mlc::header::emit_delphi_unit(&ir, "m").contains("ML_ST_INDEX_OUT_OF_RANGE"),
+            "{why} (Delphi):\n{src}"
+        );
+    }
+
+    // The gate stays a gate: a module that can NOT produce -2 must not carry the constant,
+    // for the reason the export-surface tests give — a binding that declares what the module
+    // cannot do is as wrong as one that hides what it can.
+    let plain = compile_to_ir("export fn f(x: f64) -> f64 { return x * 2.0 }").expect("compile");
+    assert!(
+        !mlc::header::emit_c_header(&plain, "plain").contains("ML_ST_INDEX_OUT_OF_RANGE"),
+        "nothing here can go out of range"
+    );
+    let strings =
+        compile_to_ir("export fn f(s: string) -> bool { return s == \"x\" }").expect("compile");
+    assert!(
+        !mlc::header::emit_c_header(&strings, "s").contains("ML_ST_INDEX_OUT_OF_RANGE"),
+        "an ordinary string comparison has no range to leave"
+    );
+}

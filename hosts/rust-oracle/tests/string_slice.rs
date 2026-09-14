@@ -508,6 +508,20 @@ fn an_out_of_range_span_comparison_is_a_status_not_false() {
     assert_eq!(matches(c"AB1234".as_ptr(), c"XY".as_ptr(), &mut out), 0);
     assert!(!out);
 
+    // …and the LENGTH mismatch against a parameter, both directions. Acceptance B measured
+    // this against literals only, where the length is fixed at compile time — the parameter
+    // is the case where a host supplies it, and it is the one `ml_subeq`'s two length tests
+    // exist for. Left untested when the slice landed; found by re-reading what B covered.
+    assert_eq!(matches(c"AB1234".as_ptr(), c"ABC".as_ptr(), &mut out), 0);
+    assert!(!out, "a 2-byte span is not equal to a 3-byte parameter");
+    assert_eq!(matches(c"AB1234".as_ptr(), c"A".as_ptr(), &mut out), 0);
+    assert!(!out, "…nor to a 1-byte one");
+    assert_eq!(matches(c"AB1234".as_ptr(), c"".as_ptr(), &mut out), 0);
+    assert!(
+        !out,
+        "…nor to an empty one, which is where a NUL-first loop would say true"
+    );
+
     // D — the string is shorter than the span. NOT `false`: the host has to be able to tell
     // "the range was wrong" from "the bytes differ", which is the whole of DP-C2.
     let is_ab = pred(&m, b"mlx_is_ab\0");

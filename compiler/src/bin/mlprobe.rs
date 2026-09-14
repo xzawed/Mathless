@@ -111,7 +111,13 @@ fn run(args: &[String]) -> Result<(), String> {
     let _scratch = Scratch(work.clone());
     let arts = mlc::emit::emit_artifacts(&src, &module, &work).map_err(|e| e.to_string())?;
 
-    let harness = generate_harness(&arts.dll, &module, func, call_args)?;
+    let harness = generate_harness(
+        &arts.dll,
+        &module,
+        mlc::iface::fingerprint(&ir),
+        func,
+        call_args,
+    )?;
     let hs = work.join("probe_harness.rs");
     std::fs::write(&hs, &harness).map_err(|e| format!("{}: {e}", hs.display()))?;
 
@@ -226,6 +232,7 @@ fn elem_rust(e: &IrArrayElem) -> &'static str {
 fn generate_harness(
     dll: &Path,
     module: &str,
+    iface_hash: u64,
     f: &IrFunction,
     args: &[String],
 ) -> Result<String, String> {
@@ -402,11 +409,17 @@ fn generate_harness(
          \x20       eprintln!(\"mlprobe: module ABI {{}} != compiler {abi_version}\", ver());\n\
          \x20       std::process::exit(2);\n\
          \x20   }}\n\
-         \x20   // …and the fingerprint export, which carries the module name since\n\
-         \x20   // SPEC-qualified-iface-hash. Resolving it proves this is the module the IR\n\
-         \x20   // above describes and not another one that happened to be on disk.\n\
-         \x20   if unsafe {{ GetProcAddress(m, {hash_lit}.as_ptr()) }}.is_null() {{\n\
-         \x20       eprintln!(\"mlprobe: no {hash_sym}\"); std::process::exit(2);\n\
+         \x20   // …and the interface fingerprint, COMPARED rather than merely resolved. The\n\
+         \x20   // first version only checked the symbol existed, which proves nothing about\n\
+         \x20   // WHICH module answered. This is the check every generated header tells a\n\
+         \x20   // host to make, and it is what turns a stale `.dll` left on disk from an\n\
+         \x20   // undefined call into a reported mismatch.\n\
+         \x20   let hp = unsafe {{ GetProcAddress(m, {hash_lit}.as_ptr()) }};\n\
+         \x20   if hp.is_null() {{ eprintln!(\"mlprobe: no {hash_sym}\"); std::process::exit(2); }}\n\
+         \x20   let iface: extern \"C\" fn() -> u64 = unsafe {{ core::mem::transmute(hp) }};\n\
+         \x20   if iface() != {iface_hash}u64 {{\n\
+         \x20       eprintln!(\"mlprobe: interface {{:#X}} != the source read here {iface_hash:#X}\", iface());\n\
+         \x20       std::process::exit(2);\n\
          \x20   }}\n\
          \x20   let p = unsafe {{ GetProcAddress(m, {sym_lit}.as_ptr()) }};\n\
          \x20   if p.is_null() {{ eprintln!(\"mlprobe: {sym} not found\"); std::process::exit(2); }}\n\
@@ -417,6 +430,7 @@ fn generate_harness(
         abi_version = mlc::abi::ML_MODULE_ABI_VERSION,
         hash_sym = hash_sym,
         hash_lit = byte_string_nul(&hash_sym),
+        iface_hash = iface_hash,
         types = types.join(", "),
         report = report.concat(),
     ))

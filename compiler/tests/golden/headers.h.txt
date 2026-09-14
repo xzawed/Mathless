@@ -39,6 +39,11 @@
 #define ML_ST_INSUFFICIENT_BUFFER (-1)
 #endif
 
+/* An index outside 0..len, or a span outside the string. The out-parameter is NOT written
+ * (D17), and the length is the one YOU passed alongside the pointer. */
+#ifndef ML_ST_INDEX_OUT_OF_RANGE
+#define ML_ST_INDEX_OUT_OF_RANGE (-2)
+#endif
 #define ML_ACCOUNT_ERR_E_SHORT_ACCOUNT 1
 
 #ifdef __cplusplus
@@ -149,7 +154,7 @@ int32_t mlx_add(int32_t /* a */, int32_t /* b */);
 #define ML_ST_INSUFFICIENT_BUFFER (-1)
 #endif
 
-/* An array index outside 0..len. The out-parameter is NOT written
+/* An index outside 0..len, or a span outside the string. The out-parameter is NOT written
  * (D17), and the length is the one YOU passed alongside the pointer. */
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
@@ -202,7 +207,7 @@ int32_t mlx_in_stock(const int32_t* /* stock */, int32_t /* stock_len */, bool* 
  * type, parameter order, out-ness or error code does. */
 #define ML_BASKET_IFACE_HASH 0x5D04BA666CC0CBC6ULL
 
-/* An array index outside 0..len. The out-parameter is NOT written
+/* An index outside 0..len, or a span outside the string. The out-parameter is NOT written
  * (D17), and the length is the one YOU passed alongside the pointer. */
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
@@ -1004,6 +1009,11 @@ int32_t mlx_safe_div(double /* a */, double /* b */, double* out_value);
 #define ML_ST_INSUFFICIENT_BUFFER (-1)
 #endif
 
+/* An index outside 0..len, or a span outside the string. The out-parameter is NOT written
+ * (D17), and the length is the one YOU passed alongside the pointer. */
+#ifndef ML_ST_INDEX_OUT_OF_RANGE
+#define ML_ST_INDEX_OUT_OF_RANGE (-2)
+#endif
 #define ML_SCHEDULE_ERR_E_BAD_TERM 1
 
 #ifdef __cplusplus

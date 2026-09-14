@@ -58,6 +58,7 @@
 #include "vat.h"
 #include "carrier.h"
 #include "account.h"
+#include "claim.h"
 #include "quote.h"
 #include "receipt.h"
 #include "basket.h"
@@ -118,6 +119,9 @@ typedef int32_t (*bank_code_fn)(const char *, char *, int32_t, int32_t *);
    predicate, status out of the return and the answer through an out-param. If the span's
    offsets or length had leaked into the boundary, this typedef would stop matching. */
 typedef int32_t (*is_bank_fn)(const char *, bool *);
+/* A module that returns UTF-8 does not change the C ABI by one byte: the triple is the same
+   one an ASCII label uses. What changes is only what `ml_needed` counts up to. */
+typedef int32_t (*label_fn)(const char *, char *, int32_t, int32_t *);
 typedef int32_t (*unit_price_fn)(double, int32_t, double *);
 typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
 /* The concat slice does not change the C ABI: a built string is declared exactly like a
@@ -239,6 +243,8 @@ _Static_assert(_Generic(&mlx_masked, bank_code_fn: 1, default: 0),
                "generated mlx_masked signature changed");
 _Static_assert(_Generic(&mlx_is_kookmin, is_bank_fn: 1, default: 0),
                "generated mlx_is_kookmin signature changed");
+_Static_assert(_Generic(&mlx_status_label, label_fn: 1, default: 0),
+               "generated mlx_status_label signature changed");
 /* The fallible-calls slice must not touch the C ABI at all: a function that propagates a
    helper's status is declared exactly like any other D17 fallible export. If the internal
    Result shape ever leaked into the boundary, these two would stop matching. */
@@ -780,6 +786,73 @@ int main(int argc, char **argv) {
             check(st == ML_ACCOUNT_ERR_E_SHORT_ACCOUNT,
                   "too short to have a bank code is a domain failure, not `false`");
         }
+    }
+
+    /* --- claim.dll: a module that RETURNS UTF-8 (SPEC-non-ascii-literals acceptance J).
+       Section 9-46's R6 could not be written at all before this: every status label was
+       Korean, so the vocabulary had to live here, in the host, and adding one status meant
+       changing two things.
+
+       This file is ASCII (the doc_claims guard requires it), so the expected bytes are
+       spelled as escapes rather than as characters. That is not a workaround - it is the
+       point: the module carries the bytes, and nothing in the generated header or in this
+       host has to be non-ASCII for that to work. --- */
+    HMODULE clm = load(dir, "claim.dll", expected_abi, ML_CLAIM_IFACE_HASH);
+    if (clm == NULL) {
+        return 1;
+    }
+    label_fn status_label = (label_fn)sym(clm, "mlx_status_label");
+    label_fn account_label = (label_fn)sym(clm, "mlx_account_label");
+    if (status_label && account_label) {
+        char buf[64];
+        int32_t needed;
+        int32_t st;
+
+        /* The approved label is two Korean characters and SIX bytes. A host that sized this
+           by character count would allocate three and be refused.
+
+           This comment is ASCII, and that is not incidental: MSVC raised C4819 here the
+           moment the label was pasted in as characters, under /WX, in code page 949 - the
+           very warning DP-S4 cited. It is real, and STATUS section 9-51 measured where it
+           actually applies: to hand-written C, never to the module's literals, which reach
+           no artifact a C compiler reads. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = status_label("AP", buf, (int32_t)sizeof buf, &needed);
+        check(st == 0, "status_label(\"AP\") status == 0");
+        check(strcmp(buf, "\xEC\x8A\xB9\xEC\x9D\xB8") == 0,
+              "status_label(\"AP\") returns the UTF-8 bytes of the Korean label");
+        check(needed == 7, "needed counts BYTES: 6 + the NUL, not 3");
+
+        /* The probe is the only correct way to size it, and it says 10 for three characters. */
+        needed = -7;
+        st = status_label("RV", NULL, 0, &needed);
+        check(st == ML_ST_INSUFFICIENT_BUFFER, "probe (NULL, 0) does not crash");
+        check(needed == 10, "three Korean characters are 9 bytes plus the NUL");
+
+        /* Sizing by characters is a REFUSAL, never a short answer. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = status_label("RV", buf, 4, &needed);
+        check(st == ML_ST_INSUFFICIENT_BUFFER, "cap = 4 is refused, not truncated");
+        check(buf[0] == '\0', "and nothing was written");
+
+        /* An unknown code is the module's own domain error - the vocabulary stayed there. */
+        memset(buf, 0xAA, sizeof buf);
+        needed = -7;
+        st = status_label("ZZ", buf, (int32_t)sizeof buf, &needed);
+        check(st == ML_CLAIM_ERR_E_UNKNOWN_STATUS, "an unknown code is a positive D17 status");
+        check((unsigned char)buf[0] == 0xAA, "a failed call writes no bytes");
+
+        /* A borrowed span concatenated with a Korean suffix: the concat path carries the
+           bytes too, and the count is still bytes. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = account_label("0881234567", buf, (int32_t)sizeof buf, &needed);
+        check(st == 0, "account_label status == 0");
+        check(strcmp(buf, "088\xEB\xB2\x88 \xEA\xB3\x84\xEC\xA2\x8C") == 0,
+              "a span plus a Korean suffix, byte for byte");
+        check(needed == 14, "3 + 10 bytes plus the NUL");
     }
 
     /* --- quote.dll: a status propagated out of a reused internal helper

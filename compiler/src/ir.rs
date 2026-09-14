@@ -368,6 +368,97 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
     })
 }
 
+/// The first non-ASCII string literal sitting somewhere its bytes are INSPECTED rather than
+/// written out, or `None` — `SPEC-non-ascii-literals` §2.2.
+///
+/// # Why a walker and not a list of guarded positions
+///
+/// Two drafts of that SPEC put this rule at call sites, and review broke both. The first said
+/// `Stmt::Return`'s arm could do it: that arm matches only the ROOT kind, so it never sees a
+/// literal nested in a concatenation. The second said to copy `reject_built_string`'s call
+/// sites: those six calls live in five arms, and **enumerating consume sites is the defect this
+/// repository hit five times in one session** — `byte_len` missing `reject_built_string`
+/// (#224), and the binding gate for `-2` being too narrow twice (#238).
+///
+/// So the context travels DOWN the tree instead, and the match is exhaustive: a new
+/// `IrExprKind` has to answer *"is this position an output?"* or the crate does not build.
+/// That is the same mechanism `Cargo.toml` documents for `wildcard_enum_match_arm`, and
+/// §9-50's conclusion was that it is the only one that has ever worked here.
+///
+/// # What counts as an output position
+///
+/// Bytes the module HANDS OUT are safe: the host receives them and the contract says what
+/// encoding they are. Bytes the module COMPARES are not: a C or Delphi host sending the same
+/// glyphs in its ANSI code page would not match, with status 0 and no warning (§0.4).
+///
+/// | position | output? |
+/// |---|---|
+/// | the expression of a `return` | yes |
+/// | a piece of a concatenation, at any depth | yes |
+/// | the string a `byte_slice` cuts | yes — it is written out next |
+/// | the operand of `byte_len` | yes — counting the module's OWN bytes |
+/// | either side of `==` / `!=` | **no** |
+/// | a call or `try` argument | **no** — the callee may compare it |
+/// | anything else | **no** |
+///
+/// # What this does NOT catch
+///
+/// The match is exhaustive over VARIANTS, not over FIELDS: arms like `Call { args, .. }` skip
+/// the rest with `..`, so a new child expression added to an existing variant would compile
+/// and never be walked. That is true of every walker in this file and is not fixed here —
+/// written down so the guarantee is not read as wider than it is.
+pub fn non_ascii_literal_outside_output(body: &[IrStmt]) -> Option<String> {
+    fn in_expr(e: &IrExpr, output: bool) -> Option<String> {
+        match &e.kind {
+            IrExprKind::ConstStr(s) => (!output && !s.is_ascii()).then(|| s.clone()),
+            // These carry the context through: their bytes go wherever the parent's did.
+            IrExprKind::Concat(pieces) => pieces.iter().find_map(|p| in_expr(p, output)),
+            IrExprKind::ByteLen(operand) => in_expr(operand, true),
+            IrExprKind::ByteSlice { s, from, to } => in_expr(s, true)
+                .or_else(|| in_expr(from, false))
+                .or_else(|| in_expr(to, false)),
+            // …and these do not. A comparison inspects; a call hands the bytes to code this
+            // walker is not looking at.
+            IrExprKind::Binary { lhs, rhs, .. } => {
+                in_expr(lhs, false).or_else(|| in_expr(rhs, false))
+            }
+            IrExprKind::Call { args, .. } => args.iter().find_map(|a| in_expr(a, false)),
+            // These two INHERIT rather than reset. No `ConstStr` can reach either today — a
+            // cast's operand is an `i32` and a negation's is numeric — so it makes no
+            // difference to any program that compiles. It is written this way because the
+            // alternative is wrong for a reason that would be invisible: dropping `Return`'s
+            // `true` here would silently refuse a literal the SPEC allows, the day a cast or
+            // a unary operator gains a string operand. Review named it.
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand, output)
+            }
+            IrExprKind::Index { index, .. } => in_expr(index, false),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => None,
+        }
+    }
+    body.iter().find_map(|s| match s {
+        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+            in_expr(cond, false).or_else(|| non_ascii_literal_outside_output(body))
+        }
+        // The one output position. Everything else either inspects the bytes or hands them
+        // somewhere this walker cannot follow.
+        IrStmt::Return(e) => in_expr(e, true),
+        IrStmt::ResultSet { index, value } => {
+            in_expr(index, false).or_else(|| in_expr(value, false))
+        }
+        IrStmt::ResultLen(e)
+        | IrStmt::Let { value: e, .. }
+        | IrStmt::Assign { value: e, .. }
+        | IrStmt::AssignOut { value: e, .. } => in_expr(e, false),
+        IrStmt::TryCall { args, .. } => args.iter().find_map(|a| in_expr(a, false)),
+        IrStmt::Fail(_) => None,
+    })
+}
+
 /// Can anything in this body answer `ML_ST_INDEX_OUT_OF_RANGE`?
 ///
 /// The bindings ask this to decide whether to declare the constant, and the header's own rule

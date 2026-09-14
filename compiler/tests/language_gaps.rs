@@ -178,6 +178,16 @@ fn string_operations_that_do_not_exist_yet() {
     );
     mlc::compile_to_rust("export fn f(c: string) -> bool! { return byte_slice(c,0,2) == \"AB\" }")
         .expect("a span against a literal is available");
+
+    // A non-ASCII literal can be RETURNED since 2026-09-14; comparing one cannot, and the
+    // reason is encoding rather than syntax. Same distinction the two entries above draw:
+    // what is missing is the narrower case, not the feature.
+    rejected(
+        "compare a non-ASCII literal",
+        "export fn f(c: string) -> bool { return c == \"승인\" }",
+    );
+    mlc::compile_to_rust("export fn f() -> string! { return \"승인\" }")
+        .expect("returning one is available");
 }
 
 // ------------------------------------------------------------------ conversions
@@ -244,6 +254,9 @@ const GAPS: &[(&str, &str)] = &[
     // 대신 **범위 문법**이 공백이고, 그것이 `s[0..3]`을 거부하는 진짜 이유다. `byte_len`이
     // 들어온 뒤에도 `s.len`이 거부된 것과 같은 구분이며, §9-38.1이 그 구분을 실측으로 적었다.
     ("범위 문법", "range syntax"),
+    // 비ASCII 리터럴은 이제 **반환**된다. 공백은 그것을 **비교**하는 쪽이고, 이유는 문법이
+    // 아니라 인코딩이다 — 호스트가 ANSI로 보내면 바이트가 다르다(SPEC-non-ascii-literals DP-U1).
+    ("비ASCII 리터럴을 비교", "compare a non-ASCII literal"),
     // 스팬 대 스팬은 DP-C5가 이번 범위 밖으로 둔 것이고, 스팬 대 빌린 문자열은 2026-09-13에
     // 들어왔다. 공백은 **둘 중 앞의 것**이다.
     ("스팬 대 스팬 비교", "span to span"),

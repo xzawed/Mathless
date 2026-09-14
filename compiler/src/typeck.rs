@@ -736,6 +736,21 @@ fn check_function(
         }
     }
 
+    // Where a non-ASCII literal may sit — checked here for the same stated reason the two
+    // above are: this is the layer that can walk a finished body, and `SPEC-non-ascii-literals`
+    // §2.2 rejected two earlier designs that tried to do it at individual call sites.
+    if let Some(lit) = crate::ir::non_ascii_literal_outside_output(&body) {
+        return Err(TypeError::new(format!(
+            "function '{}': the non-ASCII literal \"{lit}\" may only be RETURNED, not compared \
+             or passed to another function. The module would hold its UTF-8 bytes, while a C \
+             or Delphi host sending the same characters in its ANSI code page sends different \
+             ones — the comparison would answer `false` with status 0 and no warning \
+             (HOST_ABI.md, 문자열 파라미터 계약). Returning it is safe: the host receives the \
+             bytes and the binding says they are UTF-8",
+            f.name
+        )));
+    }
+
     Ok(IrFunction {
         name: f.name.clone(),
         params,

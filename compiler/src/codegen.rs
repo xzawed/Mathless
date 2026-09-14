@@ -783,7 +783,30 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         }
         // A static, NUL-terminated byte array: no allocation, and the NUL makes the module's
         // view of the bytes identical to the C caller's (SPEC-string-input DP-S1).
-        IrExprKind::ConstStr(s) => format!("b\"{s}\\0\".as_ptr()"),
+        // A byte string, with everything outside printable ASCII written as `\xNN`.
+        //
+        // Not cosmetic: rustc REFUSES a non-ASCII character inside `b"…"`, so before this a
+        // Korean literal could not be lowered at all (`error: non-ASCII character in byte
+        // string literal`). Escaping carries the same bytes and keeps the emitted Rust itself
+        // ASCII — which is what DP-S4's reason was actually protecting, and why the artifacts
+        // stay ASCII even now that the source need not be (`SPEC-non-ascii-literals` §2.3).
+        //
+        // A no-op for every literal in this repository today: the goldens did not move when
+        // this landed. The lexer still refuses `"` and escapes inside a literal, so those two
+        // arms are unreachable — spelled out anyway, because the day the lexer changes this
+        // function should already be right.
+        IrExprKind::ConstStr(s) => {
+            let mut lit = String::new();
+            for b in s.as_bytes() {
+                match b {
+                    b'"' => lit.push_str("\\\""),
+                    b'\\' => lit.push_str("\\\\"),
+                    0x20..=0x7e => lit.push(*b as char),
+                    other => lit.push_str(&format!("\\x{other:02X}")),
+                }
+            }
+            format!("b\"{lit}\\0\".as_ptr()")
+        }
         IrExprKind::ConstF64(n) => format!("{n:?}f64"),
         IrExprKind::ConstI32(n) => format!("{n}i32"),
         IrExprKind::ConstBool(b) => b.to_string(),

@@ -299,20 +299,17 @@ pub fn tokenize_partial(src: &str) -> (Vec<Spanned>, Option<ParseError>) {
                             ),
                         )
                     }
-                    c if !c.is_ascii() => {
-                        return stop(
-                            out,
-                            ParseError::new(
-                                format!(
-                                    "non-ASCII character '{c}' in a string literal — generated \
-                                     artifacts stay ASCII (non-ASCII trips MSVC C4819 under \
-                                     `/WX`)"
-                                ),
-                                line,
-                                col,
-                            ),
-                        )
-                    }
+                    // Non-ASCII is NOT rejected here any more (`SPEC-non-ascii-literals`).
+                    //
+                    // The old message blamed MSVC C4819 on "generated artifacts", and that was
+                    // measured wrong: a literal's text reaches neither the `.h` nor the `.pas`
+                    // (zero occurrences in both, STATUS §9-51). What is real is narrower and
+                    // depends on POSITION, which a lexer cannot see — so the rule moved to
+                    // `ir::non_ascii_literal_outside_output`, which knows whether the bytes are
+                    // being written out or compared against a host's.
+                    //
+                    // Escapes and control characters are still refused, immediately above and
+                    // below: those are about what the LITERAL may contain, not where it sits.
                     // A control character is ASCII, so the guard above lets it through — and
                     // NUL is the one that bites. codegen lowers a literal to `b"…\0"`, a C
                     // string that ENDS at the first NUL, so `s == "a\0b"` compared ONE byte

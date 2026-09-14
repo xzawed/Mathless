@@ -1,0 +1,30 @@
+// non-ascii-literals slice: the claim-status labels the section 7 sample could not write.
+//
+// STATUS section 9-46 wrote six insurance rules and measured them. R6 - "map a status code to
+// a label a person reads" - did not compile at all: every label was Korean, and a non-ASCII
+// literal was refused everywhere. The workaround put the whole vocabulary in the host, which
+// is the coupling SPEC-string-return section 0.1 exists to reduce: adding one status then
+// means changing two things instead of one.
+//
+// The labels are RETURNED, never compared. That is the whole rule (SPEC-non-ascii-literals
+// DP-U1): handing bytes out is a one-way contract the binding states, while comparing them
+// depends on what the host sends - and a Delphi host sending the same characters in its ANSI
+// code page would not match, with status 0 and no warning.
+//
+// So the CODES stay ASCII and the LABELS do not. That asymmetry is the design.
+
+error E_UNKNOWN_STATUS = 1
+
+export fn status_label(code: string) -> string! {
+  if code == "AP" { return "승인" }
+  if code == "RJ" { return "거절" }
+  if code == "RV" { return "심사중" }
+  fail E_UNKNOWN_STATUS
+}
+
+// A label built from a borrowed span and a Korean suffix: the concat path carries non-ASCII
+// bytes too, and `ml_needed` counts BYTES, so the host must size by that and not by characters.
+export fn account_label(acct: string) -> string! {
+  if byte_len(acct) < 3 { fail E_UNKNOWN_STATUS }
+  return byte_slice(acct, 0, 3) + "번 계좌"
+}

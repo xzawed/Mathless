@@ -282,6 +282,12 @@ fn a_real_c_host_loads_and_calls_the_module() {
     )
     .expect("emit account");
 
+    // The non-ascii-literals slice's measured rule. Gated here because acceptance J asks for
+    // both hosts, and because a C host is where "ml_needed counts BYTES" stops being a
+    // sentence and becomes a malloc.
+    let claim = emit_artifacts(include_str!("../../../examples/claim.mls"), "claim", &work)
+        .expect("emit claim");
+
     let quote = emit_artifacts(include_str!("../../../examples/quote.mls"), "quote", &work)
         .expect("emit quote");
 
@@ -600,6 +606,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &vat.dll,
         &carrier.dll,
         &account.dll,
+        &claim.dll,
         &quote.dll,
         &receipt.dll,
         &basket.dll,

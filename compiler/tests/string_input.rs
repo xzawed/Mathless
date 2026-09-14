@@ -141,15 +141,20 @@ fn a_string_may_not_be_compared_with_another_type() {
     }
 }
 
+/// **What a literal may CONTAIN** — escapes and control characters, still refused by the lexer.
+///
+/// This test used to be called `a_literal_must_be_plain_ascii_and_unescaped` and asserted that
+/// a non-ASCII literal is refused with a message containing "ascii". Half of that claim stopped
+/// being true (`SPEC-non-ascii-literals`): a non-ASCII literal is now legal where its bytes are
+/// written OUT, and refused only where they would be inspected — which is about POSITION and
+/// belongs to `a_non_ascii_literal_may_not_be_compared_or_passed`.
+///
+/// **It kept passing anyway**, and that is the point of renaming it rather than deleting it:
+/// the new diagnostic says "the non-ASCII literal … may only be RETURNED", which lower-cased
+/// contains "ascii". A needle satisfied by a different message is the failure STATUS §7-3
+/// records, and it caught nothing here for exactly that reason.
 #[test]
-fn a_literal_must_be_plain_ascii_and_unescaped() {
-    // DP-S4 keeps STATUS section 6's existing rule narrow rather than widening it; escapes are
-    // rejected loudly instead of silently meaning something else.
-    let non_ascii = err_of("export fn f(s: string) -> bool { return s == \"한글\" }");
-    assert!(
-        non_ascii.contains("ascii"),
-        "the reason must be named: {non_ascii}"
-    );
+fn a_literal_may_not_contain_an_escape_or_a_control_character() {
     let escaped = err_of("export fn f(s: string) -> bool { return s == \"a\\nb\" }");
     assert!(
         escaped.contains("escape") || escaped.contains("\\"),
@@ -687,5 +692,107 @@ fn a_span_comparison_makes_the_bindings_name_the_status_it_can_return() {
     assert!(
         !mlc::header::emit_c_header(&strings, "s").contains("ML_ST_INDEX_OUT_OF_RANGE"),
         "an ordinary string comparison has no range to leave"
+    );
+}
+
+/// **A non-ASCII literal may be RETURNED, and nothing else** (`SPEC-non-ascii-literals`).
+///
+/// DP-S4 refused every non-ASCII literal, and the reason it gave was measured wrong: a
+/// literal's text reaches neither binding, so MSVC's C4819 — which is about what MSVC
+/// compiles — was never why (STATUS §9-51). What is true is narrower and sharper, and review
+/// named it: a UTF-8 literal would silently fail to match the same glyphs a C or Delphi host
+/// sends in its ANSI code page. That is a hazard of COMPARING, not of producing.
+#[test]
+fn a_non_ascii_literal_may_be_returned() {
+    compile_to_rust(
+        "export fn status_label(code: string) -> string! {\n\
+         \x20 if code == \"AP\" { return \"승인\" }\n\
+         \x20 return \"심사중\"\n\
+         }",
+    )
+    .expect("the rule that motivated this slice must compile");
+
+    // The other output positions from §2.1: a concat piece, and the two that MEASURE the
+    // module's own bytes rather than a host's.
+    compile_to_rust("export fn f(s: string) -> string! { return s + \"원\" }")
+        .expect("a concatenation piece is written into the caller's buffer too");
+    compile_to_rust("export fn f() -> i32 { return byte_len(\"승인\") }")
+        .expect("counting the module's OWN bytes is not a host-encoding question");
+    compile_to_rust("export fn f() -> string! { return byte_slice(\"승인\", 0, 3) }")
+        .expect("slicing the module's own bytes writes them out; DP-B1 already prices that");
+}
+
+/// …and the two positions that consume it as bytes to inspect.
+#[test]
+fn a_non_ascii_literal_may_not_be_compared_or_passed() {
+    let err = compile_to_ir("export fn f(c: string) -> bool { return c == \"승인\" }")
+        .expect_err("a host sending ANSI bytes would not match, silently")
+        .to_string();
+    assert!(
+        !err.contains("ascii") && !err.contains("ASCII") || err.contains("code page"),
+        "the diagnostic must give the REAL reason, not C4819: {err}"
+    );
+    assert!(
+        err.contains("code page"),
+        "…and name what actually goes wrong: {err}"
+    );
+
+    // `!=` is the same comparison.
+    assert!(compile_to_ir("export fn f(c: string) -> bool { return c != \"승인\" }").is_err());
+
+    // An argument: the callee may compare it, and transitive reach is not tracked.
+    let arg = compile_to_ir(
+        "fn g(s: string) -> bool { return s == \"x\" }\n\
+         export fn f() -> bool { return g(\"승인\") }",
+    )
+    .expect_err("a literal handed to a function may be compared inside it")
+    .to_string();
+    assert!(arg.contains("code page"), "{arg}");
+
+    // An ASCII literal is untouched in every one of those positions.
+    compile_to_rust("export fn f(c: string) -> bool { return c == \"AP\" }").expect("ASCII");
+    compile_to_rust(
+        "fn g(s: string) -> bool { return s == \"x\" }\n\
+         export fn f() -> bool { return g(\"AP\") }",
+    )
+    .expect("ASCII");
+}
+
+/// **The artifacts stay ASCII** — which is what DP-S4's reason was actually protecting.
+#[test]
+fn a_non_ascii_literal_leaves_every_artifact_ascii() {
+    let src = "export fn label() -> string! { return \"승인\" }";
+    let rust = compile_to_rust(src).expect("compile");
+    // The claim is about the LITERAL's bytes, not about the whole file: some emitted helper
+    // comments carry an em dash and always have, so `rust.is_ascii()` would be true here by
+    // luck and false for a module that happens to pull `ml_wstr` in. Assert the escape is
+    // present AND the raw bytes are not — that is the property, and it does not depend on
+    // which helpers a given module needs.
+    assert!(
+        rust.contains(r"\xEC\x8A\xB9\xEC\x9D\xB8"),
+        "the literal must be escaped byte by byte:\n{rust}"
+    );
+    assert!(
+        !rust.contains("승인"),
+        "…and the raw bytes must not appear, which is what keeps rustc's byte-string rule \
+         satisfied:\n{rust}"
+    );
+
+    let ir = compile_to_ir(src).expect("compile");
+    let h = mlc::header::emit_c_header(&ir, "lab");
+    let pas = mlc::header::emit_delphi_unit(&ir, "lab");
+    assert!(h.is_ascii(), "{h}");
+    assert!(pas.is_ascii(), "{pas}");
+
+    // …and both SAY the module produces UTF-8, because a host reading only the header would
+    // otherwise have to guess (#238's lesson: a binding names what the module can do).
+    assert!(h.contains("UTF-8"), "the header must say so:\n{h}");
+    assert!(pas.contains("UTF-8"), "and the unit:\n{pas}");
+
+    // Conditional: a module with no non-ASCII literal is unchanged.
+    let plain = compile_to_ir("export fn f() -> string! { return \"ok\" }").expect("compile");
+    assert!(
+        !mlc::header::emit_c_header(&plain, "p").contains("UTF-8"),
+        "an ASCII-only module must not grow the notice"
     );
 }

@@ -123,6 +123,61 @@ fn can_report_out_of_range(module: &IrModule) -> bool {
         .any(|f| crate::ir::can_fail_out_of_range(&f.body))
 }
 
+/// Does this module RETURN any byte outside ASCII?
+///
+/// Only a returned literal can put one there (`SPEC-non-ascii-literals` §2.1 refuses every
+/// other position), so this asks exactly that. It exists because of #238's lesson: a binding
+/// must name what the module can do, and "these bytes are UTF-8" is something a host reading
+/// only the header would otherwise have to guess.
+///
+/// Conditional, like the status constant above — a module with no such literal is unchanged,
+/// which is the over-emission rule `the_helper_is_only_emitted_when_a_comparison_exists`
+/// writes down.
+fn returns_non_ascii_bytes(module: &IrModule) -> bool {
+    fn in_expr(e: &crate::ir::IrExpr) -> bool {
+        match &e.kind {
+            crate::ir::IrExprKind::ConstStr(s) => !s.is_ascii(),
+            crate::ir::IrExprKind::Concat(pieces) => pieces.iter().any(in_expr),
+            crate::ir::IrExprKind::ByteSlice { s, .. } => in_expr(s),
+            crate::ir::IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            crate::ir::IrExprKind::Unary { operand, .. }
+            | crate::ir::IrExprKind::Cast { operand, .. }
+            | crate::ir::IrExprKind::ByteLen(operand) => in_expr(operand),
+            crate::ir::IrExprKind::Call { args, .. } => args.iter().any(in_expr),
+            crate::ir::IrExprKind::Index { .. }
+            | crate::ir::IrExprKind::Len { .. }
+            | crate::ir::IrExprKind::ConstF64(_)
+            | crate::ir::IrExprKind::ConstI32(_)
+            | crate::ir::IrExprKind::ConstBool(_)
+            | crate::ir::IrExprKind::Var(_) => false,
+        }
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond) || in_stmts(body)
+            }
+            IrStmt::Return(e)
+            | IrStmt::ResultLen(e)
+            | IrStmt::Let { value: e, .. }
+            | IrStmt::Assign { value: e, .. }
+            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
+            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+            IrStmt::Fail(_) => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
+/// The one-line notice both bindings carry when [`returns_non_ascii_bytes`] is true.
+const UTF8_NOTICE_C: &str = "\
+/* This module RETURNS UTF-8 bytes: a string literal in its source was not ASCII.\n \
+ * `ml_needed` counts BYTES, so a two-character Korean label is 7, not 3. A host that\n \
+ * renders the result in a non-UTF-8 code page gets mojibake; the module cannot know,\n \
+ * because it only ever held bytes (DP-S2).\n \
+ * NOTE: this comment is ASCII on purpose. The bytes travel in the module, never here. */";
+
 /// Emit a C header exposing the module's exports. `dll_name` is the module name
 /// (without extension), used for the include guard.
 pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
@@ -281,6 +336,10 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     // (`SPEC-string-slice-compare` DP-C2). Measured before it was fixed: a module whose only
     // -2 came from `byte_slice(c,0,2) == "AB"` shipped a header that never named the constant
     // while `mlprobe` showed the function answering -2.
+    if returns_non_ascii_bytes(module) {
+        let _ = writeln!(s, "{UTF8_NOTICE_C}");
+        s.push('\n');
+    }
     if can_report_out_of_range(module) {
         let _ = writeln!(
             s,
@@ -730,6 +789,15 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
             );
         }
         let _ = writeln!(s, "  ML_ST_INSUFFICIENT_BUFFER = -1;");
+    }
+    if returns_non_ascii_bytes(module) {
+        let _ = writeln!(
+            s,
+            "  {{ This module RETURNS UTF-8 bytes: a string literal in its source was not\n    \
+             ASCII. `ml_needed` counts BYTES, so a two-character Korean label is 7, not 3.\n    \
+             Receive it into an AnsiString only if your code page IS UTF-8; otherwise convert\n    \
+             (UTF8ToString). The module cannot know: it only ever held bytes (DP-S2). }}"
+        );
     }
     if can_report_out_of_range(module) {
         let _ = writeln!(

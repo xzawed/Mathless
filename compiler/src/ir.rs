@@ -368,6 +368,63 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
     })
 }
 
+/// Can anything in this body answer `ML_ST_INDEX_OUT_OF_RANGE`?
+///
+/// The bindings ask this to decide whether to declare the constant, and the header's own rule
+/// is that a host must never retype a number the bindings did not promise. So the question has
+/// to be *"can this module produce -2"* — not a stand-in for it.
+///
+/// It was a stand-in twice. `header.rs` asked "does it index an array", which stopped being
+/// the same question when a span gained the same status; widening it to "…or compares a span"
+/// still missed two more. Measured, each time by building a module and reading its `.h`:
+///
+/// | construct | emits -2 at |
+/// |---|---|
+/// | `xs[i]` read | the `Index` arm of `emit_expr` |
+/// | `result[i] = v` | the `ResultSet` bounds check |
+/// | `byte_slice(..) == ..` | the span comparison lowering |
+/// | `return byte_slice(..)` | `emit_concat_return`'s `ml_sublen` bail |
+///
+/// **Exhaustive on purpose.** A new IR variant that can bail with `-2` has to answer here or
+/// the crate does not build — which is the only mechanism that has ever worked for this
+/// (`Cargo.toml`'s note on `wildcard_enum_match_arm`). A list in a comment would not.
+pub fn can_fail_out_of_range(body: &[IrStmt]) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            // Both of these carry a bounds check wherever they are lowered.
+            IrExprKind::Index { .. } | IrExprKind::ByteSlice { .. } => true,
+            IrExprKind::Unary { operand, .. }
+            | IrExprKind::Cast { operand, .. }
+            | IrExprKind::ByteLen(operand) => in_expr(operand),
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    body.iter().any(|s| match s {
+        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+            in_expr(cond) || can_fail_out_of_range(body)
+        }
+        // The write itself is bounds-checked against the DECLARED length, so it can bail even
+        // when neither subexpression can. This is the case `SPEC-array-return` named as THE
+        // example, and the binding gate missed it for as long as the gate asked about indexing
+        // an INPUT array.
+        IrStmt::ResultSet { .. } => true,
+        IrStmt::ResultLen(e)
+        | IrStmt::Return(e)
+        | IrStmt::Let { value: e, .. }
+        | IrStmt::Assign { value: e, .. }
+        | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+        IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+        IrStmt::Fail(_) => false,
+    })
+}
+
 /// Does this body compare a span anywhere? — `SPEC-string-slice-compare` DP-C2.
 ///
 /// The companion to [`first_index`], and it exists for the same stated reason: `check_expr`

@@ -388,3 +388,111 @@ fn an_array_return_adds_no_import_over_a_scalar_baseline() {
         }
     }
 }
+
+/// **`-2` after `result n` is NOT truncation, and a `*needed`-sized retry does not fix it.**
+///
+/// `HOST_ABI.md`'s DP-R9 footnote used to name one way to reach this — writing outside the
+/// length the author declared — and that enumeration was narrow from the start. Measured
+/// 2026-09-14: an INPUT array read out of range does it too and always could, and a span
+/// comparison does it since 2026-09-13. The rule is a property, not a list: any
+/// bounds-checked operation evaluated after `result n` can answer `-2`.
+///
+/// The part that bites a host is what review named: the status table labels every negative as
+/// truncation with `*ml_needed` as the retry size, so a host branching on `status < 0` reads
+/// `-2` as "your buffer is small, allocate `*ml_needed` and call again" — and gets the same
+/// answer every time. That is a loop that does not converge, and this test is what stops the
+/// documents from quietly going back to the narrow story.
+#[test]
+fn an_out_of_range_after_result_is_not_a_short_buffer() {
+    let out = common::TempOut::new("arr_ret_after");
+    let src = "export fn tag(s: string, xs: [i32]) -> [i32]! {\n\
+               \x20 result 2\n\
+               \x20 if byte_slice(s, 0, 2) == \"AB\" { result[0] = 1 }\n\
+               \x20 result[1] = xs[0]\n\
+               }";
+    let arts = emit_artifacts(src, "after", &out).expect("emit");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load");
+    let tag: extern "C" fn(
+        *const core::ffi::c_char,
+        *const i32,
+        i32,
+        *mut i32,
+        i32,
+        *mut i32,
+    ) -> i32 = unsafe { std::mem::transmute(m.symbol(b"mlx_tag\0").unwrap()) };
+
+    let xs = [7i32];
+    let mut buf = [0i32; 8];
+    let mut needed = -7i32;
+
+    // The span is out of range: the string is one byte and the span asks for two.
+    let st = tag(
+        c"A".as_ptr(),
+        xs.as_ptr(),
+        1,
+        buf.as_mut_ptr(),
+        buf.len() as i32,
+        &mut needed,
+    );
+    assert_eq!(
+        st,
+        mlc::abi::ML_ST_INDEX_OUT_OF_RANGE,
+        "a span comparison after `result` reaches the same bail as an index"
+    );
+    assert_ne!(
+        st, ML_ST_INSUFFICIENT_BUFFER,
+        "…and it is NOT the truncation status, which is the whole hazard"
+    );
+    assert_eq!(
+        needed, 2,
+        "`*ml_needed` was already written by `result 2`, which is what makes -2 look like a \
+         short buffer to a host that only checks the sign"
+    );
+
+    // The retry a `status < 0` host would make: allocate exactly `needed` and call again.
+    // It returns the same thing, so that loop never converges.
+    let mut retry = vec![0i32; needed as usize];
+    let mut needed2 = -7i32;
+    let st2 = tag(
+        c"A".as_ptr(),
+        xs.as_ptr(),
+        1,
+        retry.as_mut_ptr(),
+        retry.len() as i32,
+        &mut needed2,
+    );
+    assert_eq!(
+        (st2, needed2),
+        (st, needed),
+        "the `*needed`-sized retry gives the identical answer — branch on \
+         ML_ST_INSUFFICIENT_BUFFER, never on `status < 0`"
+    );
+
+    // …and what the footnote actually promises about the buffer: NOT that it is untouched.
+    // `result n` zero-fills before the statements after it run, so a later `-2` leaves the
+    // caller looking at zeros rather than at what it passed in. That is why the contract says
+    // "undefined" and not "unwritten" — measured here rather than left to the word.
+    assert_eq!(
+        &buf[..2],
+        &[0, 0],
+        "`result n` zero-filled before the bail, so this is NOT the caller's data"
+    );
+
+    // The INPUT-array path, which was reachable before either string slice existed.
+    let empty: [i32; 0] = [];
+    let mut needed3 = -7i32;
+    assert_eq!(
+        tag(
+            c"AB".as_ptr(),
+            empty.as_ptr(),
+            0,
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            &mut needed3
+        ),
+        mlc::abi::ML_ST_INDEX_OUT_OF_RANGE,
+        "reading an input array out of range after `result` is the oldest of the three"
+    );
+
+    drop(m);
+}

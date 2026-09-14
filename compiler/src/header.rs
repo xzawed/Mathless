@@ -109,6 +109,20 @@ fn error_macro(dll_name: &str, error_name: &str) -> String {
     format!("ML_{}_ERR_{}", macro_stem(dll_name), error_name)
 }
 
+/// Can any function in this module answer `ML_ST_INDEX_OUT_OF_RANGE`?
+///
+/// One predicate, read by BOTH bindings, so the C header and the Delphi unit cannot promise
+/// different things about the same module. The question itself lives in `ir.rs` and is
+/// **exhaustive over the IR**, because this gate has been a stand-in for the real question
+/// twice: it asked "does it index an array", then "…or compare a span", and each time a
+/// module that could return `-2` shipped bindings that never named the constant.
+fn can_report_out_of_range(module: &IrModule) -> bool {
+    module
+        .functions
+        .iter()
+        .any(|f| crate::ir::can_fail_out_of_range(&f.body))
+}
+
 /// Emit a C header exposing the module's exports. `dll_name` is the module name
 /// (without extension), used for the include guard.
 pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
@@ -261,14 +275,17 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     // that can actually return it — one that indexes an array.
     //
     // A host that had to retype `-2` is a host holding a number the header never promised.
-    if module
-        .functions
-        .iter()
-        .any(|f| crate::ir::first_index(&f.body).is_some())
-    {
+    //
+    // The gate asks "can this module produce -2", not "does it index an array" — and those
+    // stopped being the same question when a span comparison gained the same status
+    // (`SPEC-string-slice-compare` DP-C2). Measured before it was fixed: a module whose only
+    // -2 came from `byte_slice(c,0,2) == "AB"` shipped a header that never named the constant
+    // while `mlprobe` showed the function answering -2.
+    if can_report_out_of_range(module) {
         let _ = writeln!(
             s,
-            "/* An array index outside 0..len. The out-parameter is NOT written"
+            "/* An index outside 0..len, or a span outside the string. The out-parameter is \
+             NOT written"
         );
         let _ = writeln!(
             s,
@@ -714,15 +731,11 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
         }
         let _ = writeln!(s, "  ML_ST_INSUFFICIENT_BUFFER = -1;");
     }
-    if module
-        .functions
-        .iter()
-        .any(|f| crate::ir::first_index(&f.body).is_some())
-    {
+    if can_report_out_of_range(module) {
         let _ = writeln!(
             s,
-            "  {{ An array index outside 0..len. The out-parameter is NOT written (D17), and\n    \
-             the length is the one YOU passed alongside the pointer. }}"
+            "  {{ An index outside 0..len, or a span outside the string. The out-parameter is\n    \
+             NOT written (D17), and the length is the one YOU passed alongside the pointer. }}"
         );
         let _ = writeln!(
             s,

@@ -414,3 +414,126 @@ fn the_fn_lines_are_sorted_by_name_including_the_prefix_case() {
         .collect();
     assert_eq!(fns, vec!["fn f", "fn f1", "fn f10"], "{m}");
 }
+
+// ------------------------------------------------- the mutations nothing else covered
+
+/// **Every remaining edit a host could be hurt by, and what the fingerprint does about it.**
+///
+/// The per-case tests above cover ten mutations, each with the reasoning that earned it. This
+/// table covers the rest, found by listing what a host depends on and checking the list
+/// against the file rather than the other way round (`STATUS.md` §9-59).
+///
+/// One row is why the table exists at all: `ir.rs`'s `Display for IrType` carries the comment
+/// *"The manifest quotes this, so an array parameter changes the fingerprint and a changed
+/// element type changes it again (SPEC-array-input §2.7)"* — and **nothing measured it**. A
+/// claim in a comment about the fingerprint is the same shape as a claim in a document about
+/// a constant, which `doc_claims.rs` exists to refuse.
+///
+/// The `same` rows matter as much as the `differs` ones: a fingerprint that changes for a
+/// non-contract edit rejects a module the host could have used, and "swap the file, do not
+/// rebuild the host" is the property §3-D/E exist to protect.
+#[test]
+fn the_remaining_edits_change_the_fingerprint_exactly_when_they_change_the_contract() {
+    // (label, before, after, must the fingerprint differ?)
+    let cases: &[(&str, &str, &str, bool)] = &[
+        // A host resolves by symbol name, so a renamed export is a different symbol — every
+        // host built against the old one fails at `GetProcAddress` rather than silently. The
+        // fingerprint changing too is belt-and-braces, but a fingerprint that did NOT change
+        // would mean the manifest was not quoting the name at all, and then a SWAP of two
+        // functions' names would be invisible.
+        (
+            "function renamed",
+            "export fn a(x: f64) -> f64 { return x }",
+            "export fn b(x: f64) -> f64 { return x }",
+            true,
+        ),
+        // The pair the row above is really about: two exports trade names. Both symbols still
+        // resolve, and the host calls each through the other's declaration — a double where a
+        // pointer is expected, which is the `0xC0000005` this slice's module doc measured.
+        //
+        // The first draft of this row gave both functions the SAME signature and swapped only
+        // their bodies, then asserted the fingerprint must change. It must not: that is a body
+        // edit, and §3-E exists to let body edits through. Two exports with identical
+        // signatures trading behaviour is invisible here **by design** — the fingerprint
+        // states the contract, and both spellings satisfy the same contract.
+        (
+            "two functions swap names",
+            "export fn a(x: f64) -> f64 { return x }\n\
+             export fn b(s: string) -> string! { return s }",
+            "export fn b(x: f64) -> f64 { return x }\n\
+             export fn a(s: string) -> string! { return s }",
+            true,
+        ),
+        // Adding an export is a contract change in the direction that cannot hurt an old host
+        // — it resolves nothing new — but the fingerprint is a two-way check: a host built
+        // against the NEW module and handed the old one must be refused, and that is this row
+        // read right to left.
+        (
+            "an export added",
+            "export fn a(x: f64) -> f64 { return x }",
+            "export fn a(x: f64) -> f64 { return x }\nexport fn b(x: f64) -> f64 { return x }",
+            true,
+        ),
+        // `ir.rs`'s documented claim, measured at last.
+        (
+            "array element type",
+            "export fn f(xs: [i32]) -> i32! { return xs[0] }",
+            "export fn f(xs: [f64]) -> f64! { return xs[0] }",
+            true,
+        ),
+        // Same name, same arity — and a completely different calling convention, because an
+        // array parameter is TWO parameters at the boundary (pointer + length).
+        (
+            "scalar parameter becomes an array",
+            "export fn f(xs: i32) -> i32 { return xs }",
+            "export fn f(xs: [i32]) -> i32! { return xs[0] }",
+            true,
+        ),
+        // Error NAMES are compiled into the host as `ML_<MODULE>_ERR_<NAME>`, so a rename is
+        // the same class as a renumber (which §3 already covers): the host's macro no longer
+        // exists, or worse, still exists with a stale value from a previous build.
+        (
+            "an error renamed",
+            "error E_ONE = 1\nexport fn f(x: f64) -> f64! { if x < 0.0 { fail E_ONE } return x }",
+            "error E_TWO = 1\nexport fn f(x: f64) -> f64! { if x < 0.0 { fail E_TWO } return x }",
+            true,
+        ),
+        // A second error declaration changes the set of positive statuses a host may see.
+        (
+            "an error added",
+            "error E_ONE = 1\nexport fn f(x: f64) -> f64! { if x < 0.0 { fail E_ONE } return x }",
+            "error E_ONE = 1\nerror E_TWO = 2\nexport fn f(x: f64) -> f64! { if x < 0.0 { fail E_TWO } return x }",
+            true,
+        ),
+        // NOT a contract change: which RESERVED negative statuses a body can produce. D17
+        // makes negatives the ABI's, not the module's — a host must already treat any
+        // negative as a failure — so this is a body edit like any other, and the header
+        // naming `ML_ST_INDEX_OUT_OF_RANGE` (#238) is a convenience for a reader, not a new
+        // obligation. Measured here so that reasoning is a test rather than a paragraph.
+        (
+            "a body gains the ability to report -2",
+            "export fn f(s: string) -> string! { return s }",
+            "export fn f(s: string) -> string! { return byte_slice(s, 0, 2) }",
+            false,
+        ),
+        // NOT a contract change: an internal function's signature. Nothing exports it.
+        (
+            "an internal function's signature",
+            "fn helper(x: f64) -> f64 { return x }\nexport fn f(x: f64) -> f64 { return helper(x) }",
+            "fn helper(x: f64, unused: f64) -> f64 { return x }\nexport fn f(x: f64) -> f64 { return helper(x, 0.0) }",
+            false,
+        ),
+    ];
+
+    for (label, before, after, must_differ) in cases {
+        let (a, b) = (hash(before), hash(after));
+        assert_eq!(
+            a != b,
+            *must_differ,
+            "{label}: the fingerprint {} have changed\n  before: {}  after: {}",
+            if *must_differ { "must" } else { "must NOT" },
+            manifest(before).replace('\n', " | "),
+            manifest(after).replace('\n', " | ")
+        );
+    }
+}

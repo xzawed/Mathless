@@ -1517,3 +1517,67 @@ fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
         }
     }
 }
+
+/// **A slice cannot be both closed and a candidate**, in the file that says so about itself.
+///
+/// `docs/slices/README.md` carries two lists: an index of closed slices at the top and
+/// "next slices (no SPEC yet)" at the bottom. Closing a slice adds a row to the first —
+/// `CLAUDE.md` puts that in the procedure. **Nothing removes it from the second**, and that
+/// file has corrected the resulting lie three times: 문자열 연결 (2026-09-03), 배열 입력
+/// (2026-09-11), 배열 반환 (2026-09-15). The third one had been wrong for three days while the
+/// row twelve lines above it read ✅ 구현 완료.
+///
+/// It is the shape `STATUS.md` §7-1 records as this repository's most repeated failure — a
+/// document calling something open that the same document calls closed — and a human reading
+/// the candidate list to pick the next slice is exactly who it misleads.
+///
+/// Matching is on the index row's OWN title text, stripped of `**`. That is what a copy into
+/// the candidate list looks like, and it is what happened all three times.
+#[test]
+fn no_closed_slice_is_still_listed_as_a_candidate() {
+    let readme = read("docs/slices/README.md");
+
+    let (_, section) = readme
+        .split_once("## 다음 슬라이스 (SPEC 미작성)")
+        .expect("the candidate section's heading moved — this guard reads it by name");
+
+    // Blockquote lines are excluded, and the first run of this guard is why: that section
+    // opens with notes recording that a slice IS closed ("반올림 내장 함수도 닫혔다 — 위 색인,
+    // #83"), and the three corrections name the very slices they removed. Those sentences are
+    // the opposite of the defect. The candidate list is the prose that is not quoted.
+    let candidates: String = section
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('>'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // The index rows: `| [<title>](SPEC-….md) | ✅ … |`. The link text is the title.
+    let mut closed: Vec<String> = Vec::new();
+    for line in readme.lines() {
+        let Some(rest) = line.strip_prefix("| [") else {
+            continue;
+        };
+        let Some((title, tail)) = rest.split_once("](SPEC-") else {
+            continue;
+        };
+        if !tail.contains('✅') {
+            continue;
+        }
+        closed.push(title.replace("**", ""));
+    }
+    assert!(
+        closed.len() >= 25,
+        "the index rows stopped parsing — found {}, which is fewer than the slices that are \
+         known to be closed, so this guard would pass by reading nothing",
+        closed.len()
+    );
+
+    for title in &closed {
+        assert!(
+            !candidates.contains(title.as_str()),
+            "`{title}` is in the index as ✅ 구현 완료 AND in the candidate list below it. \
+             That is the third-time failure the file documents about itself: closing a slice \
+             adds the row above and nothing removes the line below."
+        );
+    }
+}

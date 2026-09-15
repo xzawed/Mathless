@@ -48,7 +48,9 @@ impl std::fmt::Display for IrType {
             IrType::Bool => "bool",
             IrType::I32 => "i32",
             // The manifest quotes this, so an array parameter changes the fingerprint and a
-            // changed element type changes it again (SPEC-array-input 2.7).
+            // changed element type changes it again (SPEC-array-input 2.7). Measured by
+            // `iface_hash.rs`'s mutation table — this sentence stood unmeasured from the
+            // array slice until 2026-09-15, which is what that table was written to end.
             IrType::Array(IrArrayElem::F64) => "[f64]",
             IrType::Array(IrArrayElem::Bool) => "[bool]",
             IrType::Array(IrArrayElem::I32) => "[i32]",

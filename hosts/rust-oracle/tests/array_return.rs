@@ -496,3 +496,94 @@ fn an_out_of_range_after_result_is_not_a_short_buffer() {
 
     drop(m);
 }
+
+/// The two clamps in `result <n>`, called rather than read.
+///
+/// `emit_stmt`'s `ResultLen` arm carries two of them, both with a reason written above it:
+/// `if __n < 0 { 0 }` (a negative LENGTH is an empty result, `SPEC-array-return` §5.2-3) and
+/// `if ml_cap < 0 { 0 }` (§2.7, for the reason MSVC documents on `_snprintf(count < 0)` —
+/// read as unsigned, a negative count is an enormous one).
+///
+/// Neither had been called with a negative. `compiler/tests/array_input.rs` pins that
+/// `result -1` COMPILES — that crate has no loader, so it cannot ask more — and
+/// `string_return.rs` passes `ml_cap = -1` to a STRING function, which is the other emitter.
+/// So a decision recorded in a SPEC (§5.2-3) had never been checked against a running module,
+/// which is the gap `STATUS.md` §9-56.1 is a table of.
+///
+/// What a host gets is written out as numbers rather than derived, for the reason §9-55 gives:
+/// a computed expectation agrees with whatever the code does.
+#[test]
+fn a_negative_length_and_a_negative_capacity_are_both_clamped() {
+    let out = common::TempOut::new("arr_ret_negclamp");
+    let arts = emit_artifacts(
+        "export fn nothing() -> [i32]! { result -1 }\n\
+         export fn three() -> [i32]! {\n\
+         \x20 result 3\n\
+         \x20 result[0] = 7\n\
+         \x20 result[1] = 8\n\
+         \x20 result[2] = 9\n\
+         }",
+        "negclamp",
+        &out,
+    )
+    .expect("emit negclamp");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load negclamp.dll");
+
+    type NoArgs = unsafe extern "C" fn(*mut i32, i32, *mut i32) -> i32;
+    let nothing: NoArgs = unsafe { std::mem::transmute(m.symbol(b"mlx_nothing\0").unwrap()) };
+    let three: NoArgs = unsafe { std::mem::transmute(m.symbol(b"mlx_three\0").unwrap()) };
+
+    // `result -1` — an empty result, not an error and not an enormous one.
+    let mut buf = [CANARY as i32; 8];
+    let mut needed = -999i32;
+    let st = unsafe { nothing(buf.as_mut_ptr(), 8, &mut needed) };
+    assert_eq!(st, 0, "a negative length is a value, not a failure");
+    assert_eq!(needed, 0, "clamped to zero elements");
+    assert!(
+        buf.iter().all(|v| *v == CANARY as i32),
+        "an empty result writes nothing, not even the zero fill: {buf:?}"
+    );
+
+    // …and `*ml_needed == 0` is legal HERE, unlike a string return, where it is deliberately
+    // impossible (#92: the NUL makes the minimum 1, so a host cannot confuse "empty" with
+    // "not written"). An array has no terminator, so zero elements really is zero — measured
+    // rather than assumed, because the two ABIs use the same out-param name.
+    assert_eq!(needed, 0);
+
+    // A negative capacity with a result that needs room. This is a Q12 property, NOT a test of
+    // the clamp: `__n > __cap` is a signed comparison, so `3 > -1` refuses whether or not the
+    // clamp is there. Review pointed that out and it is right — the clamp's own measurement is
+    // the `nothing(cap = -1)` call further down, which is where deleting it actually shows.
+    let mut buf = [CANARY as i32; 8];
+    let mut needed = -999i32;
+    let st = unsafe { three(buf.as_mut_ptr(), -1, &mut needed) };
+    assert_eq!(
+        st, ML_ST_INSUFFICIENT_BUFFER,
+        "a negative cap must not be read as unsigned room"
+    );
+    assert_eq!(needed, 3, "and the host still learns the size it needs");
+    assert!(
+        buf.iter().all(|v| *v == CANARY as i32),
+        "a refused call writes nothing: {buf:?}"
+    );
+
+    // Both clamps at once, and **the only call in this test that the `ml_cap` clamp changes**:
+    // an empty result into a negative capacity succeeds, because zero elements fit in zero
+    // room. Without the clamp `0 > -1` is true and the host is refused a result that fits.
+    // Measured by deleting the clamp — this is the assertion that goes red.
+    let mut buf = [CANARY as i32; 8];
+    let mut needed = -999i32;
+    let st = unsafe { nothing(buf.as_mut_ptr(), -1, &mut needed) };
+    assert_eq!(st, 0, "zero elements fit in zero room");
+    assert_eq!(needed, 0);
+    assert!(buf.iter().all(|v| *v == CANARY as i32), "{buf:?}");
+
+    // The ordinary call still works, so none of the above is a module that refuses everything.
+    let mut buf = [CANARY as i32; 8];
+    let mut needed = -999i32;
+    assert_eq!(unsafe { three(buf.as_mut_ptr(), 8, &mut needed) }, 0);
+    assert_eq!(needed, 3);
+    assert_eq!(&buf[..3], &[7, 8, 9]);
+
+    drop(m);
+}

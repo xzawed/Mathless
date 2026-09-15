@@ -513,7 +513,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash_claim() -> u64 { 0x3BE92C25FD58EBCE }
+pub extern "C" fn ml_iface_hash_claim() -> u64 { 0xEF50DFD4C7484691 }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;

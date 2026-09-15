@@ -516,6 +516,21 @@ fn the_remaining_edits_change_the_fingerprint_exactly_when_they_change_the_contr
             "export fn f(s: string) -> string! { return byte_slice(s, 0, 2) }",
             false,
         ),
+        // The encoding of the bytes the module hands out. A contract change since 2026-09-15
+        // (user-confirmed, `SPEC-iface-hash` §2.1): the signature is identical and so is the
+        // unit of `ml_needed`, but the `.h` and `.pas` gain a UTF-8 notice, and a host built
+        // against the ASCII form used to load the other one, pass the fingerprint check, and
+        // render mojibake on a code page 949 Delphi host — silently, because nothing fails.
+        //
+        // The contrast that decided it is the row above: a reserved negative status is the
+        // ABI's, so a host already handles every one. Encoding has no such rule (DP-S2 left
+        // it undecided), so there is nothing a host can have been told in advance.
+        (
+            "a returned literal stops being ASCII",
+            "export fn label() -> string! { return \"OK\" }",
+            "export fn label() -> string! { return \"\u{c2b9}\u{c778}\" }",
+            true,
+        ),
         // NOT a contract change: an internal function's signature. Nothing exports it.
         (
             "an internal function's signature",
@@ -536,4 +551,95 @@ fn the_remaining_edits_change_the_fingerprint_exactly_when_they_change_the_contr
             manifest(after).replace('\n', " | ")
         );
     }
+}
+
+/// **An ASCII module carries no `utf8` line — which is why this change cost one fingerprint.**
+///
+/// `utf8=1` is emitted only when true, exactly like the `err` lines, and that is not a
+/// micro-optimisation: it is what keeps every ASCII module's manifest byte-identical to what
+/// it was before the field existed. Bumping `ml-iface/1` to `/2` would have been the other
+/// way to signal a format change, and it would have moved EVERY module's fingerprint — a
+/// false rejection for every module whose contract did not change, which is precisely what
+/// §3-D and §3-E exist to prevent.
+///
+/// Measured when it landed: of the whole example corpus exactly one fingerprint moved
+/// (`claim`, the only module that returns Korean labels), one line per golden file.
+#[test]
+fn the_encoding_line_appears_only_when_the_module_returns_non_ascii() {
+    let ascii = manifest("export fn label() -> string! { return \"OK\" }");
+    assert!(
+        !ascii.contains("utf8"),
+        "an ASCII module's manifest must be unchanged by this field: {ascii:?}"
+    );
+
+    let korean = manifest("export fn label() -> string! { return \"\u{c2b9}\u{c778}\" }");
+    assert!(korean.contains("utf8=1\n"), "{korean:?}");
+
+    // Position matters, because the manifest is a byte string and the SPEC fixes its shape:
+    // module-level lines come before the per-function lines.
+    assert!(
+        korean.starts_with("ml-iface/1\nabi=1\nutf8=1\nfn "),
+        "the encoding line is module-level and precedes the fn lines: {korean:?}"
+    );
+
+    // Still ASCII — the field says the module's OUTPUT is UTF-8, it does not make the
+    // manifest so. `the_manifest_is_ascii_only` covers the general rule; this covers the one
+    // module shape that could plausibly break it.
+    assert!(korean.is_ascii(), "{korean:?}");
+
+    // And the notice in both bindings agrees with the manifest, because all three now ask the
+    // same walker (`ir::returns_non_ascii_bytes`) rather than each carrying a copy.
+    let ir = mlc::compile_to_ir("export fn label() -> string! { return \"\u{c2b9}\u{c778}\" }")
+        .expect("compile");
+    assert!(mlc::header::emit_c_header(&ir, "m").contains("UTF-8"));
+    assert!(mlc::header::emit_delphi_unit(&ir, "m").contains("UTF-8"));
+}
+
+/// **Counting a literal is not copying it** — the over-emission the `utf8=1` line exposed.
+///
+/// `returns_non_ascii_bytes` used to ask "is there a non-ASCII literal anywhere", and
+/// `byte_len("승인")` answered yes. That function returns the integer 6; not one byte of UTF-8
+/// crosses the boundary. While the answer only drove a comment in the header it was merely
+/// wrong; once the manifest read the same walker it would have moved that module's
+/// fingerprint for a contract that did not change — a false rejection, which is what §3-D and
+/// §3-E exist to prevent.
+///
+/// The positions are the whole test: a literal's bytes leave through a `return`, through a
+/// concatenation piece, and as the source of a returned span. They do not leave through
+/// `byte_len`, through a comparison, or through `fixed`.
+#[test]
+fn only_a_literal_whose_bytes_leave_the_module_sets_the_encoding_line() {
+    const KO: &str = "\u{c2b9}\u{c778}";
+
+    // Out: the bytes reach `ml_buf`.
+    for src in [
+        format!("export fn f() -> string! {{ return \"{KO}\" }}"),
+        format!("export fn f(s: string) -> string! {{ return s + \"{KO}\" }}"),
+    ] {
+        let m = manifest(&src);
+        assert!(
+            m.contains("utf8=1"),
+            "these bytes leave the module: {m:?}\n{src}"
+        );
+    }
+
+    // Not out: the literal is measured, not written. `byte_len` yields an i32.
+    let counted = manifest(&format!(
+        "export fn f() -> i32 {{ return byte_len(\"{KO}\") }}"
+    ));
+    assert!(
+        !counted.contains("utf8"),
+        "counting a literal writes none of it to the host: {counted:?}"
+    );
+
+    // …and the two bindings agree with the manifest, because all three ask one walker.
+    let ir = compile_to_ir(&format!(
+        "export fn f() -> i32 {{ return byte_len(\"{KO}\") }}"
+    ))
+    .expect("compile");
+    assert!(
+        !mlc::header::emit_c_header(&ir, "m").contains("UTF-8"),
+        "the header claimed the module returns UTF-8 while returning an i32"
+    );
+    assert!(!mlc::header::emit_delphi_unit(&ir, "m").contains("UTF-8"));
 }

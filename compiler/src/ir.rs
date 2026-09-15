@@ -553,6 +553,85 @@ pub fn can_fail_out_of_range(body: &[IrStmt]) -> bool {
 /// finished body. A span outside the string is `ML_ST_INDEX_OUT_OF_RANGE`, and D17 only gives
 /// a function a status when its signature says `!`.
 ///
+/// Does this module RETURN any byte outside ASCII?
+///
+/// Only a returned literal can put one there (`SPEC-non-ascii-literals` §2.1 refuses every
+/// other position), so this asks exactly that.
+///
+/// **It lives here because it has three consumers**, and they must not be able to disagree:
+/// the C header and the Delphi unit each carry a one-line UTF-8 notice when it is true
+/// (#238 — a binding names what the module can do), and since 2026-09-15 the interface
+/// manifest carries `utf8=1` (`SPEC-iface-hash` §2.1). That third consumer is why it moved
+/// out of `header.rs`; `can_fail_out_of_range` two functions up made the same move for the
+/// same reason.
+///
+/// A module with no such literal is unchanged in all three places — which matters more here
+/// than in the bindings, because in the manifest "unchanged" is what keeps an ASCII module's
+/// fingerprint stable across this very change.
+/// **The question is whether the bytes LEAVE, not whether the literal exists.** The first
+/// version of this walker asked the second, and over-answered: measured 2026-09-15,
+/// `export fn f() -> i32 { return byte_len("승인") }` returns the integer 6 — not one byte of
+/// UTF-8 crosses the boundary — and its `.h` claimed "This module RETURNS UTF-8 bytes" twice.
+/// Harmless while the notice was only prose; not harmless once the manifest reads the same
+/// walker, because then that module's fingerprint moves for a contract that did not change.
+/// So the walk carries an `output` flag, exactly as [`non_ascii_literal_outside_output`] does.
+///
+/// The two walkers ask opposite questions and so they disagree on one arm, deliberately:
+/// `byte_len`'s operand is a LEGAL place for a non-ASCII literal (the other walker says
+/// `true` there) and is NOT a place bytes escape from (this one says `false`). Counting is
+/// not copying.
+pub fn returns_non_ascii_bytes(module: &IrModule) -> bool {
+    fn in_expr(e: &IrExpr, output: bool) -> bool {
+        match &e.kind {
+            IrExprKind::ConstStr(s) => output && !s.is_ascii(),
+            // These carry the context: their bytes go wherever the parent's did.
+            IrExprKind::Concat(pieces) => pieces.iter().any(|p| in_expr(p, output)),
+            IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
+                in_expr(operand, output)
+            }
+            // A span's SOURCE is copied out; its offsets are arithmetic.
+            IrExprKind::ByteSlice { s, from, to } => {
+                in_expr(s, output) || in_expr(from, false) || in_expr(to, false)
+            }
+            // `byte_len` COUNTS its operand and yields an i32. Nothing of it is written to
+            // the caller's buffer — this arm is the defect above.
+            IrExprKind::ByteLen(operand) => in_expr(operand, false),
+            // `fixed` emits only `-`, `.` and `0`-`9` (`SPEC-fixed-decimals` §2.1), so it
+            // cannot carry a literal's bytes out however its children are written.
+            IrExprKind::Fixed { x, places } => in_expr(x, false) || in_expr(places, false),
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs, false) || in_expr(rhs, false),
+            IrExprKind::Call { args, .. } => args.iter().any(|a| in_expr(a, false)),
+            IrExprKind::Index { index, .. } => in_expr(index, false),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond, false) || in_stmts(body)
+            }
+            // The one statement whose expression reaches a host. An internal function's
+            // `return` counts too: a caller can propagate it out with `try`.
+            IrStmt::Return(e) => in_expr(e, true),
+            // An array return writes SCALARS, so nothing textual leaves through `result`.
+            IrStmt::ResultLen(e) => in_expr(e, false),
+            IrStmt::ResultSet { index, value } => in_expr(index, false) || in_expr(value, false),
+            // An `out` parameter is a scalar today (`SPEC-out-params`: no `out string`), so
+            // this is `false` for the same reason. Spelled rather than merged above, because
+            // the day `out string` exists this arm has to change and the merge would hide it.
+            IrStmt::AssignOut { value: e, .. } => in_expr(e, false),
+            IrStmt::Let { value: e, .. } | IrStmt::Assign { value: e, .. } => in_expr(e, false),
+            IrStmt::TryCall { args, .. } => args.iter().any(|a| in_expr(a, false)),
+            IrStmt::Fail(_) => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
 /// Only an EQUALITY whose operand is a span counts. A span in a `return` does not: that is
 /// the string-return path, which is `-> string!` by construction.
 pub fn compares_a_span(body: &[IrStmt]) -> bool {

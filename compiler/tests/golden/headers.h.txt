@@ -323,7 +323,7 @@ int32_t mlx_carrier_label(const char* /* scac */, int32_t* /* tier */, char* ml_
  *
  * A change to a function BODY does not change this value; a change to a name,
  * type, parameter order, out-ness or error code does. */
-#define ML_CLAIM_IFACE_HASH 0x3BE92C25FD58EBCEULL
+#define ML_CLAIM_IFACE_HASH 0xEF50DFD4C7484691ULL
 
 /* Q12 caller-allocates protocol: a buffer too small to hold the
  * result, NUL included. Truncation is a FAILURE, not a short

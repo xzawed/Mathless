@@ -794,7 +794,17 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
                  retry is SetLength(Arr, Needed) and Cap := Length(Arr) - never a byte count. }}"
             );
         }
-        let _ = writeln!(s, "  ML_ST_INSUFFICIENT_BUFFER = -1;");
+        // From the constant, like the `.h` two hundred lines up — not a hand-written `-1`.
+        // It WAS a hand-written `-1`, and the `.h` beside it has always formatted the same
+        // constant, so changing `abi.rs` would have moved one binding and not the other: a C
+        // host and a Delphi host reading different numbers for the same status, with nothing
+        // to say so. Found by asking where a marker in a test had to spell a value out
+        // (`STATUS.md` §9-58.5).
+        let _ = writeln!(
+            s,
+            "  ML_ST_INSUFFICIENT_BUFFER = {};",
+            crate::abi::ML_ST_INSUFFICIENT_BUFFER
+        );
     }
     if returns_non_ascii_bytes(module) {
         let _ = writeln!(

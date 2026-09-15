@@ -1295,6 +1295,12 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
         }
     }
     let _ = writeln!(out, "{pad}unsafe {{ *ml_needed = __n; }}");
+    // This line is the capacity test AND the NULL-probe contract, and the second job is the
+    // one nothing said out loud. DP-T7 lets a host pass `ml_buf = NULL` when `ml_cap == 0`;
+    // `__n` is never less than 1, so this returns before any writer below dereferences that
+    // pointer. Measured by removing it: the probe call does not answer wrongly, it takes the
+    // host's process down with STATUS_ACCESS_VIOLATION
+    // (`string_concat.rs::a_negative_capacity_is_refused_on_the_concat_path_too`).
     let _ = writeln!(out, "{pad}if ml_cap < __n {{ return -1; }}");
     // Pass 2 — append. `__o` is the running offset; every helper returns the next one.
     //

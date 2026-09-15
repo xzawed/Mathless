@@ -316,3 +316,105 @@ fn a_host_that_aliases_its_own_output_buffer_cannot_be_written_past() {
     assert_eq!(text(&buf), "Kim Aroha");
     assert_eq!(needed, 10);
 }
+
+/// A negative `ml_cap` on the CONCAT path — all four piece kinds at once.
+///
+/// `string_return.rs` already passes `-1` and `i32::MIN`, but to `carrier_name`, which returns
+/// a borrowed literal and therefore goes through `ml_strout`. `emit_concat_return` is a
+/// different emitter with its own capacity test and three writers of its own, and nothing had
+/// called it with a negative capacity. Scope of a claim again (#211): "a negative cap is
+/// refused" was measured for one of the two string paths.
+///
+/// One function carries every `PieceKind` the emitter knows — bytes, digits, a span and a
+/// decimal. That is for the SUCCEEDING call at the end, which drives all four writers; it does
+/// **not** make the refusal stronger. Review named why, and it is worth keeping: the guard is a
+/// single line ahead of every writer, so the first piece alone already decides the refusal, and
+/// four kinds prove nothing about where the line sits.
+///
+/// For the same reason, only `status == -1` measures the guard on the refusing calls.
+/// `*ml_needed` is written BEFORE it, so asserting `needed == 19` there would survive deleting
+/// the line — it is asserted as a Q12 property (the host learns the size from a failed call),
+/// not as evidence about the guard.
+///
+/// **And the guard turns out to protect more than the capacity.** Removing
+/// `if ml_cap < __n { return -1; }` and running this test does not produce a wrong answer: the
+/// process dies with `STATUS_ACCESS_VIOLATION` (measured). The probe call below passes
+/// `ml_buf = NULL` with `ml_cap = 0`, which DP-T7 explicitly permits — and that one line is
+/// the whole reason it is safe, because it returns before any writer dereferences the
+/// pointer. The capacity test and the NULL-probe contract are the same line of code, which
+/// neither `SPEC-string-return` nor the emitter's comments say anywhere.
+#[test]
+fn a_negative_capacity_is_refused_on_the_concat_path_too() {
+    let dir = common::TempOut::new("concat_negcap");
+    let arts = emit_artifacts(
+        "export fn all(s: string, x: f64, n: i32) -> string! {\n\
+         \x20 return s + \" \" + (n as string) + \" \" + byte_slice(s, 0, 2) + \" \" + fixed(x, 2)\n\
+         }",
+        "pieces",
+        &dir,
+    )
+    .expect("emit pieces");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load pieces.dll");
+    let all: extern "C" fn(*const c_char, f64, i32, *mut u8, i32, *mut i32) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_all\0").unwrap()) };
+
+    // The true size first, from the probe, so the refusals below can be checked against it.
+    let mut needed = -7i32;
+    assert_eq!(
+        all(
+            c"ABCDEF".as_ptr(),
+            12.5,
+            42,
+            core::ptr::null_mut(),
+            0,
+            &mut needed
+        ),
+        -1
+    );
+    assert_eq!(
+        needed, 19,
+        "\"ABCDEF 42 AB 12.50\" is 18 bytes, plus the NUL"
+    );
+
+    // Every negative capacity a host can pass, including the one where `cap - 1` would
+    // overflow if the writers were ever reached with it.
+    for cap in [-1, i32::MIN, i32::MIN + 1, -12345] {
+        let mut buf = [0xAAu8; 64];
+        let mut needed = -7i32;
+        let status = all(
+            c"ABCDEF".as_ptr(),
+            12.5,
+            42,
+            buf.as_mut_ptr(),
+            cap,
+            &mut needed,
+        );
+        assert_eq!(status, -1, "cap={cap} must be refused");
+        assert_eq!(needed, 19, "cap={cap}: the host still learns the size");
+        assert!(
+            buf.iter().all(|b| *b == 0xAA),
+            "cap={cap}: a refused call writes nothing: {:?}",
+            &buf[..16]
+        );
+    }
+
+    // …and the fitting call still answers, so none of the above is a module that refuses all.
+    let mut buf = [0xAAu8; 64];
+    let mut needed = -7i32;
+    assert_eq!(
+        all(
+            c"ABCDEF".as_ptr(),
+            12.5,
+            42,
+            buf.as_mut_ptr(),
+            64,
+            &mut needed
+        ),
+        0
+    );
+    assert_eq!(needed, 19);
+    assert_eq!(text(&buf), "ABCDEF 42 AB 12.50");
+
+    drop(m);
+    drop(dir);
+}

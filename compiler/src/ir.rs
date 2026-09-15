@@ -264,6 +264,19 @@ pub enum IrExprKind {
     Len {
         array: String,
     },
+    /// `fixed(x, places)` — `x` as fixed-point decimal text with exactly `places` digits after
+    /// the point (`SPEC-fixed-decimals`).
+    ///
+    /// A BUILT string, like a concatenation: the digits exist only while they are written into
+    /// the caller's buffer, so `is_built_string` must answer `true` for it.
+    ///
+    /// It exists because the documented in-module workaround is silently wrong three ways —
+    /// `"1234.5"` for 1234.05, `"0.-7"` for -0.07, and `"21474836.47"` for fifty million
+    /// (§9-53). None of the primitives it was built from is wrong; the assembly is.
+    Fixed {
+        x: Box<IrExpr>,
+        places: Box<IrExpr>,
+    },
     /// `byte_slice(s, from, to)` — the half-open span `[from, to)` of a BORROWED string.
     ///
     /// `to` is an end offset, not a length (DP-B2), so `byte_slice(s, 2, byte_len(s))` is
@@ -339,6 +352,9 @@ pub fn first_index(body: &[IrStmt]) -> Option<String> {
             IrExprKind::ByteSlice { s, from, to } => {
                 in_expr(s).or_else(|| in_expr(from)).or_else(|| in_expr(to))
             }
+            // Same shape, same reason: `fixed(xs[i] as f64, n)` hides an index in the value,
+            // and `fixed(x, xs[i])` hides one in the place count.
+            IrExprKind::Fixed { x, places } => in_expr(x).or_else(|| in_expr(places)),
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs).or_else(|| in_expr(rhs)),
             IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => {
                 args.iter().find_map(in_expr)
@@ -417,6 +433,12 @@ pub fn non_ascii_literal_outside_output(body: &[IrStmt]) -> Option<String> {
             IrExprKind::ByteSlice { s, from, to } => in_expr(s, true)
                 .or_else(|| in_expr(from, false))
                 .or_else(|| in_expr(to, false)),
+            // `fixed` MAKES bytes rather than carrying any: every byte it writes is `-`, `.`
+            // or a digit (`SPEC-fixed-decimals` §2.1), so no literal can reach the output
+            // through it. Both children are numeric, and both are inspected — `false`.
+            IrExprKind::Fixed { x, places } => {
+                in_expr(x, false).or_else(|| in_expr(places, false))
+            }
             // …and these do not. A comparison inspects; a call hands the bytes to code this
             // walker is not looking at.
             IrExprKind::Binary { lhs, rhs, .. } => {
@@ -475,6 +497,7 @@ pub fn non_ascii_literal_outside_output(body: &[IrStmt]) -> Option<String> {
 /// | `result[i] = v` | the `ResultSet` bounds check |
 /// | `byte_slice(..) == ..` | the span comparison lowering |
 /// | `return byte_slice(..)` | `emit_concat_return`'s `ml_sublen` bail |
+/// | `fixed(x, n)` | `emit_concat_return`'s `ml_fixlen` bail |
 ///
 /// **Exhaustive on purpose.** A new IR variant that can bail with `-2` has to answer here or
 /// the crate does not build — which is the only mechanism that has ever worked for this
@@ -484,6 +507,13 @@ pub fn can_fail_out_of_range(body: &[IrStmt]) -> bool {
         match &e.kind {
             // Both of these carry a bounds check wherever they are lowered.
             IrExprKind::Index { .. } | IrExprKind::ByteSlice { .. } => true,
+            // `fixed` is here for a DIFFERENT reason than the two above, and that is why it
+            // is its own arm: nothing about it is an index. It reports `-2` for the three
+            // conditions `SPEC-fixed-decimals` §2.4 lists — a NaN or infinite `x`, a
+            // non-literal `places` outside 0..=9, and a scaled value past i64 — because a
+            // new reserved status would drag in the documentation and guard cost #238
+            // measured. The status is shared; the reason a host sees it is not.
+            IrExprKind::Fixed { .. } => true,
             IrExprKind::Unary { operand, .. }
             | IrExprKind::Cast { operand, .. }
             | IrExprKind::ByteLen(operand) => in_expr(operand),
@@ -539,6 +569,11 @@ pub fn compares_a_span(body: &[IrStmt]) -> bool {
             | IrExprKind::Cast { operand, .. }
             | IrExprKind::ByteLen(operand) => in_expr(operand),
             IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
+            // A span cannot be an argument to `fixed` — both parameters are numeric — but the
+            // children are walked anyway, because this walker's job is to find a comparison
+            // ANYWHERE beneath, and "no span can reach here" is a fact about today's
+            // signature rather than about the node.
+            IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
             IrExprKind::Index { index, .. } => in_expr(index),
             IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
             IrExprKind::Len { .. }

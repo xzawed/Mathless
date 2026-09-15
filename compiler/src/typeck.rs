@@ -133,6 +133,14 @@ pub const BYTE_LEN_BUILTIN: &str = "byte_len";
 /// `byte_slice(s, from, to)` — the half-open span of a borrowed string (`SPEC-string-slice`).
 pub const BYTE_SLICE_BUILTIN: &str = "byte_slice";
 
+/// `fixed(x, places)` — fixed-point decimal text (`SPEC-fixed-decimals`).
+pub const FIXED_BUILTIN: &str = "fixed";
+
+/// The most decimal places `fixed` will produce. An f64 carries about 15–16 significant
+/// digits, so a tenth place is past what the value can justify — and this slice exists
+/// because silently producing digits nobody can trust is the defect it closes.
+pub const FIXED_MAX_PLACES: i32 = 9;
+
 /// The name that means "the array this function returns" (SPEC-array-return DP-R7).
 ///
 /// **Not a keyword.** It follows `len` rather than `if`: the name only means the return buffer
@@ -273,6 +281,13 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
                 "function '{}' collides with the built-in `{BYTE_LEN_BUILTIN}` — rename it \
                  (`{BYTE_LEN_BUILTIN}(s)` counts a string's bytes up to the NUL and returns \
                  i32)",
+                f.name
+            )));
+        }
+        if f.name == FIXED_BUILTIN {
+            return Err(TypeError::new(format!(
+                "function '{}' collides with the built-in `{FIXED_BUILTIN}` — rename it \
+                 (`{FIXED_BUILTIN}(x, places)` renders an f64 as fixed-point decimal text)",
                 f.name
             )));
         }
@@ -1330,6 +1345,9 @@ fn check_stmt(
                     IrExprKind::ConstStr(_)
                         | IrExprKind::Var { .. }
                         | IrExprKind::Concat(_)
+                        // The fourth built form. Like the others it has no value until
+                        // `return` writes it into the caller's buffer.
+                        | IrExprKind::Fixed { .. }
                         // A span is the third built form (SPEC-string-slice). Like a
                         // concatenation it has no value until `return` copies it into the
                         // caller's buffer, which is why this is the only position it may
@@ -1546,6 +1564,9 @@ fn is_built_string(e: &IrExpr) -> bool {
         // Pieces appended into the caller's buffer, and the digits of `n as string` — both
         // are bytes this module produces.
         IrExprKind::Concat(_) | IrExprKind::Cast { .. } => true,
+        // Digits this module renders, exactly like `n as string`: they exist only while they
+        // are written into the caller's buffer.
+        IrExprKind::Fixed { .. } => true,
         // A span is bytes COPIED into the caller's buffer at `return`, not a pointer into the
         // borrowed string: there is no NUL at `to`, so handing `s + from` to anything that
         // expects a C string would read past the span. The SPEC calls this the slice's
@@ -1867,6 +1888,50 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             Ok(IrExpr {
                 ty: IrType::I32,
                 kind: IrExprKind::ByteLen(Box::new(arg)),
+            })
+        }
+        Expr::Call { name, args } if name == FIXED_BUILTIN => {
+            if args.len() != 2 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{FIXED_BUILTIN}` takes exactly two arguments — a \
+                     f64 and an i32 count of decimal places — found {}",
+                    args.len()
+                )));
+            }
+            let x = check_expr(&args[0], scope, fname, sigs)?;
+            if x.ty != IrType::F64 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': `{FIXED_BUILTIN}` formats an f64, found {} — there is \
+                     no implicit conversion (write `{} as f64` if that is what you mean)",
+                    x.ty, x.ty
+                )));
+            }
+            let places = check_expr(&args[1], scope, fname, sigs)?;
+            if places.ty != IrType::I32 {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': the places count of `{FIXED_BUILTIN}` must be i32, \
+                     found {}",
+                    places.ty
+                )));
+            }
+            // A literal count is checked where the diagnostic is good; a computed one becomes
+            // ML_ST_INDEX_OUT_OF_RANGE at run time, the same split `byte_slice` uses.
+            if let Some(n) = i32_literal(&places) {
+                if !(0..=FIXED_MAX_PLACES).contains(&n) {
+                    return Err(TypeError::new(format!(
+                        "function '{fname}': `{FIXED_BUILTIN}` was asked for {n} decimal \
+                         places, and the range is 0..={FIXED_MAX_PLACES}. An f64 carries about \
+                         15 significant digits, so a tenth place would be digits the value \
+                         cannot justify"
+                    )));
+                }
+            }
+            Ok(IrExpr {
+                ty: IrType::Str,
+                kind: IrExprKind::Fixed {
+                    x: Box::new(x),
+                    places: Box::new(places),
+                },
             })
         }
         Expr::Call { name, args } if name == BYTE_SLICE_BUILTIN => {

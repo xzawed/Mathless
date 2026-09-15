@@ -178,7 +178,11 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
     // already pulled in, since a span IS a built string.
     emit_span_helpers(module, &mut out);
     emit_span_compare_helper(module, &mut out);
+    // Before both of its users, because both call `ml_trunc_raw`. Rust does not care about
+    // definition order, but a reader does, and so does the next person adding a third caller.
+    emit_trunc_helpers(module, &mut out);
     emit_rounding_helpers(module, &mut out);
+    emit_fixed_helpers(module, &mut out);
 
     for f in &module.functions {
         emit_function(f, &mut out)?;
@@ -576,6 +580,11 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                 IrExprKind::ByteSlice { .. } => {
                     emit_concat_return(core::slice::from_ref(e), indent, out)
                 }
+                // And so does a lone `fixed(x, n)`, for the same reason and one more: it is
+                // not a pointer at all. `ml_strout` would take the f64's bits as an address.
+                IrExprKind::Fixed { .. } => {
+                    emit_concat_return(core::slice::from_ref(e), indent, out)
+                }
                 // Borrowed: one pointer, the #92 path, unchanged. Spelled out rather than
                 // `_`, because "everything else is already a pointer" is a fact about
                 // today's variants, not about the enum — a new string-shaped one would be
@@ -781,6 +790,12 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         IrExprKind::ByteSlice { .. } => {
             unreachable!("a span is only lowered at `return` — typeck rejects every other position")
         }
+        // Third of the same family. `is_built_string` answers `true` for `fixed`, so typeck
+        // confines it to `return` and nothing here can produce it as a value: its bytes exist
+        // only once there is a buffer to put them in.
+        IrExprKind::Fixed { .. } => unreachable!(
+            "`fixed` is only lowered at `return` — typeck rejects every other position"
+        ),
         // A static, NUL-terminated byte array: no allocation, and the NUL makes the module's
         // view of the bytes identical to the C caller's (SPEC-string-input DP-S1).
         // A byte string, with everything outside printable ASCII written as `\xNN`.
@@ -1122,12 +1137,24 @@ enum PieceKind<'a> {
         from: &'a IrExpr,
         to: &'a IrExpr,
     },
+    /// Decimal digits the module COMPUTES: `fixed(x, places)`.
+    ///
+    /// Not `Digits`, which is `<i32> as string` and reaches `ml_ilen`/`ml_wint` — those take
+    /// an `i32` and `fixed`'s value is an f64 that has not been scaled yet. Not `Bytes`
+    /// either: there is no pointer here at all, so the fallback would hand `ml_slen` an f64's
+    /// bit pattern as an address. Like `Span`, it binds more than one value and is sized by
+    /// its own helper (`SPEC-fixed-decimals` §2.4).
+    Decimal {
+        x: &'a IrExpr,
+        places: &'a IrExpr,
+    },
 }
 
 fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
     match &p.kind {
         IrExprKind::Cast { operand, .. } => PieceKind::Digits { operand },
         IrExprKind::ByteSlice { s, from, to } => PieceKind::Span { s, from, to },
+        IrExprKind::Fixed { x, places } => PieceKind::Decimal { x, places },
         // Array elements are scalars, so neither of these is ever `Str` and neither can reach
         // a concatenation. Named rather than lumped in below, because "already a pointer" is
         // false for both — treating one as an address is the bug this match exists to prevent.
@@ -1175,8 +1202,9 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             PieceKind::Bytes => emit_expr(p, RetAbi::StringOut),
             // A span binds three values, not one, and is emitted separately below so the
             // offsets are evaluated exactly once — the same guarantee the note above earns
-            // for the other kinds.
-            PieceKind::Span { .. } => continue,
+            // for the other kinds. `fixed` is the same: two values, and a scaling step whose
+            // result both passes must share.
+            PieceKind::Span { .. } | PieceKind::Decimal { .. } => continue,
         };
         let _ = writeln!(out, "{pad}let __p{i} = {e};");
     }
@@ -1208,6 +1236,41 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             );
         }
     }
+    // `fixed`: scale ONCE, here, and let both passes read the scaled integer.
+    //
+    // The same ordering rule the spans above follow, and for the same D17 reason — the three
+    // ways `fixed` can have no answer (`SPEC-fixed-decimals` §2.4: a NaN or infinite `x`, a
+    // `places` outside 0..=9, a product past i64) are decided before `*ml_needed` is written
+    // and before a byte is copied. And the same anti-drift rule `ml_wint` follows: the width
+    // pass 1 uses is the width pass 2 fills, because `ml_wfix` asks `ml_fixlen` rather than
+    // counting again.
+    //
+    // Note the binding order across the three loops above is BY KIND, not by source position:
+    // `"a" + byte_slice(..) + fixed(..)` binds the literal, then the span, then the decimal.
+    // Nothing observes that today — the language has no side effects and both out-of-range
+    // kinds bail with the same status — but the day either changes, the piece that reports
+    // first will stop being the leftmost one. Written down rather than restructured, because
+    // the alternative is one loop that must then re-derive which kind it is looking at.
+    for (i, p) in pieces.iter().enumerate() {
+        if let PieceKind::Decimal { x, places } = piece_kind(p) {
+            let _ = writeln!(
+                out,
+                "{pad}let __x{i} = {};",
+                emit_expr(x, RetAbi::StringOut)
+            );
+            let _ = writeln!(
+                out,
+                "{pad}let __k{i} = {};",
+                emit_expr(places, RetAbi::StringOut)
+            );
+            let _ = writeln!(out, "{pad}let (__v{i}, __ok{i}) = ml_fixscale(__x{i}, __k{i});");
+            let _ = writeln!(
+                out,
+                "{pad}if !__ok{i} {{ return {}; }}",
+                crate::abi::ML_ST_INDEX_OUT_OF_RANGE
+            );
+        }
+    }
     // Pass 1 — count. One byte for the NUL is always needed, so `__n` starts at 1 and an
     // empty result is 1, never 0. That keeps `*needed == 0` impossible, exactly as #92.
     let _ = writeln!(out, "{pad}let mut __n: i32 = 1;");
@@ -1223,6 +1286,11 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             // would count to the source's NUL and size the buffer for the whole suffix.
             PieceKind::Span { .. } => {
                 let _ = writeln!(out, "{pad}__n += __l{i};");
+            }
+            // From the scaled integer bound above — never from the f64, which would need the
+            // same decisions taken twice.
+            PieceKind::Decimal { .. } => {
+                let _ = writeln!(out, "{pad}__n += ml_fixlen(__v{i}, __k{i});");
             }
         }
     }
@@ -1254,6 +1322,13 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
                     "{pad}__o = ml_wsub(ml_buf, __o, __s{i}, __f{i}, __l{i}, ml_cap);"
                 );
             }
+            // No `ml_cap` bound, unlike the two above, and the reason is the difference
+            // between them: those two COPY from a host pointer that may alias the output
+            // buffer. These bytes come from an i64 in a register, so the only address in
+            // play is the destination — and `ml_cap >= __n` was checked above.
+            PieceKind::Decimal { .. } => {
+                let _ = writeln!(out, "{pad}__o = ml_wfix(ml_buf, __o, __v{i}, __k{i});");
+            }
         }
     }
     let _ = writeln!(out, "{pad}unsafe {{ *ml_buf.add(__o as usize) = 0; }}");
@@ -1281,6 +1356,8 @@ fn uses_byte_len(module: &IrModule) -> bool {
             // A span does not itself call `byte_len`, but its offsets can — and typically do
             // (`byte_slice(s, 2, byte_len(s))` is the idiom DP-B2 was chosen for).
             IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
+            // Same: `fixed(x, byte_len(s))` is a legal place count, so the count is walked.
+            IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
             IrExprKind::Index { index, .. } => in_expr(index),
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
             IrExprKind::Unary { operand, .. } | IrExprKind::Cast { operand, .. } => {
@@ -1320,6 +1397,10 @@ fn builds_strings(module: &IrModule) -> bool {
             // A span IS a built string (`is_built_string` says so), and it is emitted through
             // the concat writer, so the module needs the whole helper set.
             IrExprKind::ByteSlice { .. } => true,
+            // So is `fixed`, by the same test and through the same writer. A module whose
+            // only output is `return fixed(x, 2)` still needs `ml_slen` — `emit_concat_return`
+            // is one emitter, and the gate that feeds it cannot be narrower than it is.
+            IrExprKind::Fixed { .. } => true,
             // Reads a string, never builds one — but its operand is an ordinary expression,
             // unlike `Len`'s bare array name, so the subtree is walked.
             IrExprKind::ByteLen(operand) => in_expr(operand),
@@ -1473,6 +1554,8 @@ fn compares_strings(module: &IrModule) -> bool {
             // Builds a string without comparing one — but all three children are subtrees, so
             // a comparison nested in an offset still has to be found.
             IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
+            // Likewise: `fixed(rate(a == b), 2)` compares strings inside a formatted number.
+            IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
             // Reads a string without comparing it — but its operand is a subtree, so a
             // comparison nested inside still has to be found.
             IrExprKind::ByteLen(operand) => in_expr(operand),
@@ -1554,6 +1637,9 @@ fn uses_byte_slice(module: &IrModule) -> bool {
     fn in_expr(e: &IrExpr) -> bool {
         match &e.kind {
             IrExprKind::ByteSlice { .. } => true,
+            // `false` for the node, `true` for its subtrees: `fixed` needs no span helper of
+            // its own, but `fixed(x, byte_len(byte_slice(s, 0, 2)))` puts one underneath.
+            IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
             IrExprKind::Index { index, .. } => in_expr(index),
             IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
             IrExprKind::Unary { operand, .. }
@@ -1711,6 +1797,13 @@ fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
                 walk_expr(from, found);
                 walk_expr(to, found);
             }
+            // This one is not hypothetical: `fixed(round(x), 0)` is the obvious way to write
+            // "rounded, no decimals", and missing it here would emit a call to `ml_round`
+            // with no `fn ml_round` anywhere — #158's defect, in this helper family.
+            IrExprKind::Fixed { x, places } => {
+                walk_expr(x, found);
+                walk_expr(places, found);
+            }
             IrExprKind::Call { name, args, .. } => {
                 if let Some(b) = crate::typeck::Rounder::from_name(name) {
                     if !found.contains(&b) {
@@ -1781,9 +1874,16 @@ fn used_rounders(module: &IrModule) -> Vec<crate::typeck::Rounder> {
 /// and taking `libm` would end this repo's zero-third-party-dependency property. These are
 /// written with core operations only and are bit-exact with `std` (measured, including the
 /// sign of zero).
-fn emit_rounding_helpers(module: &IrModule, out: &mut String) {
-    let used = used_rounders(module);
-    if used.is_empty() {
+/// Exact truncation, shared by the rounders and by `fixed`.
+///
+/// Split onto its own gate when `fixed` arrived, because leaving it inside
+/// [`emit_rounding_helpers`] would have forced one of two wrong answers: widen `used_rounders`
+/// so a `fixed`-only module also gets `ml_round`, `ml_floor` and friends it never calls, or
+/// give `fixed` a second copy of the truncation — and §9-47's lesson is that a widened gate
+/// over-emits as easily as a narrow one under-emits. A second copy would be worse still: the
+/// half-away-from-zero rule is measured, and two copies are two chances to get it wrong.
+fn emit_trunc_helpers(module: &IrModule, out: &mut String) {
+    if used_rounders(module).is_empty() && !uses_fixed(module) {
         return;
     }
     // 2^53. At or above it every f64 is already an integer, so nothing needs doing — and
@@ -1795,8 +1895,19 @@ fn emit_rounding_helpers(module: &IrModule, out: &mut String) {
          \x20   if x != x { return x; }\n\
          \x20   if x >= ML_INTEGRAL || x <= -ML_INTEGRAL { return x; }\n\
          \x20   (x as i64) as f64\n\
-         }\n\
-         // Carry x's sign onto a zero result: IEEE gives a product the XOR of the operand\n\
+         }\n\n",
+    );
+}
+
+fn emit_rounding_helpers(module: &IrModule, out: &mut String) {
+    let used = used_rounders(module);
+    if used.is_empty() {
+        return;
+    }
+    // `ml_sz` stays HERE rather than moving up with the truncation: `fixed` produces an i64,
+    // which has no signed zero, so it is the rounders and only the rounders that need this.
+    out.push_str(
+        "// Carry x's sign onto a zero result: IEEE gives a product the XOR of the operand\n\
          // signs, so `x * 0.0` is exactly \"zero with x's sign\". Without this, ceil(-0.5)\n\
          // would be +0.0 and C would disagree (DP-R3).\n\
          fn ml_sz(r: f64, x: f64) -> f64 { if r == 0.0 { x * 0.0 } else { r } }\n",
@@ -1825,6 +1936,149 @@ fn emit_rounding_helpers(module: &IrModule, out: &mut String) {
         }
     }
     out.push('\n');
+}
+
+/// Does this module call `fixed(x, places)` anywhere?
+///
+/// Exhaustive, like its neighbours, and with the same consequence if it were not: a module
+/// whose only `fixed` sat inside a concatenation piece would compile here and then fail
+/// inside the generated crate with `cannot find function ml_fixscale` — a valid program
+/// rejected by an error in code the user never wrote (#158).
+fn uses_fixed(module: &IrModule) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::Fixed { .. } => true,
+            IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            IrExprKind::Unary { operand, .. }
+            | IrExprKind::Cast { operand, .. }
+            | IrExprKind::ByteLen(operand) => in_expr(operand),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    fn in_stmts(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                in_expr(cond) || in_stmts(body)
+            }
+            IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
+            IrStmt::ResultLen(e)
+            | IrStmt::Return(e)
+            | IrStmt::Let { value: e, .. }
+            | IrStmt::Assign { value: e, .. }
+            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+            IrStmt::Fail(_) => false,
+        })
+    }
+    module.functions.iter().any(|f| in_stmts(&f.body))
+}
+
+/// The three helpers `fixed(x, places)` needs, and why none of them is a reuse.
+///
+/// `ml_ilen`/`ml_wint` are the closest thing already here, and they take an `i32` — which is
+/// exactly what `SPEC-fixed-decimals` §2.3 forbids: the measured workaround answered
+/// `"21474836.47"` for fifty million because `as i32` saturates. These work in i64 and the
+/// scaling is done once, before either pass, so the two passes cannot disagree.
+fn emit_fixed_helpers(module: &IrModule, out: &mut String) {
+    if !uses_fixed(module) {
+        return;
+    }
+    out.push_str(
+        "fn ml_fixscale(x: f64, k: i32) -> (i64, bool) {\n\
+         \x20   // `x` as a whole number of 10^-k units, or `false` if there is no such\n\
+         \x20   // number. The caller turns that into ML_ST_INDEX_OUT_OF_RANGE — a shared\n\
+         \x20   // status, because a new reserved one costs what #238 measured (DP-M4).\n\
+         \x20   //\n\
+         \x20   // `k` is re-checked here and not only in the typechecker, because only a\n\
+         \x20   // LITERAL count can be checked there: `fixed(x, n)` for a parameter arrives\n\
+         \x20   // at run time.\n\
+         \x20   if k < 0 || k > 9 { return (0, false); }\n\
+         \x20   let mut p: f64 = 1.0;\n\
+         \x20   let mut i: i32 = 0;\n\
+         \x20   while i < k { p *= 10.0; i += 1; }\n\
+         \x20   let s = x * p;\n\
+         \x20   // Half away from zero — the direction `ml_round` takes, computed the way\n\
+         \x20   // `ml_round` computes it. NOT `floor(s + 0.5)`: that answers 1 for\n\
+         \x20   // 0.49999999999999994. `d` is exact on both sides of 2^53, for two different\n\
+         \x20   // reasons: below it `s - trunc(s)` is exact, and at or above it every f64 is\n\
+         \x20   // already an integer, so `ml_trunc_raw` returns `s` and `d` is exactly 0.\n\
+         \x20   // (An earlier version of this comment claimed every surviving value was\n\
+         \x20   // below 2^53. That is false — the range check below admits up to ~2^63 —\n\
+         \x20   // and the code was right for the reason the sentence did not give.)\n\
+         \x20   let t = ml_trunc_raw(s);\n\
+         \x20   let d = s - t;\n\
+         \x20   let r = if d >= 0.5 { t + 1.0 } else if d <= -0.5 { t - 1.0 } else { t };\n\
+         \x20   // Three refusals in one test. `r != r` catches NaN, which fails the other two\n\
+         \x20   // as well (every comparison with NaN is false) and would otherwise pass. 2^63\n\
+         \x20   // is exactly representable, so `>=` is the true i64 ceiling and an infinity\n\
+         \x20   // fails it. The floor is written one representable value ABOVE i64::MIN so\n\
+         \x20   // that the `-v` in the two helpers below cannot overflow — one value refused,\n\
+         \x20   // against an arithmetic overflow in the middle of formatting.\n\
+         \x20   if r != r || r <= -9223372036854775808.0 || r >= 9223372036854775808.0 {\n\
+         \x20       return (0, false);\n\
+         \x20   }\n\
+         \x20   (r as i64, true)\n\
+         }\n\n\
+         fn ml_fixlen(v: i64, k: i32) -> i32 {\n\
+         \x20   // Width of `[-]<int>.<k digits>`. Three rules, and the measured workaround in\n\
+         \x20   // `SPEC-fixed-decimals` §0.1 broke each of them separately: the integer part\n\
+         \x20   // is at least one digit (`0.07`, never `.07`), the fraction is exactly `k`\n\
+         \x20   // digits, and the sign is counted ONCE at the front (`-0.07`, never `0.-7`).\n\
+         \x20   let neg = v < 0;\n\
+         \x20   let mut m: i64 = if neg { -v } else { v };\n\
+         \x20   let mut i: i32 = 0;\n\
+         \x20   while i < k { m /= 10; i += 1; }\n\
+         \x20   let mut n: i32 = if neg { 2 } else { 1 };\n\
+         \x20   while m >= 10 { m /= 10; n += 1; }\n\
+         \x20   // The point exists only when there is a fraction to separate (`places == 0`\n\
+         \x20   // is \"1234\", not \"1234.\").\n\
+         \x20   if k > 0 { n + k + 1 } else { n }\n\
+         }\n\n\
+         fn ml_wfix(buf: *mut u8, off: i32, v: i64, k: i32) -> i32 {\n\
+         \x20   // Width comes from ml_fixlen, the same function pass 1 used, then the span is\n\
+         \x20   // filled right-to-left — `ml_wint`'s rule, for `ml_wint`'s reason: two counts\n\
+         \x20   // that could drift would be a write past the end of the host's buffer.\n\
+         \x20   //\n\
+         \x20   // No `cap` bound here, unlike `ml_wstr` and `ml_wsub`. Those two copy FROM a\n\
+         \x20   // host pointer that may alias the output buffer; these bytes come out of an\n\
+         \x20   // i64, so the destination is the only address in play and `ml_cap >= __n` was\n\
+         \x20   // already checked by the caller.\n\
+         \x20   let w = ml_fixlen(v, k);\n\
+         \x20   let neg = v < 0;\n\
+         \x20   let mut m: i64 = if neg { -v } else { v };\n\
+         \x20   let mut i = off + w;\n\
+         \x20   // The fraction first: exactly `k` digits, zero-filled. That zero fill is the\n\
+         \x20   // `\"1234.5\"`-for-1234.05 defect, closed by construction — the loop runs `k`\n\
+         \x20   // times whatever `m` holds.\n\
+         \x20   let mut j: i32 = 0;\n\
+         \x20   while j < k {\n\
+         \x20       i -= 1;\n\
+         \x20       unsafe { *buf.add(i as usize) = b'0' + (m % 10) as u8; }\n\
+         \x20       m /= 10;\n\
+         \x20       j += 1;\n\
+         \x20   }\n\
+         \x20   if k > 0 { i -= 1; unsafe { *buf.add(i as usize) = b'.'; } }\n\
+         \x20   // The integer part, at least one digit even when it is zero.\n\
+         \x20   loop {\n\
+         \x20       i -= 1;\n\
+         \x20       unsafe { *buf.add(i as usize) = b'0' + (m % 10) as u8; }\n\
+         \x20       m /= 10;\n\
+         \x20       if m == 0 { break; }\n\
+         \x20   }\n\
+         \x20   // Once, at the front, and only when the SCALED value is negative — so a `x`\n\
+         \x20   // that rounds to zero prints \"0.00\" and never \"-0.00\" (DP-M6).\n\
+         \x20   if neg { unsafe { *buf.add((i - 1) as usize) = b'-'; } }\n\
+         \x20   off + w\n\
+         }\n\n",
+    );
 }
 
 fn op_str(op: IrBinOp) -> &'static str {

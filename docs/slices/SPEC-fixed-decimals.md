@@ -1,6 +1,8 @@
 # SPEC — 고정 소수 포맷 `fixed(x, places)`
 
-- **상태: 초안 · 사용자 확인 대기.** DP-M1~M6에 권고가 붙어 있다.
+- **상태: 확정 · 구현 완료(2026-09-15).** DP-M1~M6 **전부 권고대로** 확정됐다(사용자 확인).
+  수용 A~K 전부 실측했다 — 값은 오라클 `tests/fixed_decimals.rs`, 호스트 절반은
+  `hosts/c-host/host.c`의 `money.dll` 구역이다.
 - 선행: `SPEC-string-concat.md`(DP-K9 — 모듈이 만드는 바이트) · `SPEC-string-return.md`(Q12) ·
   `SPEC-numeric-conversion.md`(**`f64 as i32`는 절단 후 포화** — 기록된 결정) ·
   `SPEC-rounding.md`(`round`는 **0에서 먼 쪽**)

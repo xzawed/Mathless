@@ -59,6 +59,7 @@
 #include "carrier.h"
 #include "account.h"
 #include "claim.h"
+#include "money.h"
 #include "quote.h"
 #include "receipt.h"
 #include "basket.h"
@@ -122,6 +123,11 @@ typedef int32_t (*is_bank_fn)(const char *, bool *);
 /* A module that returns UTF-8 does not change the C ABI by one byte: the triple is the same
    one an ASCII label uses. What changes is only what `ml_needed` counts up to. */
 typedef int32_t (*label_fn)(const char *, char *, int32_t, int32_t *);
+/* A formatted number leaves the module through the same Q12 triple as any other string. What
+   is new is only where the bytes come from: the module computes them from a double instead of
+   copying them out of memory the host owns. The C ABI does not learn that, and this typedef
+   is where "does not learn" is checked at compile time. */
+typedef int32_t (*fixed_fn)(double, char *, int32_t, int32_t *);
 typedef int32_t (*unit_price_fn)(double, int32_t, double *);
 typedef int32_t (*line_check_fn)(int32_t, int32_t *, int32_t *);
 /* The concat slice does not change the C ABI: a built string is declared exactly like a
@@ -853,6 +859,85 @@ int main(int argc, char **argv) {
         check(strcmp(buf, "088\xEB\xB2\x88 \xEA\xB3\x84\xEC\xA2\x8C") == 0,
               "a span plus a Korean suffix, byte for byte");
         check(needed == 14, "3 + 10 bytes plus the NUL");
+    }
+
+    /* --- money.dll: a number the MODULE formats (SPEC-fixed-decimals acceptance J).
+       Section 9-53 measured the documented in-module workaround answering "1234.5" for
+       1234.05, "0.-7" for -0.07 and "21474836.47" for fifty million, all with status 0. A C
+       host is the right place to close that, for two reasons. The obvious one is that this is
+       where the result is consumed. The other is the import table: if formatting had reached
+       for snprintf, this host's link would be the first thing to notice, and the protection
+       proxies SECURITY.md records would have moved. --- */
+    HMODULE mny = load(dir, "money.dll", expected_abi, ML_MONEY_IFACE_HASH);
+    if (mny == NULL) {
+        return 1;
+    }
+    fixed_fn amount = (fixed_fn)sym(mny, "mlx_amount");
+    fixed_fn labelled = (fixed_fn)sym(mny, "mlx_labelled");
+    fixed_fn rate = (fixed_fn)sym(mny, "mlx_rate");
+    if (amount && labelled && rate) {
+        char buf[64];
+        int32_t needed;
+        int32_t st;
+        /* An infinity, built through a volatile: MSVC refuses to COMPILE `1.0 / 0.0` as a
+           constant expression (C2124), so the division has to survive to run time. */
+        volatile double zero = 0.0;
+
+        /* The five rows section 9-53 measured, in the host that would have shipped them. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = amount(1234.05, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "1234.05") == 0, "the ten-jeon zero is not dropped");
+        check(needed == 8, "seven bytes plus the NUL");
+
+        memset(buf, 0, sizeof buf);
+        st = amount(-0.07, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "-0.07") == 0, "one sign, at the front");
+
+        memset(buf, 0, sizeof buf);
+        st = amount(50000000.0, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "50000000.00") == 0, "no i32 saturation on the way out");
+
+        /* A value that rounds to zero has no sign: "-0.00" would be the same defect as the
+           "0.-7" above, one place further along. */
+        memset(buf, 0, sizeof buf);
+        st = amount(-0.004, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "0.00") == 0, "a value rounding to zero is unsigned");
+
+        /* A value with no decimal form is a status, and the buffer is left alone (D17). */
+        memset(buf, 0xAA, sizeof buf);
+        needed = -7;
+        st = amount(1.0 / zero, buf, (int32_t)sizeof buf, &needed);
+        check(st == ML_ST_INDEX_OUT_OF_RANGE, "infinity has no decimal form");
+        check((unsigned char)buf[0] == 0xAA, "and a failed call writes no bytes");
+
+        /* Past i64 once scaled: a status, not a wrapped number. This is the row section 9-53
+           measured as "21474836.47" - five orders of magnitude out, silently - and it is the
+           reason the lowering works in i64 rather than in the i32 the workaround reached for.
+           The boundary itself is measured in the oracle; what matters here is that a C caller
+           is TOLD rather than handed a plausible number. */
+        memset(buf, 0xAA, sizeof buf);
+        needed = -7;
+        st = amount(1e300, buf, (int32_t)sizeof buf, &needed);
+        check(st == ML_ST_INDEX_OUT_OF_RANGE, "past i64 is a status");
+        check((unsigned char)buf[0] == 0xAA, "and writes no bytes either");
+
+        /* Concatenated, and scaled: the two ordinary uses. */
+        memset(buf, 0, sizeof buf);
+        needed = -7;
+        st = labelled(1234.05, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "KRW 1234.05") == 0, "a formatted number is a piece");
+        check(needed == 12, "the two sizing passes agree about a computed width");
+
+        memset(buf, 0, sizeof buf);
+        st = rate(0.0825, buf, (int32_t)sizeof buf, &needed);
+        check(st == 0 && strcmp(buf, "8.3%") == 0, "one place, rounded away from zero");
+
+        /* The probe, unchanged by any of this. */
+        needed = -7;
+        st = amount(50000000.0, NULL, 0, &needed);
+        check(st == ML_ST_INSUFFICIENT_BUFFER, "probe (NULL, 0) does not crash");
+        check(needed == 12, "and reports the exact size");
     }
 
     /* --- quote.dll: a status propagated out of a reused internal helper

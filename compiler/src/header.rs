@@ -139,6 +139,12 @@ fn returns_non_ascii_bytes(module: &IrModule) -> bool {
             crate::ir::IrExprKind::ConstStr(s) => !s.is_ascii(),
             crate::ir::IrExprKind::Concat(pieces) => pieces.iter().any(in_expr),
             crate::ir::IrExprKind::ByteSlice { s, .. } => in_expr(s),
+            // `false`, and this is the arm where saying so is worth a line: `fixed` emits
+            // only `-`, `.` and `0`-`9` (`SPEC-fixed-decimals` §2.1), so a module whose only
+            // output is a formatted number carries no UTF-8 and must not gain the notice.
+            // Its children are numeric and cannot hold a literal, but they are walked for the
+            // same reason the other arms walk theirs.
+            crate::ir::IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
             crate::ir::IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
             crate::ir::IrExprKind::Unary { operand, .. }
             | crate::ir::IrExprKind::Cast { operand, .. }

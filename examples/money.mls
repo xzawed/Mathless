@@ -1,0 +1,40 @@
+// fixed-decimals slice: the money rule STATUS section 9-46 filed as "inside the module", and
+// section 9-53 then measured ANSWERING WRONG.
+//
+// Section 9-38's yardstick asks one question of a workaround - does it push work onto the
+// host? - and by that question this rule was fine: an author could write the whole thing in
+// Mathless. So it was filed and dropped. Section 9-53 ran the filed workaround and read the
+// values back:
+//
+//     let cents = round(won * 100.0) as i32
+//     return (cents / 100) as string + "." + (cents % 100) as string
+//
+//     1234.50   -> "1234.50"   correct
+//     1234.05   -> "1234.5"    the ten-jeon zero disappears
+//    -1234.05   -> "-1234.-5"  a second sign, in the middle
+//       -0.07   -> "0.-7"      the sign leaves the front entirely
+//    50000000   -> "21474836.47"  `as i32` saturates
+//
+// All five status 0, no warning. That is the column the yardstick did not have: inside the
+// module, and silently wrong. The primitives were each to spec - saturation is recorded in
+// SPEC-numeric-conversion, the rounding direction is measured in SPEC-rounding - and the
+// ASSEMBLY is what was wrong. Assembly is the author's job, and three separate things have to
+// be right at once for it to work.
+//
+// So `fixed` does the assembly once, in the compiler, where the tests are.
+
+export fn amount(won: f64) -> string! {
+  return fixed(won, 2)
+}
+
+// It composes: a formatted number is a concatenation piece like any other, which is where the
+// two-pass buffer sizing has to agree about a width nobody has measured yet.
+export fn labelled(won: f64) -> string! {
+  return "KRW " + fixed(won, 2)
+}
+
+// A different place count, and a value the host would otherwise have to scale itself. `0.0825`
+// is a tax rate, not money - which is why the builtin is not called `money`.
+export fn rate(fraction: f64) -> string! {
+  return fixed(fraction * 100.0, 1) + "%"
+}

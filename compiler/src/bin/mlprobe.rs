@@ -293,7 +293,7 @@ fn generate_harness(
             }
             IrType::F64 => {
                 let v: f64 = a.parse().map_err(|_| format!("'{a}' is not an f64"))?;
-                call.push(format!("{v:?}f64"));
+                call.push(f64_literal(v));
             }
             IrType::I32 => {
                 let v: i32 = a.parse().map_err(|_| format!("'{a}' is not an i32"))?;
@@ -468,6 +468,27 @@ fn byte_string_nul(s: &str) -> String {
     lit
 }
 
+/// One f64 as a Rust expression the harness can compile.
+///
+/// `{:?}` round-trips every FINITE f64 and was used directly until `fixed` needed the three
+/// values that are not finite: it renders them `NaN`, `inf` and `-inf`, which became `NaNf64`
+/// and `inff64` in the harness and did not compile. Those three are exactly the inputs
+/// `SPEC-fixed-decimals` §2.4 says must answer `-2`, so a probe that cannot express them
+/// cannot measure the acceptance criterion.
+fn f64_literal(v: f64) -> String {
+    if v.is_nan() {
+        return "f64::NAN".to_string();
+    }
+    if v.is_infinite() {
+        return if v > 0.0 {
+            "f64::INFINITY".to_string()
+        } else {
+            "f64::NEG_INFINITY".to_string()
+        };
+    }
+    format!("{v:?}f64")
+}
+
 fn parse_list(a: &str, e: &IrArrayElem) -> Result<String, String> {
     if a == "-" || a.is_empty() {
         return Ok(String::new());
@@ -476,10 +497,9 @@ fn parse_list(a: &str, e: &IrArrayElem) -> Result<String, String> {
     for part in a.split(',') {
         let p = part.trim();
         items.push(match e {
-            IrArrayElem::F64 => format!(
-                "{:?}f64",
+            IrArrayElem::F64 => f64_literal(
                 p.parse::<f64>()
-                    .map_err(|_| format!("'{p}' is not an f64"))?
+                    .map_err(|_| format!("'{p}' is not an f64"))?,
             ),
             IrArrayElem::I32 => format!(
                 "{}i32",

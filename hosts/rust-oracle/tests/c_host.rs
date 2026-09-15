@@ -288,6 +288,12 @@ fn a_real_c_host_loads_and_calls_the_module() {
     let claim = emit_artifacts(include_str!("../../../examples/claim.mls"), "claim", &work)
         .expect("emit claim");
 
+    // The fixed-decimals slice's measured rule. Gated here because acceptance J asks for both
+    // hosts, and because acceptance I is about the import table — which is what a C host
+    // links against.
+    let money = emit_artifacts(include_str!("../../../examples/money.mls"), "money", &work)
+        .expect("emit money");
+
     let quote = emit_artifacts(include_str!("../../../examples/quote.mls"), "quote", &work)
         .expect("emit quote");
 
@@ -607,6 +613,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &carrier.dll,
         &account.dll,
         &claim.dll,
+        &money.dll,
         &quote.dll,
         &receipt.dll,
         &basket.dll,

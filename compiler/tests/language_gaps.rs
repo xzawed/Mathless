@@ -135,6 +135,10 @@ fn string_operations_that_do_not_exist_yet() {
     // (`SPEC-string-length`). 그래서 `GAPS`에서 빠졌다. `s.len`은 **여전히** 거부되지만
     // 그것은 길이가 없어서가 아니라 **필드 접근이 없어서**이고, 그 둘은 다른 공백이다 —
     // §9-38.1이 그 구분을 실측으로 적었다.
+    // 소수 포맷은 더 이상 공백이 아니다 — `fixed(x, places)`가 2026-09-15에 들어왔다
+    // (`SPEC-fixed-decimals`). `x as string`은 **여전히** 거부되지만 그것은 소수를 못 내서가
+    // 아니라 **정밀도를 정하지 않는 변환이 없어서**이고, 그 둘은 다른 공백이다 — `byte_len`이
+    // 들어온 뒤에도 `s.len`이 거부되는 것과 같은 구분이다(§9-38.1).
     rejected(
         "f64 as string",
         "export fn f(x: f64) -> string! { return x as string }",
@@ -261,7 +265,9 @@ const GAPS: &[(&str, &str)] = &[
     // 들어왔다. 공백은 **둘 중 앞의 것**이다.
     ("스팬 대 스팬 비교", "span to span"),
     ("순서 비교", "string ordering"),
-    ("포맷", "f64 as string"),
+    // 고정 소수 포맷은 2026-09-15에 들어왔다. 남은 공백은 **일반** `f64` 포맷이고,
+    // `LANGUAGE.md`의 항목도 그렇게 좁혀 적혀 있다.
+    ("일반 `f64` 포맷", "f64 as string"),
     ("지역 변수", "string local"),
     ("struct", "struct declaration"),
     ("option", "option type"),

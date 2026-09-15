@@ -26,10 +26,7 @@ fn fixed_takes_an_f64_and_a_place_count() {
 fn a_literal_place_count_outside_the_range_is_refused_while_compiling() {
     for bad in ["10", "-1"] {
         let src = format!("export fn f(x: f64) -> string! {{ return fixed(x, {bad}) }}");
-        let err = compile_to_ir(&src)
-            .unwrap_err()
-            .to_string()
-            .to_lowercase();
+        let err = compile_to_ir(&src).unwrap_err().to_string().to_lowercase();
         assert!(
             !err.contains("unknown function"),
             "the builtin is not wired up: {err}"
@@ -59,10 +56,7 @@ fn fixed_refuses_the_wrong_shapes() {
             "export fn f(x: f64) -> string! { return fixed(x, 2.0) }",
             "i32",
         ),
-        (
-            "export fn f(x: f64) -> string! { return fixed(x) }",
-            "two",
-        ),
+        ("export fn f(x: f64) -> string! { return fixed(x) }", "two"),
     ] {
         let err = compile_to_ir(src)
             .expect_err("must be refused")
@@ -72,7 +66,10 @@ fn fixed_refuses_the_wrong_shapes() {
             !err.contains("unknown function"),
             "the builtin is not wired up; this would pass on the wrong diagnostic: {err}"
         );
-        assert!(err.contains(needle), "the refusal must say what it wanted: {err}");
+        assert!(
+            err.contains(needle),
+            "the refusal must say what it wanted: {err}"
+        );
     }
 }
 
@@ -95,8 +92,8 @@ fn a_user_function_may_not_shadow_fixed() {
 /// `format!` or a `{:.2}` would be visible here long before it showed up as an import.
 #[test]
 fn formatting_does_not_reach_for_the_runtime() {
-    let rust = compile_to_rust("export fn f(x: f64) -> string! { return fixed(x, 2) }")
-        .expect("compile");
+    let rust =
+        compile_to_rust("export fn f(x: f64) -> string! { return fixed(x, 2) }").expect("compile");
 
     // The banned idioms are looked for in CODE, with comment lines removed first.
     //
@@ -142,8 +139,8 @@ fn formatting_does_not_reach_for_the_runtime() {
     assert!(!plain.contains("ml_fixscale"), "{plain}");
 
     // …and a module that uses `fixed` but no rounder does not get the named rounders.
-    let only_fixed = compile_to_rust("export fn f(x: f64) -> string! { return fixed(x, 1) }")
-        .expect("compile");
+    let only_fixed =
+        compile_to_rust("export fn f(x: f64) -> string! { return fixed(x, 1) }").expect("compile");
     assert!(
         !only_fixed.contains("fn ml_round"),
         "the named rounders are a separate gate (§9-47's lesson):\n{only_fixed}"

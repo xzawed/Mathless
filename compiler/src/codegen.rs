@@ -1144,10 +1144,7 @@ enum PieceKind<'a> {
     /// either: there is no pointer here at all, so the fallback would hand `ml_slen` an f64's
     /// bit pattern as an address. Like `Span`, it binds more than one value and is sized by
     /// its own helper (`SPEC-fixed-decimals` §2.4).
-    Decimal {
-        x: &'a IrExpr,
-        places: &'a IrExpr,
-    },
+    Decimal { x: &'a IrExpr, places: &'a IrExpr },
 }
 
 fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
@@ -1263,7 +1260,10 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
                 "{pad}let __k{i} = {};",
                 emit_expr(places, RetAbi::StringOut)
             );
-            let _ = writeln!(out, "{pad}let (__v{i}, __ok{i}) = ml_fixscale(__x{i}, __k{i});");
+            let _ = writeln!(
+                out,
+                "{pad}let (__v{i}, __ok{i}) = ml_fixscale(__x{i}, __k{i});"
+            );
             let _ = writeln!(
                 out,
                 "{pad}if !__ok{i} {{ return {}; }}",

@@ -436,9 +436,7 @@ pub fn non_ascii_literal_outside_output(body: &[IrStmt]) -> Option<String> {
             // `fixed` MAKES bytes rather than carrying any: every byte it writes is `-`, `.`
             // or a digit (`SPEC-fixed-decimals` §2.1), so no literal can reach the output
             // through it. Both children are numeric, and both are inspected — `false`.
-            IrExprKind::Fixed { x, places } => {
-                in_expr(x, false).or_else(|| in_expr(places, false))
-            }
+            IrExprKind::Fixed { x, places } => in_expr(x, false).or_else(|| in_expr(places, false)),
             // …and these do not. A comparison inspects; a call hands the bytes to code this
             // walker is not looking at.
             IrExprKind::Binary { lhs, rhs, .. } => {

@@ -343,12 +343,8 @@ fn the_probe_converges_in_exactly_two_calls() {
 #[test]
 fn the_shipped_example_answers_through_a_loaded_module() {
     let out = common::TempOut::new("fixed_example");
-    let arts = emit_artifacts(
-        include_str!("../../../examples/money.mls"),
-        "money",
-        &out,
-    )
-    .expect("emit money");
+    let arts = emit_artifacts(include_str!("../../../examples/money.mls"), "money", &out)
+        .expect("emit money");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load money.dll");
 
     let amount: FixedFn = unsafe { std::mem::transmute(m.symbol(b"mlx_amount\0").unwrap()) };

@@ -582,3 +582,160 @@ fn a_span_comparison_adds_no_import_over_a_comparing_baseline() {
     drop(m);
     drop(base_m);
 }
+
+/// `ml_wsub`'s `cap` hard stop, exercised by the call it exists for.
+///
+/// The span writer carries the same bound as `ml_wstr`, with the same comment — *"`cap` is
+/// still a hard stop for the same aliasing case `ml_wstr` documents"* — and, until this test,
+/// the same amount of evidence: none. `string_concat.rs` now makes the aliased call against
+/// the concat writer; this is the other half, and it is a separate arm of the emitter rather
+/// than the same code reached twice, so one measurement does not cover both.
+///
+/// **Both directions, because they answer differently** and only one of them is the hazard.
+/// Whether an aliased copy eats its own output depends on which way the two pointers lie:
+///
+///   - output BEHIND the source — here `account_body` reads from offset 3 and writes to 0, so
+///     each write lands on a byte already read. The answer is **correct**.
+///   - output AHEAD of the source — each write lands on a byte not yet read, so the copy feeds
+///     on itself. The answer is **wrong**, and the `cap` bound is what keeps it inside the
+///     caller's memory.
+///
+/// A first draft of this test measured only the first direction and would have reported the
+/// bound as exercised. Writing both down is the point: "aliasing is safe" and "aliasing is
+/// correct" are different claims, and only the first one is true.
+///
+/// **In THIS shape the `cap` bound does not fire**, and the reason is worth naming: a span
+/// copies exactly `n` bytes, `n` was fixed by `ml_sublen` before any write, and the caller
+/// already refused the call unless `ml_cap >= __n`. With `__o` still at the counted prefix,
+/// `off + n` cannot reach `cap`. What bounds this particular call is the LENGTH.
+///
+/// That is not the same as "the bound is unreachable" — a first draft of this comment said so
+/// and was wrong. See [`a_span_following_an_aliased_string_piece_still_stops_at_cap`], which
+/// is the shape that reaches it.
+#[test]
+fn a_span_writer_also_refuses_to_run_past_cap_under_aliasing() {
+    let (_out, m) = build(
+        "alias",
+        "account",
+        include_str!("../../../examples/account.mls"),
+    );
+    let body = spanner(&m, b"mlx_account_body\0");
+
+    const CAP: i32 = 16;
+
+    // Direction 1 — output behind the source. Benign, and measured so rather than assumed.
+    let mut arena = [0xAAu8; 96];
+    arena[..11].copy_from_slice(b"0881234567\0");
+    let base = arena.as_mut_ptr();
+    let mut needed = -7i32;
+    let status = body(base as *const c_char, base, CAP, &mut needed);
+    println!(
+        "aliased span, output behind: status={status} needed={needed} bytes={:?}",
+        &arena[..8]
+    );
+    assert_eq!(status, 0);
+    assert_eq!(
+        &arena[..8],
+        b"1234567\0",
+        "writes land on bytes already read"
+    );
+    assert!(
+        arena[CAP as usize..].iter().all(|b| *b == 0xAA),
+        "past ml_cap: {:?}",
+        &arena[CAP as usize..CAP as usize + 16]
+    );
+
+    // Direction 2 — output AHEAD of the source: the self-feeding case. The result may be
+    // anything; what is asserted is that it stays inside the `cap` bytes the host gave.
+    let mut arena = [0xAAu8; 96];
+    arena[..11].copy_from_slice(b"0881234567\0");
+    let base = arena.as_mut_ptr();
+    let out_at = unsafe { base.add(8) };
+    let mut needed = -7i32;
+    let status = body(base as *const c_char, out_at, CAP, &mut needed);
+    println!(
+        "aliased span, output ahead:  status={status} needed={needed} bytes={:?}",
+        &arena[8..8 + CAP as usize]
+    );
+    assert!(
+        arena[8 + CAP as usize..].iter().all(|b| *b == 0xAA),
+        "the span writer went past ml_cap under aliasing: {:?}",
+        &arena[8 + CAP as usize..8 + CAP as usize + 16]
+    );
+
+    // The non-overlapping call still answers, so the bound is not refusing everything.
+    let mut buf = [0xAAu8; 96];
+    let mut needed = -7i32;
+    assert_eq!(
+        body(c"0881234567".as_ptr(), buf.as_mut_ptr(), CAP, &mut needed),
+        0
+    );
+    assert_eq!(needed, 8, "\"1234567\" plus the NUL");
+    assert_eq!(&buf[..8], b"1234567\0");
+
+    drop(m);
+}
+
+/// …and here is the call that makes `ml_wsub`'s bound load-bearing after all.
+///
+/// The paragraph above reasoned that a span's `cap` test can never fire, because `n` is fixed
+/// and `ml_cap >= __n` was already checked. **Verify found the hole and it is real:** `__o`
+/// threads through the pieces in order, so a span that FOLLOWS an `ml_wstr` inherits whatever
+/// offset that writer returned — and under aliasing `ml_wstr` returns `cap - 1`. The span then
+/// starts at `cap - 1` and its own test fires on the first iteration.
+///
+/// `mix(s) = s + byte_slice(s, 0, 3)` is that shape. With the output overlapping the source
+/// two bytes ahead, the first piece eats its own output up to `cap - 1`; without the second
+/// bound the span would then write three bytes past the end of what the host gave. The canary
+/// is exactly those bytes.
+///
+/// Kept as its own test rather than folded above, because it contradicts that test's own
+/// reasoning and the contradiction is the record: an argument said "unreachable", a call said
+/// otherwise.
+#[test]
+fn a_span_following_an_aliased_string_piece_still_stops_at_cap() {
+    let (_out, m) = build(
+        "alias_mix",
+        "mix",
+        "export fn mix(s: string) -> string! { return s + byte_slice(s, 0, 3) }",
+    );
+    let mix = spanner(&m, b"mlx_mix\0");
+
+    const CAP: i32 = 16;
+    const OUT_AT: usize = 2;
+    let mut arena = [0xAAu8; 96];
+    arena[..7].copy_from_slice(b"abcdef\0");
+
+    let base = arena.as_mut_ptr();
+    let mut needed = -7i32;
+    let status = mix(
+        base as *const c_char,
+        unsafe { base.add(OUT_AT) },
+        CAP,
+        &mut needed,
+    );
+
+    let last = OUT_AT + CAP as usize;
+    println!(
+        "aliased mix: status={status} needed={needed} bytes={:?}",
+        &arena[OUT_AT..last]
+    );
+    assert!(
+        arena[last..].iter().all(|b| *b == 0xAA),
+        "the span ran past ml_cap after inheriting an aliased offset: {:?}",
+        &arena[last..last + 8]
+    );
+
+    // Non-overlapping, so the module still answers: without this the test would pass against
+    // a writer that did nothing.
+    let mut buf = [0xAAu8; 96];
+    let mut needed = -7i32;
+    assert_eq!(
+        mix(c"abcdef".as_ptr(), buf.as_mut_ptr(), CAP, &mut needed),
+        0
+    );
+    assert_eq!(needed, 10);
+    assert_eq!(&buf[..10], b"abcdefabc\0");
+
+    drop(m);
+}

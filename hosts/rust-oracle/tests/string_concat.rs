@@ -244,3 +244,75 @@ fn building_a_string_adds_no_import_and_no_export() {
         "four exports plus the two reserved symbols"
     );
 }
+
+/// The `cap` hard stop inside `ml_wstr`, exercised by the call it exists for.
+///
+/// **This defence has only ever been argued.** codegen says of that bound: *"It exists for the
+/// host that passes a string ALIASING its own output buffer: nothing in the C ABI forbids
+/// that, and without the bound this loop would copy its own output forward and run off the end
+/// of the caller's memory."* That is a claim about memory safety **in the host's process**, and
+/// nothing in this repository had ever made the call. `STATUS.md` §9-55 is about exactly this
+/// gap in a different place: a defence pinned by reading the emitted source
+/// (`if off + i >= cap - 1`) rather than by running it.
+///
+/// So this makes the call. `first` points INTO the output buffer, which is legal C — the ABI
+/// says the module may not retain the pointer (D16), not that it may not overlap. Pass 1 sizes
+/// the result from the original bytes; pass 2 then overwrites those same bytes as it copies,
+/// so the copy feeds on its own output. The bound is the only thing standing between that and
+/// a write past `ml_cap`.
+///
+/// What is asserted is the property, not the garbage: **every byte at or past `cap` is
+/// untouched**. The bytes inside `cap` are deliberately not pinned — they are whatever a
+/// self-feeding copy produces, and freezing them would turn an implementation detail into a
+/// contract.
+#[test]
+fn a_host_that_aliases_its_own_output_buffer_cannot_be_written_past() {
+    let h = build("alias");
+    let full_name: NameFn = sym(&h.m, b"mlx_full_name\0");
+
+    // One allocation. `CAP` is what the module is told it may use; everything after it is
+    // canary that must still be 0xAA when the call returns.
+    const CAP: i32 = 24;
+    let mut arena = [0xAAu8; 96];
+    arena[..6].copy_from_slice(b"Aroha\0");
+
+    let base = arena.as_mut_ptr();
+    let mut needed = -7i32;
+    // Both pointers derive from the same allocation: `first` is the string at offset 0, and
+    // offset 0 is also where the result goes.
+    let status = full_name(
+        base as *const c_char,
+        c"Kim".as_ptr(),
+        base,
+        CAP,
+        &mut needed,
+    );
+
+    // The answer is allowed to be anything — including a success with nonsense in it. What is
+    // NOT allowed is a byte past `cap`.
+    println!(
+        "aliased call: status={status} needed={needed} text={:?}",
+        text(&arena[..CAP as usize])
+    );
+    assert!(
+        arena[CAP as usize..].iter().all(|b| *b == 0xAA),
+        "the module wrote past ml_cap under aliasing: {:?}",
+        &arena[CAP as usize..CAP as usize + 16]
+    );
+
+    // And the same call with NO overlap answers correctly — so the bound above is not simply
+    // refusing every call. Without this line the test would pass against a module that did
+    // nothing at all.
+    let mut buf = [0xAAu8; 96];
+    let mut needed = -7i32;
+    let status = full_name(
+        c"Aroha".as_ptr(),
+        c"Kim".as_ptr(),
+        buf.as_mut_ptr(),
+        CAP,
+        &mut needed,
+    );
+    assert_eq!(status, 0);
+    assert_eq!(text(&buf), "Kim Aroha");
+    assert_eq!(needed, 10);
+}

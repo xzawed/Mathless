@@ -125,55 +125,12 @@ fn can_report_out_of_range(module: &IrModule) -> bool {
 
 /// Does this module RETURN any byte outside ASCII?
 ///
-/// Only a returned literal can put one there (`SPEC-non-ascii-literals` §2.1 refuses every
-/// other position), so this asks exactly that. It exists because of #238's lesson: a binding
-/// must name what the module can do, and "these bytes are UTF-8" is something a host reading
-/// only the header would otherwise have to guess.
-///
-/// Conditional, like the status constant above — a module with no such literal is unchanged,
-/// which is the over-emission rule `the_helper_is_only_emitted_when_a_comparison_exists`
-/// writes down.
+/// Delegates to [`crate::ir::returns_non_ascii_bytes`], which is where it moved when the
+/// interface fingerprint became its third consumer — the same move `can_fail_out_of_range`
+/// made for the same reason in #238. Two bindings and the manifest must answer this question
+/// identically, and one walker is how that stays true.
 fn returns_non_ascii_bytes(module: &IrModule) -> bool {
-    fn in_expr(e: &crate::ir::IrExpr) -> bool {
-        match &e.kind {
-            crate::ir::IrExprKind::ConstStr(s) => !s.is_ascii(),
-            crate::ir::IrExprKind::Concat(pieces) => pieces.iter().any(in_expr),
-            crate::ir::IrExprKind::ByteSlice { s, .. } => in_expr(s),
-            // `false`, and this is the arm where saying so is worth a line: `fixed` emits
-            // only `-`, `.` and `0`-`9` (`SPEC-fixed-decimals` §2.1), so a module whose only
-            // output is a formatted number carries no UTF-8 and must not gain the notice.
-            // Its children are numeric and cannot hold a literal, but they are walked for the
-            // same reason the other arms walk theirs.
-            crate::ir::IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
-            crate::ir::IrExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
-            crate::ir::IrExprKind::Unary { operand, .. }
-            | crate::ir::IrExprKind::Cast { operand, .. }
-            | crate::ir::IrExprKind::ByteLen(operand) => in_expr(operand),
-            crate::ir::IrExprKind::Call { args, .. } => args.iter().any(in_expr),
-            crate::ir::IrExprKind::Index { .. }
-            | crate::ir::IrExprKind::Len { .. }
-            | crate::ir::IrExprKind::ConstF64(_)
-            | crate::ir::IrExprKind::ConstI32(_)
-            | crate::ir::IrExprKind::ConstBool(_)
-            | crate::ir::IrExprKind::Var(_) => false,
-        }
-    }
-    fn in_stmts(stmts: &[IrStmt]) -> bool {
-        stmts.iter().any(|s| match s {
-            IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
-                in_expr(cond) || in_stmts(body)
-            }
-            IrStmt::Return(e)
-            | IrStmt::ResultLen(e)
-            | IrStmt::Let { value: e, .. }
-            | IrStmt::Assign { value: e, .. }
-            | IrStmt::AssignOut { value: e, .. } => in_expr(e),
-            IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
-            IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
-            IrStmt::Fail(_) => false,
-        })
-    }
-    module.functions.iter().any(|f| in_stmts(&f.body))
+    crate::ir::returns_non_ascii_bytes(module)
 }
 
 /// The one-line notice both bindings carry when [`returns_non_ascii_bytes`] is true.

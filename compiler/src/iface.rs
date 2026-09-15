@@ -60,6 +60,27 @@ pub fn manifest(module: &IrModule) -> String {
     let mut s = String::from("ml-iface/1\n");
     s.push_str(&format!("abi={}\n", crate::abi::ML_MODULE_ABI_VERSION));
 
+    // The encoding of the bytes this module hands out (`SPEC-iface-hash` §2.1, added
+    // 2026-09-15 with user confirmation; measured in `STATUS.md` §9-59.3).
+    //
+    // It is the one thing outside a signature that is in here, and it earned the exception by
+    // being the one thing a host cannot already be assuming. Reserved NEGATIVE statuses are
+    // the instructive contrast: D17 makes them the ABI's, so a host must handle every one of
+    // them whether or not this module can produce it, and the fingerprint rightly ignores
+    // which ones a body reaches. Encoding has no such rule — DP-S2 left it undecided — so
+    // there is nothing a host can have been told in advance. Measured: a module changing
+    // `return "OK"` to `return "승인"` kept its fingerprint while its `.h` and `.pas` gained a
+    // UTF-8 notice, and a code page 949 Delphi host got mojibake rather than an error.
+    //
+    // **Emitted only when true**, exactly like the `err` lines, and that is the whole cost
+    // control: an ASCII module's manifest is byte-identical to what it was before this line
+    // existed, so its fingerprint does not move and no host is falsely rejected for an edit
+    // that changed nothing it can see. Bumping `ml-iface/1` instead would have moved every
+    // module — which is the false rejection §3-D and §3-E exist to prevent.
+    if crate::ir::returns_non_ascii_bytes(module) {
+        s.push_str("utf8=1\n");
+    }
+
     // Sorted BY NAME, which is what SPEC §2.1 / DP-H4 says and what the doc comment above
     // says — so sort on the name, not on the rendered line. The two are not the same order:
     // sorting the line compares the separator that follows the name against the next

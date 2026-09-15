@@ -309,7 +309,7 @@ interface
 
 const
   ML_MODULE = 'claim.dll';
-  ML_CLAIM_IFACE_HASH: UInt64 = UInt64($3BE92C25FD58EBCE);
+  ML_CLAIM_IFACE_HASH: UInt64 = UInt64($EF50DFD4C7484691);
   ML_CLAIM_ERR_E_UNKNOWN_STATUS = 1;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
     NUL included. Truncation is a FAILURE, not a short success - nothing is written,

@@ -478,3 +478,63 @@ fn rejects_a_module_name_longer_than_the_abi_bound() {
          symbol a dynamic host has to build: {err}"
     );
 }
+
+/// What `mlc build` PRINTS, read from the binary rather than from the source that prints it.
+///
+/// `doc_claims` already asserts the success output names every artifact — but by searching
+/// `compiler/src/main.rs` for `arts.<field>.display()`. That is a guard on the code that makes
+/// the output, which is the exact shape STATUS §7 records getting wrong three times on
+/// `header.rs`: **guard the artifact, not the code that makes it.** The rule was applied there
+/// and never here.
+///
+/// Measured, not argued. Replacing `println!("  {}", arts.dll.display())` with
+/// `let _unused = format!("  {}", arts.dll.display())` drops the MODULE's own path from what a
+/// user reads, and `doc_claims` (20), `emit_robustness` (24) and `diagnostics` (14) all stayed
+/// green — while that guard's own failure message reads "A file written and not reported is one
+/// the user does not know they have". The text it searches for is still there; the line is not.
+///
+/// The expectation is DERIVED from the directory rather than listed, so a fifth artifact has to
+/// appear here the day it is written, without anyone remembering to add it (STATUS §7: a
+/// hand-written floor loosens itself every time the corpus grows).
+///
+/// `#[cfg(windows)]` for the reason every SUCCESS-path CLI test in this file carries it: the
+/// build produces a `.dll` and a `.lib` and needs the MSVC toolchain, so on the ubuntu job it
+/// fails before there is any output to read. **The first version of this test did not have the
+/// attribute, the whole Windows suite was green locally, and the 18-second ubuntu job caught
+/// it** — which is what that job is for.
+#[cfg(windows)]
+#[test]
+fn the_success_output_names_every_file_the_build_wrote() {
+    let dir = fresh_out("cli_transcript");
+    let src = dir.join("t.mls");
+    std::fs::write(&src, SRC).unwrap();
+
+    let out = dir.join("artifacts");
+    let r = std::process::Command::new(env!("CARGO_BIN_EXE_mlc"))
+        .args(["build".as_ref(), src.as_os_str()])
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .expect("run mlc");
+    assert!(
+        r.status.success(),
+        "the build must succeed before its output means anything:\n{}",
+        String::from_utf8_lossy(&r.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&r.stdout);
+    assert!(stdout.contains("mlc: wrote"), "{stdout}");
+
+    let written = entries(&out);
+    assert!(
+        !written.is_empty(),
+        "nothing was written, so this test would pass without asserting anything"
+    );
+    for name in &written {
+        assert!(
+            stdout.contains(name.as_str()),
+            "`mlc build` wrote {name} and did not name it — a file written and not reported is \
+             one the user does not know they have:\n{stdout}"
+        );
+    }
+}

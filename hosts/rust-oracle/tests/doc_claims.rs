@@ -599,6 +599,15 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
     // And the CLI itself, which is the one place a user is TOLD what was written. It cannot be
     // checked the same way — the paths come from `arts.<field>.display()`, not from a literal
     // extension — so the check is that it prints one line per artifact.
+    //
+    // **This one reads the SOURCE, and that is the shape STATUS §7 says is wrong** ("guard the
+    // artifact, not the code that makes it" — got wrong three times on `header.rs`). Measured
+    // 2026-09-16: turn the `.dll` line into `let _unused = format!(…)` and the module's own path
+    // disappears from what a user reads, while the text below is still present and this stays
+    // green. It is kept because it is cheap and runs without MSVC, but the check that actually
+    // binds is `emit_robustness::the_success_output_names_every_file_the_build_wrote`, which
+    // runs the binary and reads its stdout. A test here cannot: `CARGO_BIN_EXE_mlc` exists only
+    // for the crate that declares the binary, and this is a different crate.
     let main_rs = read("compiler/src/main.rs");
     let reported = [
         "arts.dll",

@@ -224,3 +224,105 @@ fn it_prints_a_non_finite_result_rather_than_a_number() {
     let out = probe(&["--src", src, "ratio", "3", "2"]);
     assert!(out.contains("value  = 1.5"), "{out}");
 }
+
+/// The ARRAY RETURN protocol, which had no test at all.
+///
+/// The generator has a separate branch for `-> [T]!`: its own buffer, its own `needed`, and a
+/// print that slices `&buf[..needed]`. Nothing exercised it. Measured the way STATUS §9-58
+/// measures a conditional — plant a defect and see whether anything goes red. Replacing that
+/// slice with `&buf[..0]` makes a four-element answer print as `[]`, **and all eight tests
+/// stayed green**. A silent wrong answer from the instrument that reports wrong answers.
+///
+/// All three element types, because the zero used to fill the buffer and the Rust element type
+/// are chosen per element (`0.0f64` / `0i32` / `false`) and each of those is its own arm.
+#[test]
+fn it_prints_an_array_return_element_by_element() {
+    let i32s = probe(&[
+        "--src",
+        "export fn evens(n: i32) -> [i32]! {\n result n\n let mut i = 0\n \
+         while i < n { result[i] = i * 2\n i = i + 1 }\n}",
+        "evens",
+        "4",
+    ]);
+    assert!(i32s.contains("value  = [0, 2, 4, 6]"), "{i32s}");
+    assert!(
+        i32s.contains("needed = 4"),
+        "the length is the host's, too: {i32s}"
+    );
+
+    let f64s = probe(&[
+        "--src",
+        "export fn halves(xs: [f64]) -> [f64]! {\n result len(xs)\n let mut i = 0\n \
+         while i < len(xs) { result[i] = xs[i] / 2.0\n i = i + 1 }\n}",
+        "halves",
+        "10,7,3",
+    ]);
+    assert!(f64s.contains("value  = [5.0, 3.5, 1.5]"), "{f64s}");
+
+    // `[bool]` is the one whose ELEMENT WIDTH already cost this repository a silent wrong
+    // answer on a Delphi host (SPEC-array-return acceptance E), so the tool printing it
+    // element-by-element is worth pinning rather than assuming.
+    let bools = probe(&[
+        "--src",
+        "export fn positive(xs: [i32]) -> [bool]! {\n result len(xs)\n let mut i = 0\n \
+         while i < len(xs) { result[i] = xs[i] > 0\n i = i + 1 }\n}",
+        "positive",
+        "3,-1,0",
+    ]);
+    assert!(bools.contains("value  = [true, false, false]"), "{bools}");
+}
+
+/// The scalar and element types nothing had passed or returned.
+///
+/// Before this, every argument in this file was an `f64`, a `string` or an `[f64]`, and every
+/// return was an `f64`, a `bool!` or a `string!`. The generator has a distinct arm for each
+/// type in both directions, and STATUS §9-58's rule applies to a tool as much as to a binding
+/// generator: an arm nothing runs is an arm nothing checks.
+///
+/// Planted to confirm it: making the `i32` argument arm emit `0i32` regardless of the value
+/// turns `twice(21)` into `0`, and the eight tests that existed before stayed green.
+#[test]
+fn every_scalar_and_element_type_survives_the_round_trip() {
+    let n = probe(&[
+        "--src",
+        "export fn twice(n: i32) -> i32 { return n * 2 }",
+        "twice",
+        "21",
+    ]);
+    assert!(n.contains("value  = 42"), "an i32 argument and return: {n}");
+
+    let b = probe(&[
+        "--src",
+        "export fn flip(b: bool) -> bool { return !b }",
+        "flip",
+        "true",
+    ]);
+    assert!(
+        b.contains("value  = false"),
+        "a bool argument and return: {b}"
+    );
+
+    let ints = probe(&[
+        "--src",
+        "export fn total(xs: [i32]) -> i32! {\n let mut s = 0\n let mut i = 0\n \
+         while i < len(xs) { s = s + xs[i]\n i = i + 1 }\n return s\n}",
+        "total",
+        "3,4,5",
+    ]);
+    assert!(
+        ints.contains("value  = 12"),
+        "an [i32] argument, i32! return: {ints}"
+    );
+
+    let flags = probe(&[
+        "--src",
+        "export fn any_true(xs: [bool]) -> bool! {\n let mut i = 0\n \
+         while i < len(xs) { if xs[i] { return true }\n i = i + 1 }\n return false\n}",
+        "any_true",
+        "false,true,false",
+    ]);
+    assert!(
+        flags.contains("value  = true"),
+        "a [bool] argument: {flags}"
+    );
+}

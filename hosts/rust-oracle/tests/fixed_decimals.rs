@@ -234,6 +234,29 @@ fn past_the_i64_range_is_a_status_not_a_wrong_number() {
     );
     assert!(intact, "a failed call leaves the buffer alone (D17)");
 
+    // The NEGATIVE side of the same check, which had never been called. It is not symmetry
+    // for its own sake: `ml_fixscale`'s floor is written `<=` rather than `<` ON PURPOSE, so
+    // that `r` can never be exactly `i64::MIN`, because BOTH helpers below it do `-v` and
+    // that negation is what would overflow. The comment there says so; nothing measured it.
+    //
+    // A Grok verify round asked for this one — it noticed the passage above tests only the
+    // positive overflow while the guard's stated purpose is the negation on the other side.
+    let (status, needed, text, _) = call(f, -ok);
+    assert_eq!(status, 0, "just inside the range must answer on both signs");
+    assert_eq!(text, "-92233720368547747.84");
+    assert_eq!(
+        needed as usize,
+        text.len() + 1,
+        "the sign is counted once, by pass 1 as well as pass 2"
+    );
+
+    let (status, _, _, intact) = call(f, -over);
+    assert_eq!(
+        status, ML_ST_INDEX_OUT_OF_RANGE,
+        "just outside must be a status on the negative side too, never a wrapped number"
+    );
+    assert!(intact, "a failed call leaves the buffer alone (D17)");
+
     drop(m);
 }
 

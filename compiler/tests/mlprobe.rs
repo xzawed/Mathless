@@ -152,3 +152,75 @@ fn it_refuses_what_it_cannot_answer() {
     ]);
     assert!(internal.contains("internal"), "{internal}");
 }
+
+/// The three values that are not finite, in the ARGUMENT direction.
+///
+/// `f64_literal` exists only for these. `{:?}` round-trips every finite f64, so the tool used
+/// it directly until `fixed` needed `NaN`, `inf` and `-inf` — which `{:?}` renders as bare
+/// `NaN`/`inf`, became `NaNf64` and `inff64` in the generated harness, and did not compile
+/// (STATUS §9-54.4). The fix landed with the slice and **no test came with it**, so for two
+/// weeks the one known defect class of the measuring instrument was guarded by nothing.
+///
+/// These are also exactly the inputs `SPEC-fixed-decimals` §2.4 requires to answer `-2`, so a
+/// probe that cannot express them cannot measure that acceptance criterion at all.
+#[test]
+fn it_can_express_the_three_values_that_are_not_finite() {
+    for spelling in ["NaN", "inf", "-inf"] {
+        let out = probe(&[
+            "--src",
+            "export fn amount(won: f64) -> string! { return fixed(won, 2) }",
+            "amount",
+            spelling,
+        ]);
+        assert!(
+            out.contains("status = -2"),
+            "`{spelling}` must reach the module and come back as ML_ST_INDEX_OUT_OF_RANGE: {out}"
+        );
+    }
+
+    // The control: a finite argument through the same path still answers, so the loop above is
+    // not passing because the tool refuses every f64.
+    let finite = probe(&[
+        "--src",
+        "export fn amount(won: f64) -> string! { return fixed(won, 2) }",
+        "amount",
+        "1234.5",
+    ]);
+    assert!(finite.contains("\"1234.50\""), "{finite}");
+
+    // The three must stay DISTINCT, which `-2` cannot show: `fixed` refuses all of them, so a
+    // `f64_literal` that collapsed the two infinities into `f64::NAN` would pass the loop
+    // above unchanged. Verify caught that. An identity function makes the argument observable
+    // on the way out, so each spelling has to survive the round trip as itself.
+    let id = "export fn id(x: f64) -> f64 { return x }";
+    for (spelling, want) in [("NaN", "NaN"), ("inf", "inf"), ("-inf", "-inf")] {
+        let out = probe(&["--src", id, "id", spelling]);
+        assert!(
+            out.contains(&format!("value  = {want}")),
+            "`{spelling}` must arrive as itself, not as another non-finite value: {out}"
+        );
+    }
+}
+
+/// The same three values in the RESULT direction, which is a different code path: arguments go
+/// through `f64_literal` into the harness source, results come back through `{:?}` at run time.
+///
+/// STATUS §9-61.3 published a table of what `f64` division hands a host — `inf`, `-inf`, `NaN`
+/// — and every row of it was read through this path. The table was shipped before anything
+/// asserted the path could print those three.
+#[test]
+fn it_prints_a_non_finite_result_rather_than_a_number() {
+    let src = "export fn ratio(a: f64, b: f64) -> f64 { return a / b }";
+
+    for (a, b, want) in [("1", "0", "inf"), ("-1", "0", "-inf"), ("0", "0", "NaN")] {
+        let out = probe(&["--src", src, "ratio", a, b]);
+        assert!(
+            out.contains(&format!("value  = {want}")),
+            "{a} / {b} is {want} and the tool has to say so, not round it to a number: {out}"
+        );
+    }
+
+    // The control again: the same function on a finite pair prints an ordinary number.
+    let out = probe(&["--src", src, "ratio", "3", "2"]);
+    assert!(out.contains("value  = 1.5"), "{out}");
+}

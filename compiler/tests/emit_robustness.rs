@@ -496,6 +496,13 @@ fn rejects_a_module_name_longer_than_the_abi_bound() {
 /// The expectation is DERIVED from the directory rather than listed, so a fifth artifact has to
 /// appear here the day it is written, without anyone remembering to add it (STATUS §7: a
 /// hand-written floor loosens itself every time the corpus grows).
+///
+/// `#[cfg(windows)]` for the reason every SUCCESS-path CLI test in this file carries it: the
+/// build produces a `.dll` and a `.lib` and needs the MSVC toolchain, so on the ubuntu job it
+/// fails before there is any output to read. **The first version of this test did not have the
+/// attribute, the whole Windows suite was green locally, and the 18-second ubuntu job caught
+/// it** — which is what that job is for.
+#[cfg(windows)]
 #[test]
 fn the_success_output_names_every_file_the_build_wrote() {
     let dir = fresh_out("cli_transcript");

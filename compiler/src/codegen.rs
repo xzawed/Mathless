@@ -1315,7 +1315,7 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     for (i, p) in pieces.iter().enumerate() {
         match piece_kind(p) {
             PieceKind::Digits { .. } => {
-                let _ = writeln!(out, "{pad}__o = ml_wint(ml_buf, __o, __p{i});");
+                let _ = writeln!(out, "{pad}__o = ml_wint(ml_buf, __o, __p{i}, ml_cap);");
             }
             PieceKind::Bytes => {
                 let _ = writeln!(out, "{pad}__o = ml_wstr(ml_buf, __o, __p{i}, ml_cap);");
@@ -1333,7 +1333,10 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
             // buffer. These bytes come from an i64 in a register, so the only address in
             // play is the destination — and `ml_cap >= __n` was checked above.
             PieceKind::Decimal { .. } => {
-                let _ = writeln!(out, "{pad}__o = ml_wfix(ml_buf, __o, __v{i}, __k{i});");
+                let _ = writeln!(
+                    out,
+                    "{pad}__o = ml_wfix(ml_buf, __o, __v{i}, __k{i}, ml_cap);"
+                );
             }
         }
     }
@@ -1515,10 +1518,19 @@ fn emit_concat_helpers(module: &IrModule, out: &mut String) {
          \x20       i += 1;\n\
          \x20   }\n\
          }\n\n\
-         fn ml_wint(buf: *mut u8, off: i32, v: i32) -> i32 {\n\
+         fn ml_wint(buf: *mut u8, off: i32, v: i32, cap: i32) -> i32 {\n\
          \x20   // Width comes from ml_ilen, the same function pass 1 used, then the span is\n\
          \x20   // filled right-to-left. Two counts that could drift would be a buffer overrun.\n\
          \x20   let w = ml_ilen(v);\n\
+         \x20   // `cap` is a hard stop, and this writer needs one even though it copies from\n\
+         \x20   // a register rather than from host memory. It was written without one on the\n\
+         \x20   // reasoning that `ml_cap >= __n` was already checked, which is true and not\n\
+         \x20   // enough: `__o` is INHERITED from the previous piece, and an aliased `ml_wstr`\n\
+         \x20   // hands back `cap - 1`. Measured — `receipt_line` with its input aliased two\n\
+         \x20   // bytes ahead of the output wrote \"45000\\0\" six bytes past `ml_cap`, status 0.\n\
+         \x20   // Nothing is written when the span would cross: a right-to-left writer cannot\n\
+         \x20   // truncate into anything but garbage digits, and one byte stays for the NUL.\n\
+         \x20   if off + w > cap - 1 { return off; }\n\
          \x20   let neg = v < 0;\n\
          \x20   let mut m: u32 = if neg { (v as u32).wrapping_neg() } else { v as u32 };\n\
          \x20   let mut i = off + w;\n\
@@ -2048,16 +2060,18 @@ fn emit_fixed_helpers(module: &IrModule, out: &mut String) {
          \x20   // is \"1234\", not \"1234.\").\n\
          \x20   if k > 0 { n + k + 1 } else { n }\n\
          }\n\n\
-         fn ml_wfix(buf: *mut u8, off: i32, v: i64, k: i32) -> i32 {\n\
+         fn ml_wfix(buf: *mut u8, off: i32, v: i64, k: i32, cap: i32) -> i32 {\n\
          \x20   // Width comes from ml_fixlen, the same function pass 1 used, then the span is\n\
          \x20   // filled right-to-left — `ml_wint`'s rule, for `ml_wint`'s reason: two counts\n\
          \x20   // that could drift would be a write past the end of the host's buffer.\n\
          \x20   //\n\
-         \x20   // No `cap` bound here, unlike `ml_wstr` and `ml_wsub`. Those two copy FROM a\n\
-         \x20   // host pointer that may alias the output buffer; these bytes come out of an\n\
-         \x20   // i64, so the destination is the only address in play and `ml_cap >= __n` was\n\
-         \x20   // already checked by the caller.\n\
+         \x20   // This carried no `cap` bound at first, on the argument that these bytes come\n\
+         \x20   // out of an i64 so the destination is the only address in play. True, and it\n\
+         \x20   // misses where `off` comes from: the PREVIOUS piece. An aliased `ml_wstr`\n\
+         \x20   // returns `cap - 1`, and this writer would start there. `ml_wint` carries the\n\
+         \x20   // same bound now for the same measured reason.\n\
          \x20   let w = ml_fixlen(v, k);\n\
+         \x20   if off + w > cap - 1 { return off; }\n\
          \x20   let neg = v < 0;\n\
          \x20   let mut m: i64 = if neg { -v } else { v };\n\
          \x20   let mut i = off + w;\n\

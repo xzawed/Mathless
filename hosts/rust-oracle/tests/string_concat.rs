@@ -418,3 +418,130 @@ fn a_negative_capacity_is_refused_on_the_concat_path_too() {
     drop(m);
     drop(dir);
 }
+
+/// **The `cap` bound has two writers that do not carry it** — audit finding, measured.
+///
+/// §9-56 measured that under aliasing `ml_wstr` runs to `cap - 1` and stops there, and #245
+/// showed the SPAN writer after it stops too because it carries the same bound. The audit
+/// asked the obvious next question: what about the two writers that do NOT take `cap` at
+/// all — `ml_wint` (digits) and `ml_wfix` (decimals)? Their comment says the destination is
+/// the only address in play and `ml_cap >= __n` was already checked. Both are true, and both
+/// miss the point: they start at the `__o` the previous writer handed them, and under
+/// aliasing that is `cap - 1`.
+///
+/// `receipt_line(item, qty, price) = item + " x " + qty + " = " + total` puts a digits piece
+/// after a string piece. Alias `item` ahead of the output and the digits land past `cap`.
+#[test]
+fn a_digits_piece_after_an_aliased_string_piece_writes_past_cap() {
+    let h = build("alias_digits");
+    let line: LineFn = sym(&h.m, b"mlx_receipt_line\0");
+
+    // The result ("WIDGET x 3 = 45000", 19 bytes) must FIT, or the capacity check refuses
+    // the call before any writer runs — the first draft used 16 and measured exactly that
+    // refusal, which is the guard doing its job and not this path. 24 fits; the string piece
+    // then eats its own output up to `cap - 1`, and the digits pieces inherit that offset.
+    const CAP: i32 = 24;
+    const OUT_AT: usize = 2;
+    let mut arena = [0xAAu8; 96];
+    arena[..7].copy_from_slice(b"WIDGET\0");
+
+    let base = arena.as_mut_ptr();
+    let mut needed = -7i32;
+    let status = line(
+        base as *const c_char,
+        3,
+        15000,
+        unsafe { base.add(OUT_AT) },
+        CAP,
+        &mut needed,
+    );
+
+    let last = OUT_AT + CAP as usize;
+    println!(
+        "aliased digits: status={status} needed={needed} in-cap={:?} past-cap={:?}",
+        &arena[OUT_AT..last],
+        &arena[last..last + 12]
+    );
+    assert!(
+        arena[last..].iter().all(|b| *b == 0xAA),
+        "a digits piece inherited an aliased offset and wrote past ml_cap: {:?}",
+        &arena[last..last + 12]
+    );
+
+    // Non-overlapping still answers.
+    let mut buf = [0xAAu8; 96];
+    let mut needed = -7i32;
+    assert_eq!(
+        line(
+            c"WIDGET".as_ptr(),
+            3,
+            15000,
+            buf.as_mut_ptr(),
+            64,
+            &mut needed
+        ),
+        0
+    );
+    assert_eq!(text(&buf), "WIDGET x 3 = 45000");
+}
+
+/// The same question for the DECIMAL writer, which inherits `__o` exactly as the digits one
+/// does. `ml_wfix` gained the same bound in the same change; this is what says so.
+#[test]
+fn a_decimal_piece_after_an_aliased_string_piece_also_stops_at_cap() {
+    let dir = common::TempOut::new("concat_alias_fixed");
+    let arts = emit_artifacts(
+        "export fn tag(s: string, x: f64) -> string! { return s + \" = \" + fixed(x, 2) }",
+        "aliasfx",
+        &dir,
+    )
+    .expect("emit aliasfx");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load aliasfx.dll");
+    let tag: extern "C" fn(*const c_char, f64, *mut u8, i32, *mut i32) -> i32 =
+        unsafe { std::mem::transmute(m.symbol(b"mlx_tag\0").unwrap()) };
+
+    // "WIDGET = 1234.50" is 16 bytes, 17 with the NUL; 24 fits so the call is not refused.
+    const CAP: i32 = 24;
+    const OUT_AT: usize = 2;
+    let mut arena = [0xAAu8; 96];
+    arena[..7].copy_from_slice(b"WIDGET\0");
+
+    let base = arena.as_mut_ptr();
+    let mut needed = -7i32;
+    let status = tag(
+        base as *const c_char,
+        1234.5,
+        unsafe { base.add(OUT_AT) },
+        CAP,
+        &mut needed,
+    );
+
+    let last = OUT_AT + CAP as usize;
+    println!(
+        "aliased decimal: status={status} needed={needed} past-cap={:?}",
+        &arena[last..last + 12]
+    );
+    assert!(
+        arena[last..].iter().all(|b| *b == 0xAA),
+        "a decimal piece inherited an aliased offset and wrote past ml_cap: {:?}",
+        &arena[last..last + 12]
+    );
+
+    let mut buf = [0xAAu8; 96];
+    let mut needed = -7i32;
+    assert_eq!(
+        tag(
+            c"WIDGET".as_ptr(),
+            1234.5,
+            buf.as_mut_ptr(),
+            64,
+            &mut needed
+        ),
+        0
+    );
+    assert_eq!(text(&buf), "WIDGET = 1234.50");
+    assert_eq!(needed, 17);
+
+    drop(m);
+    drop(dir);
+}

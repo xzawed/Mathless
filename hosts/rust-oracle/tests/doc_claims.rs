@@ -1633,6 +1633,18 @@ fn claude_md_does_not_name_a_closed_slice() {
 #[test]
 fn a_closed_spec_says_so_in_its_own_header() {
     const DONE: &str = "구현 완료";
+    // The done-token alone is a bare substring, and §9-A A6 is what that costs here: a
+    // positive pin with no polarity passes the sentence that most needed to fail. Grok raised
+    // it verifying this test — `구현 완료 예정` contains `구현 완료` and means the opposite, and
+    // it is a phrasing somebody writing a SPEC before implementing it would plausibly reach
+    // for. These are the forms that carry the token and negate it; `구현 대기`·`구현 중`·
+    // `구현 착수` need no entry because they do not contain the token at all.
+    const NOT_DONE: [&str; 4] = [
+        "구현 완료 예정",
+        "구현 완료 전",
+        "구현 완료 아님",
+        "구현 완료가 아니",
+    ];
     let index = read("docs/slices/README.md");
 
     let mut offenders: Vec<String> = Vec::new();
@@ -1661,6 +1673,11 @@ fn a_closed_spec_says_so_in_its_own_header() {
             Some(h) if !h.contains(DONE) => {
                 offenders.push(format!("{file}: index ✅, header says `{}`", h.trim()))
             }
+            Some(h) if NOT_DONE.iter().any(|n| h.contains(n)) => offenders.push(format!(
+                "{file}: index ✅, and the header carries `{DONE}` inside a phrase that negates \
+                 it: `{}`",
+                h.trim()
+            )),
             Some(_) => {}
         }
     }

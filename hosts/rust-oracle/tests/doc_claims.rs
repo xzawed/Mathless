@@ -1603,6 +1603,101 @@ fn claude_md_does_not_name_a_closed_slice() {
     }
 }
 
+/// **A SPEC the index calls closed says so in its own header.**
+///
+/// The index guard above opens `docs/slices/README.md` and `read_dir`s the SPEC names. It
+/// never opens a SPEC. So the row and the file it links could disagree for as long as nobody
+/// happened to read both, and they did: eleven SPECs the index marked ✅ 구현 완료 carried a
+/// header saying 구현 대기 / 구현 중 / 구현 착수, one said *"구현은 시작하지 않았다"* about a
+/// feature wired through every stage of the compiler, and three named no implementation state
+/// at all.
+///
+/// `docs/slices/README.md` disclaims that each SPEC is "a design record at the time of
+/// writing", and for the BODY that is right — a §5 that says "BLOCKED" is a fact about that
+/// day and rewriting it would be rewriting history. **The `상태:` header is not body.** It is
+/// the first thing in the file, it has no date attached to the implementation clause, and it
+/// reads as the current state. Grok was asked whether the disclaimer covers it and answered
+/// NOT-COVERED, for the reason the disclaimer itself gives: it immunises then-facts and sends
+/// live status to `docs/STATUS.md`, never recasting the header as historical.
+///
+/// **Allowlist, not denylist**, and the difference is which way it breaks. A denylist of
+/// 구현 대기 / 구현 중 / 구현 착수 would pass the three headers that name no state at all, and
+/// would pass the next spelling somebody invents. Requiring the done-token means a SPEC that
+/// invents a phrasing goes red and someone has to look. That is the direction this repository
+/// has already chosen for every other guard it kept.
+///
+/// Bounded to the first 30 lines because that is where every header is today (30 files put it
+/// on line 3; `SPEC-iface-hash.md` on line 24), and because the bound is what makes a DELETED
+/// header fail. Searching the whole file would let a stray later 상태: line answer for a
+/// header that is gone.
+#[test]
+fn a_closed_spec_says_so_in_its_own_header() {
+    const DONE: &str = "구현 완료";
+    // The done-token alone is a bare substring, and §9-A A6 is what that costs here: a
+    // positive pin with no polarity passes the sentence that most needed to fail. Grok raised
+    // it verifying this test — `구현 완료 예정` contains `구현 완료` and means the opposite, and
+    // it is a phrasing somebody writing a SPEC before implementing it would plausibly reach
+    // for. These are the forms that carry the token and negate it; `구현 대기`·`구현 중`·
+    // `구현 착수` need no entry because they do not contain the token at all.
+    const NOT_DONE: [&str; 4] = [
+        "구현 완료 예정",
+        "구현 완료 전",
+        "구현 완료 아님",
+        "구현 완료가 아니",
+    ];
+    let index = read("docs/slices/README.md");
+
+    let mut offenders: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+    for line in index.lines() {
+        let Some(rest) = line.strip_prefix("| [") else {
+            continue;
+        };
+        let Some((_, tail)) = rest.split_once("](") else {
+            continue;
+        };
+        let Some((file, cells)) = tail.split_once(')') else {
+            continue;
+        };
+        if !file.starts_with("SPEC-") || !file.ends_with(".md") || !cells.contains('✅') {
+            continue;
+        }
+        checked += 1;
+
+        let spec = read(&format!("docs/slices/{file}"));
+        let header = spec.lines().take(30).find(|l| l.contains("상태:"));
+        match header {
+            None => offenders.push(format!(
+                "{file}: the index marks it ✅ but its first 30 lines carry no `상태:` line at all"
+            )),
+            Some(h) if !h.contains(DONE) => {
+                offenders.push(format!("{file}: index ✅, header says `{}`", h.trim()))
+            }
+            Some(h) if NOT_DONE.iter().any(|n| h.contains(n)) => offenders.push(format!(
+                "{file}: index ✅, and the header carries `{DONE}` inside a phrase that negates \
+                 it: `{}`",
+                h.trim()
+            )),
+            Some(_) => {}
+        }
+    }
+
+    assert!(
+        checked >= 25,
+        "the index rows stopped parsing — matched {checked} closed rows, fewer than the slices \
+         known to be closed, so this guard would pass by reading nothing"
+    );
+    assert!(
+        offenders.is_empty(),
+        "{} SPEC header(s) contradict the index row that links them. The header is the first \
+         thing a reader sees and carries no date on its implementation clause, so it reads as \
+         the current state — the index's \"design record at the time of writing\" disclaimer \
+         covers the body, not this line:\n  {}",
+        offenders.len(),
+        offenders.join("\n  ")
+    );
+}
+
 /// **A slice cannot be both closed and a candidate**, in the file that says so about itself.
 ///
 /// `docs/slices/README.md` carries two lists: an index of closed slices at the top and

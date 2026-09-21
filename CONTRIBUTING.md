@@ -12,7 +12,7 @@ each item is what a gate actually shells out to.
 | what | why | check |
 |---|---|---|
 | **Rust**, via `rustup` | `rust-toolchain.toml` pins **1.97.1** and rustup installs it on first `cargo` run. Bumping it means re-measuring the size proxies — the pin says so. | `rustc --version` |
-| **MSVC Build Tools**, "Desktop development with C++" | acceptance D compiles and runs two real C hosts. It supplies `cl`, `link`, `dumpbin`, and the `vswhere.exe` + `vcvars64.bat` the tests use to find them. | `cargo test -p ml_oracle --test c_host` prints `GATE_D_OK` |
+| **MSVC Build Tools**, "Desktop development with C++" | acceptance D compiles and runs two real C hosts. It supplies `cl`, `link`, `dumpbin`, and the `vswhere.exe` + `vcvars64.bat` the tests use to find them. | `cargo test -p ml_oracle --test c_host -- --nocapture` prints `GATE_D_OK` — **the flag is not optional**: the gate prints the host's transcript from a passing test, and cargo swallows that. Without it you see `ok` and no evidence. |
 | **Windows SDK 10.0.20348 or newer** (the floor is Microsoft's fix version, not something measured here; what was measured is the pair below) | acceptance D compiles the generated header after `<windows.h>` with `/W4 /WX /std:c11`. On **10.0.19041** that combination fails inside Microsoft's own `winbase.h(9572)` with **C5105** ("macro expansion producing 'defined'"), which the conforming C11 preprocessor turns on; Microsoft fixed the header in 20348. Measured 2026-09-07: 19041 fails two tests, 26100 passes. A newer SDK usually arrives with the workload above — check it if those two are the only red ones. | `cl /W4 /WX /std:c11` on a file that only `#include <windows.h>` exits 0 |
 
 **Optional, and a skip-gate when absent:** **Free Pascal 3.2.2** (`winget install
@@ -33,10 +33,25 @@ own `MATHLESS_GATE_FPC_HOST` — and **CI sets that to `require` too**, so it pr
 Nothing else. The suite shells out to **no other tool** — no node, no python, no make. Third-party
 Rust dependencies are **zero** (`Cargo.lock` holds the two local crates and nothing more).
 
-`dcc64` (Delphi) was absent on every machine until 2026-09-07, and where it exists now its edition **refuses command-line builds** — it prints "does not support command line compiling", writes nothing, and exits 0. D14's Delphi arm needs an edition whose `dcc64` compiles from a command line. The generated `.pas` has
-never been compiled by anything, D14's Delphi arm is BLOCKED, and the unit ships marked DRAFT.
-Installing it would not be "fixing the setup" — it would be closing a gate, which is a piece of
-work with a SPEC in front of it.
+`dcc64` (Delphi) was absent on every machine until 2026-09-07, and where it exists now its
+edition **refuses command-line builds** — it prints "does not support command line compiling",
+writes nothing, and exits 0. **That no longer blocks the gate.** When `dcc64` refuses,
+`MATHLESS_GATE_DELPHI` falls back to `bds.exe -b` (the IDE builder, which the same edition
+allows) and builds a Win64 host in about twelve seconds; it passes on the development machine
+(2026-09-09). The generated `.pas` is compiled by **Free Pascal on every push**
+(`MATHLESS_GATE_FPC`, above) and by **real `dcc64` locally**, and it does not ship marked DRAFT
+— the banner it carries names the gate that checks it.
+
+**What is left is CI, and that is a different problem**: the runner has neither Delphi nor an
+interactive session, so `MATHLESS_GATE_DELPHI` cannot run there. Installing Delphi on your own
+machine is therefore not "fixing the setup" — it lets you run one more local gate.
+
+> Until 2026-09-22 this paragraph said the opposite on all three counts — that nothing had
+> ever compiled the generated unit, that the Delphi arm was blocked, and that the unit shipped
+> carrying a draft marker. All three were false; the first was contradicted twenty lines above
+> in this same file. It stood for sixteen days because no guard read this document. One does
+> now — which is also why this note describes the old sentences rather than quoting them, so
+> that recording the correction cannot itself trip the guard.
 
 **Then run what CI runs, and judge by the exit code** (the three commands are in step 8 below).
 
@@ -47,10 +62,11 @@ work with a SPEC in front of it.
    **9,216 B** on GitHub's `windows-latest`, chosen by `GITHUB_ACTIONS`. Anything else asserts
    out. That is not a defect in the module: the toolchain pin covers **rustc**, not MSVC
    `link.exe` or the Windows SDK, so a different SDK gives a different size. The failure
-   message says exactly this and what to do — re-measure, and update the constant **and the
-   four documents that publish it** (`README.md`, `README.ko.md`, `docs/SECURITY.md`,
-   `docs/STATUS.md`) in the same commit. `doc_claims.rs` checks those documents, so a partial
-   update stays red.
+   message says exactly this and what to do — re-measure, and update the constant **and every
+   document that publishes the pair** in the same commit. `doc_claims.rs` guards four of them
+   (`README.md`, `README.ko.md`, `docs/SECURITY.md`, `docs/STATUS.md`), so a partial update of
+   those stays red. **This file is a fifth and is not guarded** — the two numbers are in the
+   sentence above. Grep for them rather than trusting this list.
 2. **`host.c` and the other hand-written C must stay pure ASCII**, and the reason is
    machine-dependent: MSVC reads them in the machine's ANSI code page, so a non-ASCII byte is
    `C4819` → `C2220` under `/W4 /WX` — but only on a code page that cannot represent it. It was
@@ -145,7 +161,7 @@ Never describe the protection as "impossible to reverse". The honest phrasing is
 | 무엇 | 왜 | 확인 |
 |---|---|---|
 | **Rust** (`rustup`) | `rust-toolchain.toml`이 **1.97.1**로 고정한다. 첫 `cargo` 실행 때 rustup이 받아 온다. 올리면 크기 프록시를 다시 재야 하고, 핀 주석이 그렇게 적어 두었다. | `rustc --version` |
-| **MSVC Build Tools** — "C++를 사용한 데스크톱 개발" | 수용 D가 실제 C 호스트 **둘**을 컴파일·실행한다. `cl`·`link`·`dumpbin`, 그리고 테스트가 그것들을 찾는 데 쓰는 `vswhere.exe`·`vcvars64.bat`을 준다. | `cargo test -p ml_oracle --test c_host`가 `GATE_D_OK`를 찍는다 |
+| **MSVC Build Tools** — "C++를 사용한 데스크톱 개발" | 수용 D가 실제 C 호스트 **둘**을 컴파일·실행한다. `cl`·`link`·`dumpbin`, 그리고 테스트가 그것들을 찾는 데 쓰는 `vswhere.exe`·`vcvars64.bat`을 준다. | `cargo test -p ml_oracle --test c_host -- --nocapture`가 `GATE_D_OK`를 찍는다 — **플래그는 선택이 아니다**: 게이트는 통과한 테스트에서 호스트의 출력을 찍는데 cargo가 그것을 삼킨다. 빼면 `ok`만 보이고 근거는 안 보인다. |
 | **Windows SDK 10.0.20348 이상** (바닥값은 MS가 고친 버전이지 여기서 재 것이 아니다 — 재 것은 아래 두 지점이다) | 수용 D는 생성 헤더를 `<windows.h>` **뒤에** 놓고 `/W4 /WX /std:c11`로 컴파일한다. **10.0.19041**에서는 그 조합이 마이크로소프트 자신의 `winbase.h(9572)`에서 **C5105**("macro expansion producing 'defined'")로 깨진다 — C11 적합 전처리기가 켜는 경고이고, MS가 20348에서 헤더를 고쳤다. 실측(2026-09-07): 19041은 테스트 2건 실패, 26100은 통과. 보통 위 워크로드와 함께 최신 SDK가 들어오니, **저 둘만 빨갛다면 여기를 보라.** | `#include <windows.h>` 한 줄짜리 파일이 `cl /W4 /WX /std:c11`에서 exit 0 |
 
 **선택 사항이고, 없으면 skip-게이트다:** **Free Pascal 3.2.2**
@@ -165,9 +181,23 @@ windows 잡이 그 파일을 직접 설치한다) **별도 변수 `MATHLESS_GATE
 그 외에는 없다. 스위트가 호출하는 **다른 도구는 하나도 없다** — node도, python도, make도. 서드파티
 Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
 
-`dcc64`(Delphi)는 2026-09-07까지 어느 머신에도 없었고, 지금 있는 것은 에디션이 **명령줄 빌드를 거부한다**("does not support command line compiling"을 찍고 아무것도 만들지 않으면서 exit 0). D14의 Delphi 반쪽은 **명령줄 컴파일이 되는 에디션**을 필요로 한다. 그리고 생성 `.pas`는 무엇에도 컴파일된
-적이 없으며, D14의 Delphi 쪽은 BLOCKED이고 유닛은 DRAFT로 나간다. 이것을 설치하는 것은 "환경을
-맞추는 일"이 아니라 **게이트를 닫는 작업**이며, 앞에 SPEC이 선다.
+`dcc64`(Delphi)는 2026-09-07까지 어느 머신에도 없었고, 지금 있는 것은 에디션이 **명령줄 빌드를
+거부한다**("does not support command line compiling"을 찍고 아무것도 만들지 않으면서 exit 0).
+**그러나 그것이 게이트를 막지 않는다.** `dcc64`가 거부하면 `MATHLESS_GATE_DELPHI`가
+`bds.exe -b`(같은 에디션이 허용하는 IDE 빌더)로 넘어가 약 12초에 Win64 호스트를 빌드하고,
+개발 머신에서 **통과한다**(2026-09-09). 생성 `.pas`는 **매 푸시마다 Free Pascal이**
+(위 `MATHLESS_GATE_FPC`), 그리고 **로컬에서는 진짜 `dcc64`가** 컴파일하며, DRAFT로 나가지
+않는다 — 유닛이 달고 나가는 배너는 자기를 검사하는 게이트 이름을 적는다.
+
+**남은 것은 CI이고, 그것은 다른 문제다**: 러너에 Delphi도 대화형 세션도 없어
+`MATHLESS_GATE_DELPHI`가 거기서 돌 수 없다. 따라서 Delphi를 설치하는 것은 "환경을 맞추는 일"이
+아니라 **로컬 게이트를 하나 더 돌릴 수 있게 되는 일**이다.
+
+> 2026-09-22까지 이 문단은 세 가지 모두에서 정반대를 적었다 — 생성 유닛을 컴파일한 것이 하나도
+> 없다고, Delphi 쪽이 막혀 있다고, 유닛이 초안 표시를 달고 나간다고. **셋 다 거짓이었고**,
+> 첫 번째는 같은 파일 스무 줄 위가 반박하고 있었다. 이 문서를 읽는 가드가 없어서 16일 서 있었다.
+> 지금은 있다 — 그래서 이 정정 기록도 옛 문장을 **인용하지 않고 서술한다**. 정정을 적는 일이
+> 가드를 트립시키면 안 되기 때문이다.
 
 **그다음 CI가 부르는 것을 그대로 부르고, 종료 코드로 판단한다**(명령 셋은 아래 8번에 있다).
 

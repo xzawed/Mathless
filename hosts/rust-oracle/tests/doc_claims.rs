@@ -1527,6 +1527,82 @@ fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
     }
 }
 
+/// The slice index's closed rows: `| [<title>](SPEC-….md) | ✅ … |`. The link text is the title.
+///
+/// Two guards read this list, and they have to read it the SAME way. When the index format
+/// moves, one parser following and the other not is worse than neither following: the stale
+/// one returns an empty list and its assertions pass by iterating over nothing. That is the
+/// `closed.len()` floor below, and it belongs to the parser, not to either caller.
+///
+/// Titles come back through `flatten_prose`, and **both callers must flatten their haystack
+/// the same way**. Stripping `**` from the needle alone is not enough, and that was measured
+/// rather than reasoned: with `title.replace("**", "")` against raw text, planting
+/// `다음은 배열 **반환**이다.` in CLAUDE.md left the guard GREEN — the emphasis sits inside the
+/// phrase, so the contiguous substring is never there. Grok raised it while verifying the
+/// commit that introduced this helper, after a red-then-green run had already looked complete.
+/// Flattening also collapses newlines, so a title split across a line wrap stops hiding too.
+fn closed_slice_titles() -> Vec<String> {
+    let readme = read("docs/slices/README.md");
+    let mut closed: Vec<String> = Vec::new();
+    for line in readme.lines() {
+        let Some(rest) = line.strip_prefix("| [") else {
+            continue;
+        };
+        let Some((title, tail)) = rest.split_once("](SPEC-") else {
+            continue;
+        };
+        if !tail.contains('✅') {
+            continue;
+        }
+        closed.push(flatten_prose(title));
+    }
+    assert!(
+        closed.len() >= 25,
+        "the index rows stopped parsing — found {}, which is fewer than the slices that are \
+         known to be closed, so a guard built on this would pass by reading nothing",
+        closed.len()
+    );
+    closed
+}
+
+/// **`CLAUDE.md` does not name a closed slice.** It is the file every session loads.
+///
+/// `docs/slices/README.md` has corrected "a closed slice is still listed as a candidate"
+/// three times, and next to the third it writes the cause: closing a slice adds a row to the
+/// index — *`CLAUDE.md` puts that in the procedure* — and **nothing removes it from the
+/// candidate list**. The file it names by name was the fourth occurrence. Rule 3 listed
+/// `배열 반환` as a future candidate while the index row read ✅ 구현 완료 and the compiler had
+/// been emitting `RetAbi::ArrayOut` since #206; rule 2, one line above it, forbids reopening a
+/// closed slice.
+///
+/// The sibling guard below bounds its scan to a named section. **This one scans the whole
+/// file, and the reason is measured, not stylistic**: of the 29 closed index titles, exactly
+/// one appeared anywhere in `CLAUDE.md`, and it was the defect. With no legitimate mention to
+/// carve out there is no sentence boundary to parse — and a whole-file scan cannot quietly
+/// stop failing the way a literal section marker does when somebody renames a heading.
+///
+/// `docs/STATUS.md` and `docs/phase1/WBS.md` are deliberately NOT here. The same measurement
+/// found 10 and 7 titles in them, and every one is a closure record — a `✅ 닫힘` section
+/// heading or a completed WBS row. Pointing this guard at those files would make it a
+/// false-positive machine, which is how a guard gets deleted.
+///
+/// If a rule ever genuinely needs to name a closed slice, this test failing is the right
+/// outcome: it makes the author say so here, with a reason, instead of leaving a candidate.
+#[test]
+fn claude_md_does_not_name_a_closed_slice() {
+    let claude = flatten_prose(&read("CLAUDE.md"));
+    for title in closed_slice_titles() {
+        assert!(
+            !claude.contains(&title),
+            "CLAUDE.md names `{title}`, which `docs/slices/README.md` marks ✅ 구현 완료. \
+             Every session loads CLAUDE.md, so a closed slice named there is the one the next \
+             session picks up — and rule 2 in that same file forbids reopening a closed \
+             slice. The candidate list has one source, `docs/slices/README.md`; do not copy \
+             it here."
+        );
+    }
+}
+
 /// **A slice cannot be both closed and a candidate**, in the file that says so about itself.
 ///
 /// `docs/slices/README.md` carries two lists: an index of closed slices at the top and
@@ -1554,34 +1630,15 @@ fn no_closed_slice_is_still_listed_as_a_candidate() {
     // opens with notes recording that a slice IS closed ("반올림 내장 함수도 닫혔다 — 위 색인,
     // #83"), and the three corrections name the very slices they removed. Those sentences are
     // the opposite of the defect. The candidate list is the prose that is not quoted.
-    let candidates: String = section
-        .lines()
-        .filter(|l| !l.trim_start().starts_with('>'))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // The index rows: `| [<title>](SPEC-….md) | ✅ … |`. The link text is the title.
-    let mut closed: Vec<String> = Vec::new();
-    for line in readme.lines() {
-        let Some(rest) = line.strip_prefix("| [") else {
-            continue;
-        };
-        let Some((title, tail)) = rest.split_once("](SPEC-") else {
-            continue;
-        };
-        if !tail.contains('✅') {
-            continue;
-        }
-        closed.push(title.replace("**", ""));
-    }
-    assert!(
-        closed.len() >= 25,
-        "the index rows stopped parsing — found {}, which is fewer than the slices that are \
-         known to be closed, so this guard would pass by reading nothing",
-        closed.len()
+    let candidates: String = flatten_prose(
+        &section
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('>'))
+            .collect::<Vec<_>>()
+            .join("\n"),
     );
 
-    for title in &closed {
+    for title in &closed_slice_titles() {
         assert!(
             !candidates.contains(title.as_str()),
             "`{title}` is in the index as ✅ 구현 완료 AND in the candidate list below it. \

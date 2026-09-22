@@ -83,9 +83,17 @@ refuse <name>: module name too long to form its fingerprint symbol
   - **권고: 64.** 65가 아니라 64인 이유는 근거가 있어서가 아니라 **호스트 버퍼가 컴파일러를 따라가야지
     그 반대가 아니기 때문**이다 — 64는 호스트가 오늘 감당하는 65 안에 들고, 둥근 수여서 버퍼 산식을
     읽기 쉽다. **이 숫자 자체는 임의이며, 그렇게 적는다.**
-- **DP-N3 — 호스트 버퍼는 유도한다.** `hosts/c-host/host.c`의 `symbol[]` 크기를 상수 산식으로 적고
-  (`sizeof "ml_iface_hash_" + ML_MAX_MODULE_NAME`), **테스트가 호스트 버퍼 ≥ 컴파일러 상한 + 접두어 + 1**
-  임을 확인한다. 두 수가 갈라지면 **빨개진다.**
+- **DP-N3 — 호스트 버퍼는 유도한다.** `hosts/c-host/host.c`의 `symbol[]` 크기를 상수 산식으로 적는다
+  (`sizeof "ml_iface_hash_" + ML_MAX_MODULE_NAME`) — 접두어와 NUL 자리는 **C가 구성으로 보장하므로**
+  테스트가 볼 것이 없다. 테스트가 읽는 것은 **두 언어에 하나씩 있는 `ML_MAX_MODULE_NAME` 두 값**이고,
+  단언은 **호스트 값 ≥ 컴파일러 값**이다.
+
+  > **빨개지는 방향은 하나다.** 컴파일러 상한을 **올리고** 호스트 `#define`을 안 올리면
+  > `the_c_host_can_gate_every_module_name_the_compiler_accepts`가 빨개진다(§4-B가 이 방향을 적는다).
+  > **내리는 방향은 이 가드가 보지 않는다** — 호스트 버퍼가 남는 것은 해롭지 않기 때문이다.
+  > 실측(2026-09-23, 64→48): 이 가드는 초록이고 대신
+  > `no_document_states_a_stale_value_for_an_abi_constant`가 빨개진다 — 문서가 박아 둔 값과
+  > 어긋나기 때문이다. 즉 두 방향을 **서로 다른 가드**가 본다.
 - **DP-N4 — 거부 메시지는 이유를 말한다.** 기존 거부들과 같은 모양:
   *"모듈 이름은 크레이트 이름·C 헤더 가드·Delphi 유닛 이름·예약 export 심볼이 된다"*.
 

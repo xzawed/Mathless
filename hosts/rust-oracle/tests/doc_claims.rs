@@ -2928,3 +2928,55 @@ fn no_document_says_a_closed_question_is_open() {
         }
     }
 }
+
+/// **`STATUS.md` §5-6 describes an emitted shape; this fails when that shape moves.**
+///
+/// The debt is that `i32 /` and `%` put their LEFT operand inside the `else` of the totality
+/// guard `#76` added, so a zero divisor skips it — and the only expression that can early
+/// return from that position today is an array index, whose bounds check therefore does not
+/// run. Measured through a loaded module: the same out-of-range index returns
+/// `ML_ST_INDEX_OUT_OF_RANGE` with divisor 2 and status 0 with divisor 0.
+///
+/// The entry is prose about generated code, which is the kind of claim this file exists to
+/// keep honest. It is not pinned as *correct* — it is pinned as *current*. Whoever changes
+/// the emitted shape, whether to fix the debt or for an unrelated reason, gets a red test
+/// naming the paragraph that has to change with it. A debt entry nobody rereads is how §5-1
+/// stayed open for five slices after its observation channel arrived.
+///
+/// Deliberately not a behavioural test. Pinning the wrong answer as an expectation is how a
+/// defect becomes a contract; the oracle asserts what the language promises, and this asserts
+/// only that a document still matches the source it describes.
+#[test]
+fn the_recorded_division_debt_still_matches_what_codegen_emits() {
+    // The emitter writes this as a `format!` template, so the source carries doubled braces.
+    // Undoubling them turns the template back into the text it produces, which is the thing
+    // §5-6 quotes — matching the template's own spelling instead would pin an escaping
+    // detail rather than the shape.
+    let codegen = read("compiler/src/codegen.rs")
+        .replace("{{", "{")
+        .replace("}}", "}");
+    let flat = flatten_prose(&codegen);
+
+    // The guard itself: divisor bound first, left operand reached only in the `else`.
+    for shape in [
+        "let __d =",
+        "if __d == 0 { 0i32 } else {",
+        "wrapping_div",
+        "wrapping_rem",
+    ] {
+        assert!(
+            flat.contains(shape),
+            "compiler/src/codegen.rs no longer emits `{shape}`. `docs/STATUS.md` §5-6 records \
+             the shape of the i32 division guard and the measurement that follows from it — a \
+             zero divisor skipping the left operand's bounds check. If the shape changed, that \
+             entry is describing code that is gone: update it, or close the debt there"
+        );
+    }
+
+    let status = flatten_prose(&read("docs/STATUS.md"));
+    assert!(
+        status.contains("5-6.") && status.contains("if __d == 0 { 0i32 } else {"),
+        "docs/STATUS.md no longer carries §5-6 with the emitted shape it describes. The debt \
+         is still in the compiler; removing the record does not pay it"
+    );
+}

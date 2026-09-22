@@ -474,6 +474,60 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     }
 }
 
+/// **A slice decided against is not "not done yet".**
+///
+/// The index marks `SPEC-symbol-embedded-hash.md` ⛔ 하지 않는다 — DP-H3(b) was measured,
+/// prototyped against real DLLs, and REJECTED on 2026-09-05 (#141) because it makes a
+/// conscientious host receive a silent `0xC0000139` where it gets a readable refusal today.
+/// `CLAUDE.md` rule 3 says not to reopen it before two recorded conditions hold.
+///
+/// Two live documents still described it as merely pending — `아직 하지 않았다`. That is a
+/// different claim from "decided against", and it is the one that gets picked up: a session
+/// reading "not done yet" in `OPEN_QUESTIONS.md` has no reason to look for a rejection.
+///
+/// The sibling guard covers ✅ rows becoming candidates. This is the ⛔ case, which that guard
+/// cannot see because a rejected slice never appears in the candidate list — it appears as an
+/// open question.
+///
+/// **Honest limit**: the needle is two phrasings, so a reworded "not done yet" escapes it. The
+/// alternative was a positive pin requiring every mention to carry the rejection, and that
+/// fires on `SPEC-error-prefix.md`, which legitimately recorded DP-H3(b) as open on 2026-09-03,
+/// two days before the decision. `docs/slices/` and `docs/HISTORY.md` are exempt for that
+/// reason: they are records of what was true when written.
+#[test]
+fn a_rejected_slice_is_not_described_as_merely_pending() {
+    let index = read("docs/slices/README.md");
+    assert!(
+        index.contains("⛔") && index.contains("SPEC-symbol-embedded-hash.md"),
+        "docs/slices/README.md no longer marks SPEC-symbol-embedded-hash.md ⛔. If the decision \
+         was reopened, this guard is wrong — but CLAUDE.md rule 3 names the conditions"
+    );
+
+    for (path, text) in every_markdown_file() {
+        if path == "docs/HISTORY.md" || path.starts_with("docs/slices/") {
+            continue;
+        }
+        let flat = flatten_prose(&text);
+        let chars: Vec<char> = flat.chars().collect();
+        let nd: Vec<char> = "DP-H3(b)".chars().collect();
+        for start in 0..chars.len().saturating_sub(nd.len()) {
+            if chars[start..start + nd.len()] != nd[..] {
+                continue;
+            }
+            let hi = (start + nd.len() + 90).min(chars.len());
+            let window: String = chars[start..hi].iter().collect();
+            for pending in ["아직 하지 않았", "아직 안 했"] {
+                assert!(
+                    !window.contains(pending),
+                    "{path} describes DP-H3(b) as pending, but docs/slices/README.md marks it \
+                     ⛔ 하지 않는다 (#141, 2026-09-05). \"Not done yet\" invites a session to do \
+                     it; \"decided against\" sends them to the reasons. Context: …{window}…"
+                );
+            }
+        }
+    }
+}
+
 /// **No document calls interface metadata unimplemented while every module ships a fingerprint.**
 ///
 /// `ARCHITECTURE.md`'s Packaging step said *"인터페이스 메타는 ⏳ 미구현"*. Every module has

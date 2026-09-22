@@ -58,7 +58,7 @@ export fn sum_to(n: i32) -> i32 {
 
 - **A. 컴파일:** `examples/sum_to.mls` → `mlc build` → `sum_to.dll`.
 - **B. 로드·호출 (오라클):** `mlx_sum_to(10) == 55`, `mlx_sum_to(0) == 0`(본문 0회), `abi == 1`.
-- **C. 보호:** export = 정확히 `mlx_sum_to` + `ml_module_abi_version`. strip 유지.
+- **C. 보호:** export = 정확히 `mlx_sum_to` + `ml_module_abi_version` — 당시 2개이고, `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다. strip 유지.
 - **D. 수용 D(실제 C 호스트):** `hosts/c-host/host.c`에 `sum_to`를 추가해 **새 구문도 실제 C 호스트에서**
   호출되게 한다. (수용 D는 이제 닫혀 있으므로, 새 구문이 그 커버리지 밖으로 새지 않게 유지한다.)
 - **부정(타입체크) 케이스:**

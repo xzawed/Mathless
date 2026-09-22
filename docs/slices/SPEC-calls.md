@@ -38,7 +38,9 @@ export fn discount4(price: f64, vip: bool) -> f64 {
 }
 ```
 
-`vip_rate`는 **export되지 않는다.** export는 여전히 `mlx_discount4` + `ml_module_abi_version` 둘뿐이다.
+`vip_rate`는 **export되지 않는다.** export는 여전히 `mlx_discount4` + `ml_module_abi_version`
+둘뿐이다 — **당시 2개이고, `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다.**
+내부 함수가 export되지 않는다는 이 절의 요점은 그대로다.
 
 ## 2. 계약 (Contracts)
 

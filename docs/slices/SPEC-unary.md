@@ -72,7 +72,7 @@ unary := ('-' | '!') unary | primary
 
 - **A. 컴파일:** `examples/negate_if.mls` → `mlc build`.
 - **B. 로드·호출(오라클):** `mlx_negate_if(7, false) == 7`, `mlx_negate_if(7, true) == -7`, `abi == 1`.
-- **C. 보호:** export = `mlx_negate_if` + `ml_module_abi_version` 2개. strip 유지.
+- **C. 보호:** export = `mlx_negate_if` + `ml_module_abi_version` 2개 — 당시이고, `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다. strip 유지.
 - **D. 수용 D(실제 C 호스트):** `hosts/c-host/host.c`에 추가해 새 구문도 실제 C 호스트에서 호출한다.
 - **오버플로 실측:** `-i32::MIN`이 `i32::MIN`으로 **wrap**함을 오라클로 확인한다(DP-I4 정합).
   (`i32::MIN`은 `0 - 2147483647 - 1`로 이미 표현 가능하다 — 실측 확인됨.)

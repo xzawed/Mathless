@@ -76,7 +76,7 @@ int32_t mlx_f(<params...>, T* out);
   - **성공:** `let mut out = SENTINEL; let s = mlx_safe_div(6.0, 2.0, &mut out);` → `s == 0 && out == 3.0`.
   - **실패:** `let mut out = SENTINEL; let s = mlx_safe_div(1.0, 0.0, &mut out);` → `s == 1 (DIV_BY_ZERO, 양수) && out == SENTINEL` (미변경 계약 검증).
   - **SENTINEL은 유한값**(예: `-999.0`)을 쓴다 — `NaN`은 `NaN == NaN`이 `false`라 "미변경" 검증이 불가능(Grok 지적).
-- **C. 보호 (D04/D05):** export = **정확히** `mlx_safe_div` + `ml_module_abi_version` (에러 코드는 상수 → export 아님). strip/no_std 유지, 소스/파일명 비유출. 프록시만 측정.
+- **C. 보호 (D04/D05):** export = **정확히** `mlx_safe_div` + `ml_module_abi_version` (에러 코드는 상수 → export 아님) — **당시 2개이고, `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다**. strip/no_std 유지, 소스/파일명 비유출. 프록시만 측정.
 - **D. D14 게이트 (별도, BLOCKED):** 동일 DLL을 실제 Delphi/C 호스트에서 status+out으로 호출. 툴체인(MSVC 예정) 확보 전까지 **BLOCKED** — 바인딩은 산출하되 실로드는 미검증.
 
 > Phase 1 스칼라 슬라이스와 동일한 정직성: 오라클 그린을 "Delphi/C에서 됐다"로 말하지 않는다.

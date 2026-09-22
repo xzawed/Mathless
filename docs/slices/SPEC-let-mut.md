@@ -6,7 +6,7 @@
 > 이 문서는 이제 **설계 기록**이다.
 > **근거 수준:** E2 실측 — `examples/discount3.mls` → `discount3.dll` **9,728 B**(스칼라 `discount.dll`과
 > 동일 크기, 가변 지역 변수는 ABI·크기에 영향 없음), 오라클이 로드해 `mlx_discount3(100,true)=90` /
-> `(100,false)=100`, export = `mlx_discount3` + `ml_module_abi_version` 2개.
+> `(100,false)=100`, export = `mlx_discount3` + `ml_module_abi_version` 2개 — 당시이고, `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다.
 > **선행:** Phase 1(스칼라 f64/bool/i32 + D17 + `let` 지역 변수). 설계 교차검토: Grok.
 
 ## 1. 목표
@@ -53,7 +53,7 @@ export fn discount3(price: f64, vip: bool) -> f64 {
 - **A. 컴파일:** `examples/discount3.mls` → `mlc build` → `discount3.dll`.
 - **B. 로드·호출 (오라클):** `mlx_discount3(100,true)==90`(if에서 result 대입), `(100,false)==100`
   (result 유지), `abi==1`.
-- **C. 보호:** export = 정확히 `mlx_discount3` + `ml_module_abi_version`(가변 변수 비유출). strip 유지.
+- **C. 보호:** export = 정확히 `mlx_discount3` + `ml_module_abi_version` — 당시 2개이고 `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다(가변 변수 비유출). strip 유지.
 - **부정(타입체크) 케이스:**
   - 불변 재대입: `export fn f() -> i32 { let x = 1  x = 2  return x }` → 에러(불변)
   - 파라미터 재대입: `export fn f(a: i32) -> i32 { a = 1  return a }` → 에러(파라미터 불변)

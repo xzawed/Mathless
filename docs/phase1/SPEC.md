@@ -36,7 +36,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
 
 - 산출물: 플랫폼 표준 DLL (Windows x64 우선; §4 DP4).
 - 사용자 export 접두어: `mlx_` (예: `mlx_discount`). 런타임 예약 `ml_*`와 분리.
-- 예약 심볼: `ml_module_abi_version() -> u32`. 호스트는 major 불일치 시 로드를 거부해야 한다 — **호스트에 대한 계약**이며, 이 저장소에서는 아직 강제되지 않는다(오라클은 값 일치를 assert만).
+- 예약 심볼: `ml_module_abi_version() -> u32`. 호스트는 major 불일치 시 로드를 거부해야 한다 — **호스트에 대한 계약**이며, **2026-08-28 당시** 이 저장소에서는 강제되지 않았다(오라클은 값 일치를 assert만). **→ 지금은 강제된다:** 참조 C 호스트가 로드하는 모든 모듈의 ABI 버전과 지문을 검사해 거부하고(`hosts/c-host/host.c`), 링크 호스트는 드리프트 모듈을 비0으로 거부한다. 계약의 정본은 `docs/HOST_ABI.md`다.
 - 경계: cdecl / C ABI, `extern "C"`, `repr(C)`.
 - **실측 검증됨(E2):** 위 export를 가진 cdylib를 kernel32 `LoadLibraryW`/`GetProcAddress`로 로드·호출 성공 (스모크 테스트, 아래 §3-B 수치).
 
@@ -53,7 +53,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
   - `mlx_discount(100.0, false) == 100.0`
   - `ml_module_abi_version()    == 1`
   - *W1에서는 손수 작성한 fixture DLL로 위 3개를 통과했고, W5에서 **컴파일러 산출물로 대체**되었다(E2, `end_to_end` 테스트). 이후 fixture 크레이트와 `loads_fixture` 테스트는 **삭제**되었다 — ABI 소스가 둘이면 서로 어긋날 수 있고, 매 `cargo test`가 쓰지 않는 cdylib를 빌드했다.*
-- **C. 보호 측정 (D04/D05):** `discount.dll`의 export 목록을 도구로 덤프해 **`mlx_*` + `ml_module_abi_version`만** 노출되고, 소스/디버그 심볼/패닉 문자열이 최소임을 확인한다. `no_std` + strip 지향. **rustc가 자동 보장하지 않으므로 반드시 측정한다.** (Grok 지적)
+- **C. 보호 측정 (D04/D05):** `discount.dll`의 export 목록을 도구로 덤프해 **`mlx_*` + `ml_module_abi_version`만** 노출되고(**2026-08-29 당시 2개** — `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 **오늘은 3개**다. 집합의 정본은 `hosts/rust-oracle/tests/protection.rs`와 `docs/SECURITY.md`이며, 이 절을 인용하는 것도 그 테스트다), 소스/디버그 심볼/패닉 문자열이 최소임을 확인한다. `no_std` + strip 지향. **rustc가 자동 보장하지 않으므로 반드시 측정한다.** (Grok 지적)
 - **D. D14 게이트 (별도) — C 쪽 통과(2026-08-29), Delphi 미검증:** 동일 `discount.dll`을 **C 호스트**(`hosts/c-host/host.c`, MSVC `cl` 19.44, C11)에서 LoadLibrary/GetProcAddress로 로드·호출해 스칼라·에러 경로를 검증했다. 헤더는 그 호스트가 `/W4 /WX`로 컴파일하며, 함수 포인터 타입은 `_Static_assert`+`_Generic`으로 헤더 선언과 동일함을 컴파일 타임에 강제한다. **Delphi(`dcc64`)는 여전히 미확보** → `.pas`는 DRAFT 유지.
   - 원인 정정: 이 게이트를 막던 것은 툴체인 부재가 아니라 **PATH 미설정**이었다(Build Tools는 이미 설치돼 있었음).
 
@@ -111,6 +111,7 @@ export fn discount(price: f64, vip: bool) -> f64 {
   → **D17만 해소**: 에러-경로 슬라이스로 구현·실측(SPEC [`docs/slices/SPEC-D17-error-abi.md`](../slices/SPEC-D17-error-abi.md), PR #14/#15).
   **D16은 여전히 범위 밖**(후속 슬라이스, SPEC 미작성).
 - target triple·CRT/unwind·정확한 export 집합(`dumpbin /exports` 등) **미측정** → 수용 C에서 측정.
-  → **해소.** 자체 PE 리더로 export 집합 측정(PR #8): `mlx_*` + `ml_module_abi_version`만.
+  → **해소.** 자체 PE 리더로 export 집합 측정(PR #8): `mlx_*` + `ml_module_abi_version`만
+  (**그때 2개** — `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다).
   **`dumpbin /exports`와의 교차 확인도 완료(PR #43)** — 두 구현이 같은 집합을 보고한다.
 - 이 문서의 어떤 항목도 측정 전까지 "확정"으로 서술하지 않는다.

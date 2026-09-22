@@ -3104,3 +3104,97 @@ fn no_spec_calls_a_paid_debt_open() {
         }
     }
 }
+
+/// **A document that enumerates the export set as complete must name all of it.**
+///
+/// The set moved 2 → 3 on 2026-09-02 when the fingerprint slice added a second reserved
+/// symbol. Two guards already check that number — this file checks the two READMEs, and
+/// `protection.rs` checks `SECURITY.md` and `STATUS.md` because reading it needs a built
+/// module. Both carry a hand-written list of documents, and twelve lines in ten other files
+/// still say the export table is `mlx_<fn>` + `ml_module_abi_version` and nothing else.
+///
+/// That is the failure the README guard already wrote down about itself: *"a guard's SCOPE is
+/// a claim too"*, after `STATUS.md` sat outside it saying 로드하는 모듈 15개 while `host.c`
+/// loaded 18 — the two documents inside the scope were corrected by the guard and the one
+/// outside simply kept lying. So this one has no list: it walks every markdown file.
+///
+/// **Detector, then requirement.** A line is enumerating the export table when it names both
+/// fixed halves — the reserved `ml_module_abi_version` and D18's user prefix `mlx_` — and
+/// claims the enumeration is complete (정확히 / 만 / 둘뿐 / 2개). Only then must it also name
+/// the third. Both halves of the detector are asserted to be in what `protection.rs` pins, so
+/// a rename moves the detector instead of silently emptying it.
+///
+/// **The completeness marker is what makes this safe on frozen records.** A slice's §3 wrote
+/// its acceptance criterion as an exact set on the day it shipped, and the correction is one
+/// clause naming what joined — after which the line names all three and passes. Lines that
+/// merely mention the two names without claiming the set is complete are untouched: measured,
+/// that is `DECISIONS.md` D18 (which says how the ABI version is exposed, not what else is)
+/// and `SPEC-calls.md:78`.
+#[test]
+fn no_document_enumerates_the_export_set_without_the_fingerprint() {
+    let protection = read("hosts/rust-oracle/tests/protection.rs");
+    let pinned: Vec<String> = string_literals_in_vec_after(&protection, "        exports,")
+        .iter()
+        .map(|s| placeholder_to_module(s))
+        .collect();
+    assert!(
+        pinned.len() >= 3,
+        "recovered {pinned:?} from protection.rs's export assertion — has its shape changed?"
+    );
+
+    // The two fixed halves of the detector, and the third name it then requires. Everything
+    // here comes out of `pinned`; nothing is spelled twice.
+    let reserved_version = "ml_module_abi_version";
+    let user_prefix = "mlx_";
+    let fingerprint: String = pinned
+        .iter()
+        .find(|n| n.starts_with("ml_iface_hash"))
+        .map(|n| {
+            n.split('<')
+                .next()
+                .unwrap_or(n)
+                .trim_end_matches('_')
+                .to_string()
+        })
+        .expect("protection.rs no longer pins a fingerprint export");
+    for part in [reserved_version, user_prefix] {
+        assert!(
+            pinned.iter().any(|n| n.starts_with(part)),
+            "protection.rs pins {pinned:?}, which contains no name starting `{part}` — the \
+             detector below would then match nothing and this guard would pass by reading \
+             nothing"
+        );
+    }
+
+    for (path, text) in every_markdown_file() {
+        for (no, line) in text.lines().enumerate() {
+            let flat = flatten_prose(line);
+            if !flat.contains(reserved_version) || !flat.contains(user_prefix) {
+                continue;
+            }
+            if flat.contains(&fingerprint) {
+                continue;
+            }
+            for marker in ["정확히", "만 노출", "둘뿐", "뿐이다", "2개", "만;", "만."]
+            {
+                // `2개` needs a digit boundary. Grok raised it verifying this guard and the
+                // plant confirmed it: a line reading `재시도 32개` beside the two names failed
+                // as though it had claimed the export set was two.
+                let claimed = flat.match_indices(marker).any(|(at, _)| {
+                    !marker.starts_with(|c: char| c.is_ascii_digit())
+                        || !flat[..at].ends_with(|c: char| c.is_ascii_digit())
+                });
+                assert!(
+                    !claimed,
+                    "{path}:{} enumerates the export table as complete ('{marker}') but names \
+                     only {reserved_version} and {user_prefix}*. Every module also exports \
+                     {fingerprint}_<module>, which joined on 2026-09-02, and protection.rs \
+                     pins the set as {pinned:?}. If the line records a measurement from \
+                     before that, say so in the line and name what joined — a reader applying \
+                     this criterion today judges a correct module as violating it.",
+                    no + 1
+                );
+            }
+        }
+    }
+}

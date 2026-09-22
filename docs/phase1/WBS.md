@@ -10,10 +10,10 @@
 > 테스트 수·CI 구성의 정본은 `docs/STATUS.md`다(여기 숫자를 복제하면 곧 낡는다 — 실제로 두 번 낡았다).
 > 잔여 작업 목록의 정본은 `docs/STATUS.md` §9(**▶ 여기서 시작한다** 블록)다.
 >
-> **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 값은 `docs/STATUS.md`), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. (당시) `.h`/`.pas`의 실제 로드는 미검증이었다 — **`.h`는 이후 W12에서 해소**, `.pas`는 여전히 DRAFT.
+> **STEP1(Gate-D prep) ✅**: `mlc build <f.mls> -o <dir>` CLI가 `.dll`+`.h`+`.pas` 3종을 디스크로 산출한다(라이브러리 `emit::emit_artifacts`, bin은 argv만 — **당시 3종이고, `.lib`가 2026-09-03에 합류해 오늘은 4종이다**). 실측 E2(STEP1 당시): `cargo test` 30 그린(현재 값은 `docs/STATUS.md`), 오라클이 **산출 dll**을 로드해 `mlx_discount(100,true)=90`/`abi_version=1`·export 2개 통과, 실 CLI 실행이 `discount.dll(9,728 B)`+`.h`+`.pas` 생성. (당시) `.h`/`.pas`의 실제 로드는 미검증이었다 — **`.h`는 이후 W12에서 해소**, `.pas`는 여전히 DRAFT.
 >
 > 수용 A+B 실측: `discount.mls` → 컴파일러 → `discount.dll` → 오라클 로드 → `discount(100,true)=90`·`(100,false)=100`·`abi_version=1`. codegen은 "모든 경로 return"을 강제(미충족 시 codegen 에러).
-> 수용 C 실측: no_std+strip+lto+opt-z DLL = **9,728 B**(std ~107,008 B 대비 ~11×↓), export = **정확히 `mlx_discount` + `ml_module_abi_version`**(PE 리더로 파싱), 소스 코멘트/파일명 비유출. 프록시만 측정 — "리버싱 난이도" 주장 없음(D05).
+> 수용 C 실측: no_std+strip+lto+opt-z DLL = **9,728 B**(std ~107,008 B 대비 ~11×↓), export = **정확히 `mlx_discount` + `ml_module_abi_version`**(PE 리더로 파싱 — **2026-08-31 당시 2개**, `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다), 소스 코멘트/파일명 비유출. 프록시만 측정 — "리버싱 난이도" 주장 없음(D05).
 
 | ID | 작업 | 산출물 | 완료 기준 (측정) | 의존 |
 |----|------|--------|------------------|------|
@@ -23,8 +23,8 @@
 | **W3** | 타입체크 + 독립 IR (TDD) | typecheck(f64/bool), 비-Rust IR | AST → typed IR 테스트 통과; 타입 오류 케이스 실패 처리 | W2 |
 | **W4** | 코드젠 (TDD) | IR → `no_std`+`extern "C"`+`repr(C)` Rust emit → `cargo cdylib` 호출 | 생성 Rust가 빌드되어 DLL 산출; 유닛 테스트 그린 | W3 |
 | **W5** | 통합 (수용 A+B) | `mlc build examples/discount.mls` | 오라클이 **컴파일러 산출 DLL**(fixture 아님)로 §3-B 통과 | W4 |
-| **W6** | 보호 측정 (수용 C) | strip/no_std 빌드 설정 | export 덤프 = `mlx_discount` + `ml_module_abi_version`만; 소스/디버그/패닉 문자열 최소임을 수치로 첨부 | W5 |
-| **W7** | D14 산출물 | C 헤더(`.h`) + Delphi import unit(`.pas`) 생성기 | 헤더/유닛 생성 확인. 실제 로드 게이트는 별도 — **`.h`는 W12에서 통과**, `.pas`는 미검증 | W5 |
+| **W6** | 보호 측정 (수용 C) | strip/no_std 빌드 설정 | export 덤프 = `mlx_discount` + `ml_module_abi_version`만(당시 2개 — `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개); 소스/디버그/패닉 문자열 최소임을 수치로 첨부 | W5 |
+| **W7** | D14 산출물 | C 헤더(`.h`) + Delphi import unit(`.pas`) 생성기 | 헤더/유닛 생성 확인. 실제 로드 게이트는 별도 — **`.h`는 W12에서 통과**, `.pas`는 그때 미검증(**이후 닫혔다**: `MATHLESS_GATE_FPC`·`MATHLESS_GATE_FPC_HOST`가 CI에서, `MATHLESS_GATE_DELPHI`가 로컬에서 돈다) | W5 |
 
 ## W7 이후 — 실제로 수행된 작업 (기록)
 
@@ -63,6 +63,10 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 ## 게이트/블로커
 
 - ~~**BLOCKED (툴체인)**~~ → **C 쪽 해소(2026-08-29).** 실제 원인은 툴체인 부재가 아니라 **PATH 미설정**이었다: MSVC Build Tools 2022가 이미 설치돼 있었고(`cl` 19.44 / `dumpbin` / `link`) `vcvars64.bat`으로 잡으면 동작한다. 수용 D는 C 호스트로 닫혔다(`hosts/c-host/host.c`, W12). **Delphi(`dcc64`)는 여전히 미확보** — D14의 플래그십이므로 호스트 서사는 절반이다.
+  **→ 그것도 닫혔다(2026-09-07 첫 실측, 2026-09-09 반복 가능한 로컬 게이트).** `dcc64`가 명령줄
+  빌드를 거부하면 게이트가 `bds.exe -b`로 IDE 빌드를 부른다(`MATHLESS_GATE_DELPHI`).
+  **남은 한 칸은 CI뿐이다** — 러너에 Delphi도 대화형 세션도 없고, `-Mdelphi`는 방언 에뮬레이션이라
+  대신하지 못한다. 현재 상태의 정본은 `docs/STATUS.md`다.
   - 해소안 — **결정됨(2026-08-29): (b) MSVC Build Tools.** 기각: (a) Delphi/BDS CLI(`dcc64`) — 플래그십 호스트지만 설치 비용이 크고 C ABI 기준 검증이 먼저다, (c) MinGW/LLVM — rustc host triple이 `x86_64-pc-windows-msvc`라 CRT/링커 계열이 갈린다. **이 선택은 D22를 바꾸지 않는다**(D22 = 모듈 포맷에 "msvc"를 못박지 않음 / 이것 = Gate-D 검증용 호스트 툴체인).
   - 설치 후 할 일: `hosts/`에 실제 C 호스트를 두고 산출 `.h`+`.dll`로 로드·호출(수용 D), `dumpbin /exports`로 자체 PE 리더 측정치를 교차 확인. 설치 전까지는 skip-게이트(툴체인 있을 때만 컴파일)로 준비만 한다.
 - W6 export 측정 도구가 없으면(dumpbin 미설치) llvm-objdump 또는 Rust PE 리더로 대체 — W0에서 확정.
@@ -78,9 +82,14 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 
 - ~~D17 정수 status + out-param 에러 경로~~ → **완료**(W8, PR #15)
 - ~~가변 지역 변수 `let mut` + 대입~~ → **완료**(W11, SPEC #32 / 구현 #39)
-- D16 caller-allocates 반환 / context handle 상태
-- 문자열/구조체 마샬링, 콜백
+- D16 caller-allocates 반환 / context handle 상태 — **반환 쪽은 닫혔다**(문자열 #92 · 배열 #206);
+  남은 것은 **context handle**이다
+- ~~문자열~~ **→ 닫혔다**(입력 #89 · 반환 #92 · 연결 #108) / **구조체 마샬링, 콜백** — 그대로 후보다
 - 두 번째 호스트(C#) — ROADMAP Phase 4
+
+> 이 목록은 **2026-08-31 시점의 후속 후보**다. 오늘의 후보 정본은
+> [`docs/slices/README.md`](../slices/README.md)의 "다음 슬라이스" 절이고, 그것만 가드가 지킨다
+> (`no_closed_slice_is_still_listed_as_a_candidate`).
 
 > 다음에 무엇을 할지는 **`docs/STATUS.md` §9**가 정본이다(문서 정합 ✅ → fixture 제거 ✅ →
 > emit·진단 → 이후 슬라이스). STATUS **§6**의 "하지 말 것"(`packager/`·빈 `backend/`·

@@ -19,8 +19,14 @@ against the **generated** headers, runs the resulting executable, and asserts on
   binding — the host is never rebuilt when the module is replaced. (That is *this* host's
   property, not a limit of the toolchain: since `SPEC-linkable-bindings`, `mlc build` also
   ships a `.lib` and [`hosts/c-host-link`](../c-host-link) proves the other path.)
-- Both the scalar path (`mlx_discount`) and the D17 error path (`mlx_safe_div`: status +
-  out-param, out untouched on failure, `ML_SAFE_DIV_ERR_DIV_BY_ZERO` taken from the header).
+- Every category the language emits, not two of them: scalars (`mlx_discount`), the D17 error
+  path (`mlx_safe_div`: status + out-param, out untouched on failure,
+  `ML_SAFE_DIV_ERR_DIV_BY_ZERO` taken from the header), string return under Q12, array input
+  and array return, the rounding built-ins, concatenation, and the `shapes` module written to
+  collect adapter shapes that compile and answer wrongly.
+  **The list of what is covered is the include list at the top of `host.c`** — it is not
+  repeated here, and the count is not either, because the gate enumerates `examples/` and
+  counts for itself.
 
 ## What it does NOT prove
 

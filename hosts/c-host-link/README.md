@@ -29,7 +29,9 @@ host uses those declarations only as a `_Generic` type oracle and calls through
   fingerprint export carries the module stem (`SPEC-qualified-iface-hash`, #215) — and refuses
   on a mismatch, because a linked host is *more* exposed than a dynamic one: a drifted module
   exporting the same names with the same C types resolves perfectly well. Measured — the harness runs this binary beside a drifted `discount.dll`
-  and it exits `3` with `refuse: interface …`. Nothing in the module forces a third-party
+  and it exits `3` with `refuse discount: interface …` — **the module name is in the message**,
+  because this host links two modules and #215 is what made it able to say which one drifted.
+  Nothing in the module forces a third-party
   host to check (`SPEC-iface-hash.md` §5.1).
 - **Anything about Delphi**, or any C compiler other than MSVC.
 

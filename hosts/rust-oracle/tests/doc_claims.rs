@@ -474,6 +474,77 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     }
 }
 
+/// **Every PR number the slice index cites is a PR that exists.**
+///
+/// `CLAUDE.md` calls `docs/slices/README.md` the canonical list of closed slices, and the last
+/// column of every row is how a reader gets from a slice to the change that made it. One of
+/// them pointed at **#97, which has never existed in this repository** — `try` was implemented
+/// by #98 and #99, and the SPEC's own body says so. The wrong number had spread to three more
+/// documents.
+///
+/// Derived from git, not from a list: the merged-commit subjects carry `(#N)`, so the set of
+/// real PR numbers is `git log`'s to give. A citation outside that set is a dead pointer, and
+/// nothing else in this file could see it — every other guard compares documents to source
+/// code, and a PR number is neither.
+///
+/// Numbers are compared as a SET, not as a range. #97 sits between two numbers that do exist,
+/// so any bounds check would have passed it.
+#[test]
+fn every_pr_the_slice_index_cites_exists() {
+    let out = std::process::Command::new("git")
+        .args(["log", "--format=%s", "--all"])
+        .current_dir(repo_root())
+        .output()
+        .expect("run git log");
+    assert!(out.status.success(), "git log failed");
+    let subjects = String::from_utf8_lossy(&out.stdout);
+
+    let mut real: Vec<u32> = Vec::new();
+    for (idx, _) in subjects.match_indices("(#") {
+        let digits: String = subjects[idx + 2..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        if subjects[idx + 2 + digits.len()..].starts_with(')') {
+            if let Ok(n) = digits.parse() {
+                real.push(n);
+            }
+        }
+    }
+    real.sort_unstable();
+    real.dedup();
+    assert!(
+        real.len() >= 200,
+        "only {} merged PR numbers parsed out of git log — this guard would pass by having \
+         nothing to compare against",
+        real.len()
+    );
+
+    let index = read("docs/slices/README.md");
+    for line in index.lines() {
+        if !line.starts_with("| [") || !line.contains("](SPEC-") {
+            continue;
+        }
+        for (idx, _) in line.match_indices('#') {
+            let digits: String = line[idx + 1..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            if digits.is_empty() {
+                continue;
+            }
+            let n: u32 = digits.parse().expect("ascii digits");
+            assert!(
+                real.contains(&n),
+                "docs/slices/README.md cites #{n}, which is not among the {} PR numbers in \
+                 git log. The last column is how a reader gets from a slice to the change \
+                 that closed it; a number that never existed sends them nowhere",
+                real.len()
+            );
+        }
+    }
+}
+
 /// **The glossary defines the vocabulary the documents actually use.**
 ///
 /// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It
@@ -2146,6 +2217,22 @@ fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
 /// one returns an empty list and its assertions pass by iterating over nothing. That is the
 /// `closed.len()` floor below, and it belongs to the parser, not to either caller.
 ///
+/// Every 2-or-more-word PREFIX of a title comes back too, and that is the hole this guard had
+/// been green through since it was written. The index writes a title in full —
+/// `배열 **입력** 파라미터` — and a candidate list writes the short name a person would use,
+/// `배열 입력`. The short name does not contain the long one, so the match fails. Measured:
+/// **24 of the 29 closed titles are three words or more**, so most of them are evadable this
+/// way, and the guard only ever caught `배열 반환` because that title happens to BE its own
+/// short name.
+///
+/// The failure is not hypothetical — it is the one this repository already wrote down. The
+/// 2026-09-11 correction in `docs/slices/README.md` records that the candidate list's first
+/// item was `배열 IN`, and the guard built to stop that recurrence could not see it. Planting
+/// `배열 입력` as a candidate left the suite at 31 green before this change.
+///
+/// 74 prefixes across 29 titles, and zero of them match the live candidate list or `CLAUDE.md`
+/// today — measured before the change, so the widening is strictly a widening.
+///
 /// Titles come back through `flatten_prose`, and **both callers must flatten their haystack
 /// the same way**. Stripping `**` from the needle alone is not enough, and that was measured
 /// rather than reasoned: with `title.replace("**", "")` against raw text, planting
@@ -2166,8 +2253,15 @@ fn closed_slice_titles() -> Vec<String> {
         if !tail.contains('✅') {
             continue;
         }
-        closed.push(flatten_prose(title));
+        let full = flatten_prose(title);
+        let words: Vec<&str> = full.split(' ').filter(|w| !w.is_empty()).collect();
+        for n in 2..words.len() {
+            closed.push(words[..n].join(" "));
+        }
+        closed.push(full);
     }
+    closed.sort();
+    closed.dedup();
     assert!(
         closed.len() >= 25,
         "the index rows stopped parsing — found {}, which is fewer than the slices that are \

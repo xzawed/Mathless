@@ -474,6 +474,65 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     }
 }
 
+/// **No document says C is the only host with an automated gate.**
+///
+/// It stopped being true on 2026-09-09, when `MATHLESS_GATE_FPC_HOST: require` put an Object
+/// Pascal host that loads x64 modules and calls them into CI. `CLAUDE.md`, `DECISIONS.md` and
+/// `STATUS.md` followed; `ROADMAP.md` and `COMPETITIVE.md` did not, and both are in the
+/// reading order a new session is told to take.
+///
+/// **The needle needs a word boundary, and finding out why is the point.** `C뿐` matches inside
+/// `FPC뿐` — so the first draft of this guard flagged `CLAUDE.md` and `DECISIONS.md` for saying
+/// the CORRECT thing, *"CI 게이트는 C·FPC뿐"*. A guard that fires on the true sentence is one
+/// somebody deletes (§9-A A6 is the same shape from the other direction: a needle with no
+/// polarity passing the false sentence). Requiring the preceding character not to be an ASCII
+/// letter separates them, and that separation was measured on all 53 documents before this
+/// was written, not assumed.
+///
+/// **One exemption, `docs/HISTORY.md`**, because it is the history file: its tables record
+/// which documents carried this claim and when. Exempting it is not a loophole for a live
+/// document, because a live document is not in it.
+#[test]
+fn no_document_says_c_is_the_only_gated_host() {
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("MATHLESS_GATE_FPC_HOST: require"),
+        ".github/workflows/ci.yml no longer requires MATHLESS_GATE_FPC_HOST. If the Pascal \
+         host gate was withdrawn, this guard is wrong and the documents would be right"
+    );
+
+    for (path, text) in every_markdown_file() {
+        if path == "docs/HISTORY.md" {
+            continue;
+        }
+        let flat: String = flatten_prose(&text);
+        let chars: Vec<char> = flat.chars().collect();
+        for needle in ["C뿐", "C 쪽만", "only C"] {
+            let nd: Vec<char> = needle.chars().collect();
+            for start in 0..chars.len().saturating_sub(nd.len()) {
+                if chars[start..start + nd.len()] != nd[..] {
+                    continue;
+                }
+                // `FPC뿐` contains `C뿐`. Only a standalone C is a claim about the C host.
+                if start > 0 && chars[start - 1].is_ascii_alphabetic() {
+                    continue;
+                }
+                let lo = start.saturating_sub(70);
+                let hi = (start + nd.len() + 70).min(chars.len());
+                let window: String = chars[lo..hi].iter().collect();
+                if !(window.contains("게이트") || window.to_lowercase().contains("gate")) {
+                    continue;
+                }
+                panic!(
+                    "{path} says the gated host is `{needle}`, but ci.yml requires \
+                     MATHLESS_GATE_FPC_HOST — an Object Pascal host loads x64 modules and \
+                     calls them on every push. Context: …{window}…"
+                );
+            }
+        }
+    }
+}
+
 /// **No document calls array return unimplemented while codegen emits it.**
 ///
 /// `CLAUDE.md` names `docs/HOST_ABI.md`'s "현재 구현된 경계" as the canonical statement of what

@@ -373,6 +373,56 @@ fn no_document_says_the_generated_unit_is_unbuilt_while_the_gates_build_it() {
     }
 }
 
+/// **No live document teaches a symbol no module exports.**
+///
+/// The fingerprint export was renamed to `ml_iface_hash_<module>` by
+/// `SPEC-qualified-iface-hash` (#215), because every module exporting the same bare name meant
+/// a linked host could check at most one of them. `runtime/README.md` kept listing the export
+/// as a bare `ml_iface_hash()` in two places, and `hosts/c-host-link/README.md` kept telling
+/// hosts to call it. A host author who copies that name gets NULL from `GetProcAddress` and
+/// falls into the un-checked state `SPEC-iface-hash` §5.1 warns about — quietly, because a
+/// skipped fingerprint check looks exactly like a passing one.
+///
+/// The hand-written contract header one directory over was already right: `runtime/ml_abi.h`
+/// declares `ml_iface_hash_<module>` and even records that it *"was a bare `ml_iface_hash`
+/// until SPEC-qualified-iface-hash"*. **One folder taught two different symbol names.**
+///
+/// **Scope is derived, not hand-listed**, which is the complaint the 2026-09-22 audit made
+/// about every other guard here. The split already exists in the tree: `docs/` holds design
+/// records and dated history — `SPEC-iface-hash.md` opens with a banner saying its body is a
+/// record of the old name, `SPEC-qualified-iface-hash.md` quotes the bare name as the DEFECT
+/// it measured, and `STATUS.md` §7-4 and §9-31 record the same. Rewriting any of those would
+/// be rewriting history. Every `.md` OUTSIDE `docs/` is live product-facing prose, and there
+/// the bare name is simply wrong.
+///
+/// Matching `ml_iface_hash(` with the paren attached is what separates the two names: the
+/// qualified form is `ml_iface_hash_discount(`, which does not contain it.
+#[test]
+fn no_live_document_names_the_bare_fingerprint_export() {
+    let codegen = read("compiler/src/codegen.rs");
+    assert!(
+        codegen.contains("ml_iface_hash_{}"),
+        "codegen.rs no longer emits a module-qualified fingerprint export. If the bare name \
+         came back, this guard is wrong and the documents are right — check \
+         SPEC-qualified-iface-hash.md before deleting it"
+    );
+
+    for (path, text) in every_markdown_file() {
+        let rel = path.replace('\\', "/");
+        if rel.starts_with("docs/") {
+            continue;
+        }
+        assert!(
+            !text.contains("ml_iface_hash("),
+            "{path} names a bare `ml_iface_hash(`, but every module exports \
+             `ml_iface_hash_<module>` (compiler/src/codegen.rs). A host author copying this \
+             name gets NULL from GetProcAddress and skips the fingerprint check, which looks \
+             the same as passing it. Files under docs/ are exempt because they record the \
+             rename; this file is not a record."
+        );
+    }
+}
+
 /// The one piece of prose that travels WITH the artifact.
 ///
 /// Every generated header carries a note saying what has and has not been verified. For a

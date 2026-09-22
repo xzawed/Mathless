@@ -286,6 +286,93 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
     }
 }
 
+/// **No document calls the Delphi arm unbuilt while two gates build it.**
+///
+/// `CONTRIBUTING.md` is the only document an outside contributor reads to set a machine up,
+/// and one paragraph of it made three claims that were all false for sixteen days:
+///
+///   - *"The generated `.pas` has never been compiled by anything"* — `MATHLESS_GATE_FPC`
+///     compiles every generated unit under `-Mdelphi -Sew` on every push, and **the same file
+///     says so twenty lines above.** A document that contradicts itself is worse than one that
+///     is merely stale: the reader cannot tell which half to act on.
+///   - *"D14's Delphi arm is BLOCKED"* — `MATHLESS_GATE_DELPHI` passes on the dev machine
+///     (§9-20); what is left is CI, which is a different claim.
+///   - *"the unit ships marked DRAFT"* — `grep -rn DRAFT compiler/ runtime/ hosts/` is **0**.
+///     The banner was rewritten twice and the document followed neither time.
+///
+/// Conditional on the source, the same shape as the ABI-refusal guard above: the three facts
+/// are asserted first, so if a gate is removed this test says the gate is gone rather than
+/// quietly excusing every document that denies it.
+///
+/// **Two halves, and the reason is the one Grok gave for the ABI-refusal guard.** A denylist
+/// catches only the sentences that were there — a paraphrase walks through it. So
+/// `CONTRIBUTING.md` must also NAME both gate variables. That is deliberately a weaker
+/// positive than the ABI guard's sentence match: the shape of the true statement here changes
+/// every time the Delphi arm moves, and a guard pinned to today's phrasing would go red for a
+/// correction. The variable names are what a contributor actually needs to type.
+///
+/// **One cost, met immediately and left in place.** This repository records what a corrected
+/// sentence used to say, and the first draft of the correction QUOTED the three false claims —
+/// which turned the guard red on the very commit that fixed them. The sibling candidate guard
+/// solves the same collision by skipping blockquote lines; that was rejected here, because a
+/// denial hidden in a blockquote is exactly what this guard is for and `CONTRIBUTING.md` uses
+/// blockquotes for notes. So the correction notes in that file DESCRIBE the old sentences
+/// instead of quoting them, and say so. If you are writing the next correction, do the same.
+#[test]
+fn no_document_says_the_generated_unit_is_unbuilt_while_the_gates_build_it() {
+    let fpc = read("hosts/rust-oracle/tests/fpc_units.rs");
+    let delphi = read("hosts/rust-oracle/tests/delphi_host.rs");
+    let header = read("compiler/src/header.rs");
+
+    assert!(
+        fpc.contains("GATE_FPC_OK"),
+        "fpc_units.rs no longer prints GATE_FPC_OK — the gate that compiles every generated \
+         unit is gone, or this test matches the wrong line"
+    );
+    assert!(
+        delphi.contains("fn bds_exe"),
+        "delphi_host.rs no longer has the bds.exe fallback — MATHLESS_GATE_DELPHI can no \
+         longer build through the IDE, or this test matches the wrong line"
+    );
+    assert!(
+        !header.contains("DRAFT"),
+        "header.rs emits DRAFT again. This guard exists because the documents kept saying the \
+         unit ships marked DRAFT after it stopped doing so; if it starts again, the denylist \
+         below is wrong, not the documents"
+    );
+
+    for (path, text) in every_markdown_file() {
+        let flat = flatten_prose(&text);
+        for stale in [
+            "has never been compiled by anything",
+            "무엇에도 컴파일된 적이 없",
+            "Delphi arm is BLOCKED",
+            "Delphi 쪽은 BLOCKED",
+            "ships marked DRAFT",
+            "DRAFT로 나간다",
+            "needs an edition whose dcc64 compiles from a command line",
+            "명령줄 컴파일이 되는 에디션을 필요로 한다",
+        ] {
+            assert!(
+                !flat.contains(stale),
+                "{path} says '{stale}', but MATHLESS_GATE_FPC compiles every generated unit, \
+                 MATHLESS_GATE_DELPHI builds through bds.exe when dcc64 refuses, and nothing \
+                 in the tree emits DRAFT"
+            );
+        }
+    }
+
+    let contributing = read("CONTRIBUTING.md");
+    for gate in ["MATHLESS_GATE_FPC", "MATHLESS_GATE_DELPHI"] {
+        assert!(
+            contributing.contains(gate),
+            "CONTRIBUTING.md no longer names {gate}. Dropping the false sentence is not \
+             enough — the one document a new contributor reads has to say which gate covers \
+             the Delphi arm, or the absence reads as absence of the gate"
+        );
+    }
+}
+
 /// The one piece of prose that travels WITH the artifact.
 ///
 /// Every generated header carries a note saying what has and has not been verified. For a

@@ -373,6 +373,56 @@ fn no_document_says_the_generated_unit_is_unbuilt_while_the_gates_build_it() {
     }
 }
 
+/// **No document calls array return unimplemented while codegen emits it.**
+///
+/// `CLAUDE.md` names `docs/HOST_ABI.md`'s "현재 구현된 경계" as the canonical statement of what
+/// the ABI covers. That section said 배열 반환 was ⏳ 미구현 while the same file, 139 lines
+/// below, headed a section *"문자열 반환·배열 반환 모두 구현·실측 완료"* — the canonical source
+/// contradicting itself, with the wrong half first. A second copy sat in the D16 ownership
+/// section and sent the reader to *"아래 '가변 길이 데이터' 절"*, which is the section that
+/// refutes it.
+///
+/// Proximity, not a phrase list. The two occurrences were spelled differently
+/// (`배열 반환·구조체·콜백·호스트 함수 등록은 ⏳ 미구현` and `배열 반환과 문자열을 품은 struct는
+/// 여전히 ⏳ 미구현`), so a denylist would have caught one and let the other through — the exact
+/// failure §9-A A6 records. This looks for `배열 반환` within 45 characters of 미구현 or ⏳ in
+/// flattened prose, which both spellings trip and a third would too.
+///
+/// **No exemption, and that is measured.** Across all 53 documents the pattern matched exactly
+/// twice, both in `HOST_ABI.md`, and both were the defect. `docs/` is not carved out here the
+/// way it is for the bare fingerprint name, because there is nothing under `docs/` that
+/// legitimately says this — the SPECs and the history record the feature as SHIPPED.
+#[test]
+fn no_document_calls_array_return_unimplemented() {
+    let codegen = read("compiler/src/codegen.rs");
+    assert!(
+        codegen.contains("RetAbi::ArrayOut"),
+        "codegen.rs no longer emits RetAbi::ArrayOut. If array return was withdrawn, this \
+         guard is wrong and the documents would be right"
+    );
+
+    const WINDOW: usize = 45;
+    for (path, text) in every_markdown_file() {
+        let flat = flatten_prose(&text);
+        let chars: Vec<char> = flat.chars().collect();
+        let needle: Vec<char> = "배열 반환".chars().collect();
+        for start in 0..chars.len().saturating_sub(needle.len()) {
+            if chars[start..start + needle.len()] != needle[..] {
+                continue;
+            }
+            let lo = start.saturating_sub(WINDOW);
+            let hi = (start + needle.len() + WINDOW).min(chars.len());
+            let window: String = chars[lo..hi].iter().collect();
+            assert!(
+                !(window.contains("미구현") || window.contains('⏳')),
+                "{path} calls 배열 반환 unimplemented, but compiler/src/codegen.rs emits \
+                 RetAbi::ArrayOut and SPEC-array-return closed acceptance A~H on 2026-09-12. \
+                 Context: …{window}…"
+            );
+        }
+    }
+}
+
 /// **No live document teaches a symbol no module exports.**
 ///
 /// The fingerprint export was renamed to `ml_iface_hash_<module>` by

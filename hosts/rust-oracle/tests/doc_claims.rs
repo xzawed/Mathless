@@ -3198,3 +3198,74 @@ fn no_document_enumerates_the_export_set_without_the_fingerprint() {
         }
     }
 }
+
+/// **A documented baseline that requires one gate must require all of them.**
+///
+/// `#277` fixed this in `CONTRIBUTING.md` and put the guard there by name. Two lines outside
+/// that name still published `MATHLESS_GATE_D=require cargo test --workspace --locked` as the
+/// baseline — including step 2 of `STATUS.md` §9, which is the first command a new session
+/// runs. A skipped gate is not a passed gate: the suite is green with `MATHLESS_GATE_FPC` and
+/// `MATHLESS_GATE_FPC_HOST` unset, so a session following that step verifies the C host and
+/// nothing on the Pascal side.
+///
+/// Same lesson as the export guard above, one file over: a guard that names the document it
+/// checks has made a claim about scope, and the copies outside it keep their own counsel.
+///
+/// **The detector is what keeps this quiet on prose and records.** A line only has to name
+/// every gate once it requires at least one — a line that mentions the command without
+/// setting a gate is prose, and `CONTRIBUTING.md`'s blocks put the variables on their own
+/// lines, which `#277`'s guard reads as a block and this one leaves alone. `docs/HISTORY.md`
+/// is exempt for #261's reason: its entries are dated records of runs that really did set one
+/// gate, and rewriting them would be rewriting what happened.
+#[test]
+fn no_document_publishes_a_baseline_that_requires_only_some_gates() {
+    let ci = read(".github/workflows/ci.yml");
+    let required: Vec<String> = ci
+        .lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            let name = t.strip_suffix(": require")?;
+            name.starts_with("MATHLESS_GATE_").then(|| name.to_string())
+        })
+        .collect();
+    let mut required: Vec<String> = required.into_iter().collect();
+    required.sort();
+    required.dedup();
+    assert!(
+        required.len() >= 2,
+        "recovered {required:?} from .github/workflows/ci.yml — CI requires at least the C \
+         host and one Pascal gate, so a shorter list means this parse no longer reads that file"
+    );
+
+    for (path, text) in every_markdown_file() {
+        if path == "docs/HISTORY.md" {
+            continue;
+        }
+        for (no, line) in text.lines().enumerate() {
+            if !line.contains("cargo test --workspace") {
+                continue;
+            }
+            // `require`, not a word that merely starts with it. Grok raised this verifying
+            // the guard and the plant confirmed it: a line spelling `MATHLESS_GATE_FPC=required`
+            // counted as setting that gate, so a typo would have been read as coverage.
+            let set = |g: &String| {
+                line.match_indices(&format!("{g}=require")).any(|(at, m)| {
+                    !line[at + m.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+                })
+            };
+            // Requires at least one gate → it is publishing the gated baseline, not prose.
+            if !required.iter().any(set) {
+                continue;
+            }
+            let missing: Vec<&String> = required.iter().filter(|g| !set(g)).collect();
+            assert!(
+                missing.is_empty(),
+                "{path}:{} publishes a baseline that requires some gates but not {missing:?}. \
+                 CI requires {required:?}, and a skipped gate is not a passed gate — the suite \
+                 goes green with the others unset, so whoever follows this line verifies less \
+                 than they think.",
+                no + 1
+            );
+        }
+    }
+}

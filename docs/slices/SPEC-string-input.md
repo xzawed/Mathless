@@ -121,7 +121,7 @@ function mlx_vat_rate(country: PAnsiChar): Double; cdecl; external ML_MODULE;
 
 ---
 
-## 4. 설계 제안 (DP — **미확정, 사용자 확인 필요**)
+## 4. 설계 결정 (DP — **확정, 2026-08-31 사용자 확인**)
 
 | DP | 선택지 | 권고 | 근거 |
 |----|--------|------|------|

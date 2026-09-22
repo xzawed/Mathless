@@ -151,6 +151,7 @@ C 호스트가 `discount.dll`을 로드해 `mlx_discount(100.0, true)`를 호출
 | 문서 | 내용 |
 |------|------|
 | [docs/STATUS.md](docs/STATUS.md) | `main`의 실측 상태, 열린 결정, 다음 슬라이스 |
+| [docs/HISTORY.md](docs/HISTORY.md) | 날짜 붙은 세션 기록(`§9-N`), 최신이 맨 위 — STATUS가 들고 있던 것 |
 | [docs/VISION.md](docs/VISION.md) | 왜 만드는가, 성공의 모습 |
 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | 표면 문법 vs 내부 모델 |
 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | C ABI, 호스트 연동, 생존성 계약 |

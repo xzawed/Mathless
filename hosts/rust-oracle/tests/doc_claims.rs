@@ -1524,6 +1524,15 @@ fn assigned_on_line(line: &str, name: &str) -> Vec<i64> {
 /// is not the first guard here to find its own scope. An earlier draft of this comment said
 /// it was.)
 fn every_markdown_file() -> Vec<(String, String)> {
+    every_file_ending_in(&[".md"])
+}
+
+/// The walk itself, so that two scopes cannot drift into two different walks.
+///
+/// A second copy of this loop is the same defect shape as a second copy of the slice-index
+/// parser: when one learns to skip a directory and the other does not, the difference shows up
+/// as a guard that quietly reads less than it claims.
+fn every_file_ending_in(suffixes: &[&str]) -> Vec<(String, String)> {
     let root = repo_root();
     let mut out = Vec::new();
     let mut stack = vec![root.clone()];
@@ -1536,7 +1545,7 @@ fn every_markdown_file() -> Vec<(String, String)> {
                 if name != "target" && name != ".git" {
                     stack.push(path);
                 }
-            } else if name.ends_with(".md") {
+            } else if suffixes.iter().any(|s| name.ends_with(s)) {
                 let rel = path
                     .strip_prefix(&root)
                     .expect("a path under the root")
@@ -1551,6 +1560,77 @@ fn every_markdown_file() -> Vec<(String, String)> {
     }
     out.sort();
     out
+}
+
+/// **Every `§9-N` this repository cites resolves to a heading in `docs/HISTORY.md`.**
+///
+/// `docs/STATUS.md` grew a dated session log — `### 9-1.` through `### 9-62.` — inside the
+/// document whose own line 10 promises it holds 현재와 다음만. It reached 3,774 lines, 62% of
+/// the file, in a file that line 3 tells every new session to read FIRST. The global rule
+/// sends completed-work narrative to a history document; this repository had none, so it
+/// accumulated where it could.
+///
+/// **This guard is what makes moving it safe.** Those entries are not inert: 46 files outside
+/// `STATUS.md` cite `§9-N` 150 times, and six of them are product source comments —
+/// `compiler/src/codegen.rs`, `header.rs`, `iface.rs`, `ir.rs`, `lexer.rs`, `lib.rs`. A move
+/// that dropped, renumbered or mangled one entry would strand those citations silently,
+/// because nothing about a prose reference fails at compile time.
+///
+/// Derived, not listed: collect every `§9-<n>` mentioned anywhere in the tree, collect every
+/// `### 9-<n>.` heading in `docs/HISTORY.md`, and require the first set inside the second.
+/// The relation was measured to hold BEFORE the move (36 distinct numbers cited, 62 headings,
+/// numbering 1–62 with no gaps, 0 dangling), so a failure here means the move broke something
+/// rather than that the repository was already broken.
+#[test]
+fn every_cited_history_entry_has_a_heading() {
+    let history = read("docs/HISTORY.md");
+
+    let mut headings: Vec<u32> = Vec::new();
+    for line in history.lines() {
+        let Some(rest) = line.strip_prefix("### 9-") else {
+            continue;
+        };
+        let Some((num, _)) = rest.split_once('.') else {
+            continue;
+        };
+        if let Ok(n) = num.parse::<u32>() {
+            headings.push(n);
+        }
+    }
+    assert!(
+        headings.len() >= 62,
+        "docs/HISTORY.md carries {} `### 9-N.` headings, fewer than the 62 that existed in \
+         docs/STATUS.md before the move. Entries were lost, not moved",
+        headings.len()
+    );
+
+    let mut cited: Vec<(String, u32)> = Vec::new();
+    for (path, text) in every_file_ending_in(&[".md", ".rs", ".c", ".h", ".dpr", ".mls", ".yml"]) {
+        for (idx, _) in text.match_indices("§9-") {
+            let digits: String = text[idx + "§9-".len()..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            if let Ok(n) = digits.parse::<u32>() {
+                cited.push((path.clone(), n));
+            }
+        }
+    }
+    assert!(
+        cited.len() >= 150,
+        "only {} `§9-N` citations found across the tree, fewer than the 150 measured before \
+         the move — this scan is reading less than it did, so it would pass by finding nothing",
+        cited.len()
+    );
+
+    for (path, n) in &cited {
+        assert!(
+            headings.contains(n),
+            "{path} cites §9-{n}, but docs/HISTORY.md has no `### 9-{n}.` heading. Moving the \
+             log out of docs/STATUS.md must preserve every heading exactly: a prose reference \
+             does not fail at compile time, so a stranded one is silent"
+        );
+    }
 }
 
 /// **No document states a value for an `abi.rs` constant that `abi.rs` does not state.**

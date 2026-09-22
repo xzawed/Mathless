@@ -2810,3 +2810,121 @@ fn no_closed_slice_is_still_listed_as_a_candidate() {
         );
     }
 }
+
+/// **No document says a question `docs/OPEN_QUESTIONS.md` has closed is still open.**
+///
+/// Rule 8 in `CLAUDE.md` tells the next agent to find the open questions and get user
+/// confirmation before touching them. A document that calls a *closed* question open is
+/// therefore not a stale sentence but an instruction: it sends the next session to reopen a
+/// decision this repository already made with the user. That is the same failure `#276` fixed
+/// for SPEC headings, one layer up — there the file asked for confirmation it already had,
+/// here it names the question that confirmation closed.
+///
+/// **The set is derived, never listed.** `docs/OPEN_QUESTIONS.md` owns one entry per
+/// question — `- Q12.` in the deferred list, `### Q1.` in the closed section — and an entry
+/// is closed when its own entry line says 닫힘 / 닫혔다. Deriving it is not decoration: a
+/// hand-written list drifts the moment a question closes, which is the defect this guard is
+/// about. The first cut of this derivation scanned every line rather than the owning entry
+/// and marked Q6 and Q11 closed, because the summary line that names `Q6~Q11` as *remaining*
+/// also carries 닫혔다 about Q12–Q15. A guard that believes an open question is closed goes
+/// quiet exactly where it is needed.
+///
+/// **Present tense only.** The needles are the live spellings — 열려 있는 Qn, Qn는 열려 있다,
+/// Qn를 먼저 닫아야 한다. A decision table recording why a slice stopped at a boundary that
+/// existed *that day* is a record, and the repository keeps those; writing it in the past
+/// tense (당시 열려 있던) is what makes it a record rather than a claim, and the past tense
+/// evades these needles without an allowlist. An allowlist would have been the other option
+/// and a worse one: "the line also says 닫혔다 somewhere" passes a line that says both about
+/// two different questions.
+#[test]
+fn no_document_says_a_closed_question_is_open() {
+    let oq = read("docs/OPEN_QUESTIONS.md");
+    let (mut closed, mut open): (Vec<u32>, Vec<u32>) = (Vec::new(), Vec::new());
+    for line in oq.lines() {
+        let flat = flatten_prose(line);
+        // The entry that OWNS the question. `flatten_prose` has already dropped the `-` or
+        // `###` marker, so an entry starts with the number and a period. The period is what
+        // separates `Q12.` from `Q1~Q5는 …`, a line that merely talks about questions.
+        let Some(rest) = flat.strip_prefix('Q') else {
+            continue;
+        };
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        if digits.is_empty() || !rest[digits.len()..].starts_with('.') {
+            continue;
+        }
+        let n: u32 = digits.parse().expect("digits");
+        if flat.contains("닫힘") || flat.contains("닫혔다") {
+            closed.push(n);
+        } else {
+            open.push(n);
+        }
+    }
+
+    // Floors: the parse found both kinds, said nothing twice, and left no gaps. A walk that
+    // silently stops matching — a bullet style changes, a section moves — otherwise reports
+    // an empty `closed` set and this test passes by reading nothing.
+    assert!(
+        !closed.is_empty() && !open.is_empty(),
+        "parsed {} closed and {} open questions from docs/OPEN_QUESTIONS.md; both must be \
+         non-empty or the entry parse no longer matches that file's shape",
+        closed.len(),
+        open.len()
+    );
+    let highest = closed
+        .iter()
+        .chain(open.iter())
+        .copied()
+        .max()
+        .expect("max");
+    for n in 1..=highest {
+        let seen =
+            closed.iter().filter(|c| **c == n).count() + open.iter().filter(|o| **o == n).count();
+        assert_eq!(
+            seen, 1,
+            "Q{n} is owned by {seen} entries in docs/OPEN_QUESTIONS.md, not 1 — every number \
+             up to Q{highest} must have exactly one entry, or this guard is classifying some \
+             question by a line that does not own it"
+        );
+    }
+
+    for (path, text) in every_markdown_file() {
+        for (no, line) in text.lines().enumerate() {
+            let flat = flatten_prose(line);
+            for n in &closed {
+                for needle in [
+                    format!("열려 있는 Q{n}"),
+                    format!("Q{n}는 열려"),
+                    format!("Q{n}은 열려"),
+                    format!("Q{n}이 열려"),
+                    format!("Q{n}가 열려"),
+                    format!("Q{n}를 먼저 닫아야"),
+                    format!("Q{n}을 먼저 닫아야"),
+                ] {
+                    // Every occurrence, not the first. `열려 있는 Q1` is a prefix of
+                    // `열려 있는 Q14`, so where the number ends the needle the next character
+                    // decides which question was named — and a line may hold both. Grok
+                    // raised this verifying the test: `find` returns one index, so a line
+                    // reading `열려 있는 Q11과 … 열려 있는 Q1` skipped the Q11 hit and never
+                    // looked further, passing a sentence that calls closed Q1 open. Planted
+                    // and confirmed green before the fix.
+                    let real = flat.match_indices(&needle).any(|(at, _)| {
+                        !(needle.ends_with(char::is_numeric)
+                            && flat[at + needle.len()..].starts_with(|c: char| c.is_ascii_digit()))
+                    });
+                    if !real {
+                        continue;
+                    }
+                    panic!(
+                        "{path}:{} says '{needle}', but docs/OPEN_QUESTIONS.md closed Q{n}. \
+                         Rule 8 sends the next session to the open questions, so a closed one \
+                         named as open is an instruction to reopen a decision the user already \
+                         made. If the sentence records why a slice stopped there on the day it \
+                         was written, put it in the past tense — 당시 열려 있던 — which is what \
+                         makes it a record.",
+                        no + 1
+                    );
+                }
+            }
+        }
+    }
+}

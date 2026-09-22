@@ -2980,3 +2980,127 @@ fn the_recorded_division_debt_still_matches_what_codegen_emits() {
          is still in the compiler; removing the record does not pay it"
     );
 }
+
+/// **A SPEC may not call a `STATUS.md` §5 debt open after §5 marks it paid.**
+///
+/// §5 is the debt register — "조용히 사라지면 안 되는 것" — and its numbered items carry ✅
+/// 갚음 once paid. Twelve slices cite §5-1 while explaining what they do and do not pay, which
+/// is exactly what the register is for. Four of them said the debt itself was still open:
+/// 열린 채다 / 그대로다 / 여전히 없다 / 관측 수단이 없다. #200 paid it on 2026-09-13.
+///
+/// **The distinction the needles draw is real and was measured.** *"이 슬라이스는 §5-1을 갚지
+/// 않는다"* is a statement about the slice and stays true forever; *"§5-1은 열린 채다"* is a
+/// statement about the debt and expires the day it is paid. Scanning for the citation alone
+/// found 29 lines, of which 25 were the first kind. The needles below select the second kind:
+/// measured 4 hits, 4 real, 0 false.
+///
+/// **Scope is `docs/slices/SPEC-*.md`, and the reason is the same one #261 used.** Entries in
+/// `STATUS.md` §9 and `HISTORY.md` are dated records of what was true that day, and three of
+/// them say §5-1 was open because it was. A SPEC's §5 debt list carries no date and reads as
+/// current. Including the records would have added 4 false positives for no true one.
+///
+/// A line that corrects itself in place — struck through, or carrying ✅ / 갚혔다 / 닫혔다 —
+/// is the repository's own correction form and passes. That is an allowlist and it is narrow
+/// on purpose: it is scoped to one line that already names one debt, so it cannot pass a line
+/// that says both things about two different debts.
+#[test]
+fn no_spec_calls_a_paid_debt_open() {
+    let status = read("docs/STATUS.md");
+    // Both halves of the register: §5's own numbered list, cited as `§5-N`, and the
+    // sub-register §5-5 ("미추적 부채"), cited as `§5-5.N`. The needles find nothing in the
+    // second half today; it is read anyway because which half a debt lands in is not
+    // something this guard should have an opinion about.
+    let mut paid: Vec<String> = Vec::new();
+    let mut unpaid: Vec<String> = Vec::new();
+    for (open_at, prefix) in [("## 5. ", "5-"), ("### 5-5. ", "5-5.")] {
+        let before = paid.len() + unpaid.len();
+        let mut inside = false;
+        for line in status.lines() {
+            if line.starts_with(open_at) {
+                inside = true;
+                continue;
+            }
+            if inside && (line.starts_with("## ") || line.starts_with("### ")) {
+                break;
+            }
+            if !inside {
+                continue;
+            }
+            let t = line.trim_start();
+            let digits: String = t.chars().take_while(char::is_ascii_digit).collect();
+            if digits.is_empty() || !t[digits.len()..].starts_with(". ") {
+                continue;
+            }
+            let key = format!("{prefix}{digits}");
+            if t.contains('✅') {
+                paid.push(key);
+            } else {
+                unpaid.push(key);
+            }
+        }
+
+        // Floor, per register rather than over the union. The first version asserted only
+        // that `paid` and `unpaid` were non-empty overall, and a plant showed what that
+        // costs: renaming one heading dropped that whole register and the other one kept the
+        // totals non-zero, so the guard went on scanning for half the debts and passed.
+        assert!(
+            paid.len() + unpaid.len() > before,
+            "docs/STATUS.md has no numbered items under a heading starting `{open_at}` — the \
+             debt register moved or was renamed, and this guard is now reading nothing there"
+        );
+    }
+
+    // And both verdicts exist somewhere, so a register that lost its ✅ marks is visible too.
+    assert!(
+        !paid.is_empty() && !unpaid.is_empty(),
+        "parsed {} paid and {} unpaid debts from docs/STATUS.md; both must be non-empty or the \
+         register no longer distinguishes them",
+        paid.len(),
+        unpaid.len()
+    );
+
+    for (path, text) in every_markdown_file() {
+        if !path.starts_with("docs/slices/SPEC-") {
+            continue;
+        }
+        for (no, line) in text.lines().enumerate() {
+            let flat = flatten_prose(line);
+            // The repository's own correction forms. Same line, so one debt, one verdict.
+            if line.contains("~~")
+                || flat.contains('✅')
+                || flat.contains("갚혔다")
+                || flat.contains("닫혔다")
+            {
+                continue;
+            }
+            for key in &paid {
+                // Every occurrence, not the first. `§5-5` is a prefix of `§5-5.4` and `§5-1`
+                // of `§5-10`, and those are different debts — so a citation is only real when
+                // the key is not continued by a digit or a sub-number. Taking `find`'s single
+                // index meant a line that continued the first match abandoned the key, and a
+                // later real citation on the same line went unread. This is the second time
+                // the same `find`-first hole appeared in this file; Grok found both, and the
+                // first (#280) is where the shape is described.
+                let cite = format!("§{key}");
+                let real = flat.match_indices(&cite).any(|(at, _)| {
+                    !flat[at + cite.len()..].starts_with(|c: char| c == '.' || c.is_ascii_digit())
+                });
+                if !real {
+                    continue;
+                }
+                for needle in ["열린 채", "그대로다", "여전히 없다", "관측 수단이 없다"]
+                {
+                    assert!(
+                        !flat.contains(needle),
+                        "{path}:{} cites §{key} and says '{needle}', but docs/STATUS.md marks \
+                         that debt ✅ 갚음. Saying a slice does not pay a debt stays true \
+                         forever; saying the debt is still open expires the day it is paid, \
+                         and a SPEC's debt list carries no date to read it by. Strike the line \
+                         through and add what paid it.",
+                        no + 1
+                    );
+                }
+            }
+        }
+    }
+}

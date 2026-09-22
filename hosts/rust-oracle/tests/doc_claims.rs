@@ -545,6 +545,94 @@ fn every_pr_the_slice_index_cites_exists() {
     }
 }
 
+/// **A message a host README quotes is a message that host can print.**
+///
+/// `hosts/c-host-link/README.md` quoted the refusal as `refuse: interface …`. The host prints
+/// `refuse discount: interface …` — the module name is in there, and it is in there for a
+/// reason: that host links TWO modules and the whole point of #215 was that it can now name
+/// which one drifted. The README was quoting the message from before that slice.
+///
+/// A phantom transcript is worse than a stale sentence. A reader who greps the source for the
+/// line they were shown finds nothing and concludes the check is not there.
+///
+/// Scope and needle are both measured. Spans are taken from backticks and filtered to the ones
+/// that look like program output — `refuse…`, `GATE_…`, `ok …` — and checked against the
+/// host's own source AND its harness, because the gate banners are printed by the test, not by
+/// the host. Checking the host source alone reported six false misses; adding the harness left
+/// exactly one, and that one was the defect.
+///
+/// The probe stops at the first `…`, so a README may elide the varying half of a format
+/// string without defeating the check.
+#[test]
+fn every_message_a_host_readme_quotes_exists_in_that_host() {
+    let harness_dir = repo_root().join("hosts").join("rust-oracle").join("tests");
+    for (dir, sources) in [
+        ("c-host", vec!["hosts/c-host/host.c", "c_host.rs"]),
+        (
+            "c-host-link",
+            vec!["hosts/c-host-link/host.c", "c_host.rs", "link_host.rs"],
+        ),
+        (
+            "delphi-host",
+            vec![
+                "hosts/delphi-host/host.dpr",
+                "delphi_host.rs",
+                "fpc_units.rs",
+            ],
+        ),
+    ] {
+        // `.github/workflows/ci.yml` is in every blob because a host README legitimately
+        // quotes the gate setting that drives it (`MATHLESS_GATE_FPC_HOST: require`), and
+        // ci.yml is where CLAUDE.md says that list is canonical. It adds no risk of a false
+        // pass: the one real defect below is a `refuse …` string, which appears in no yml.
+        let mut blob = read(".github/workflows/ci.yml");
+        for s in &sources {
+            let p = if s.contains('/') {
+                repo_root().join(s)
+            } else {
+                harness_dir.join(s)
+            };
+            if let Ok(t) = std::fs::read_to_string(&p) {
+                blob.push_str(&t);
+            }
+        }
+        assert!(
+            blob.len() > 1000,
+            "hosts/{dir}: read almost nothing from {sources:?}, so this guard would pass by \
+             having no text to search"
+        );
+
+        let readme = read(&format!("hosts/{dir}/README.md"));
+        let mut checked = 0usize;
+        for span in readme.split('`').skip(1).step_by(2) {
+            if span.contains('\n') {
+                continue;
+            }
+            let looks_printed =
+                span.starts_with("refuse") || span.contains("GATE_") || span.starts_with("ok ");
+            if !looks_printed {
+                continue;
+            }
+            let probe = span.split('…').next().unwrap_or(span).trim();
+            if probe.is_empty() {
+                continue;
+            }
+            checked += 1;
+            assert!(
+                blob.contains(probe),
+                "hosts/{dir}/README.md quotes `{span}`, but no such text appears in {sources:?}. \
+                 A reader who greps for the line they were shown finds nothing and concludes \
+                 the check is absent"
+            );
+        }
+        assert!(
+            checked >= 2,
+            "hosts/{dir}/README.md: only {checked} quoted messages matched the filter, fewer \
+             than the two known to be there — the filter stopped seeing them"
+        );
+    }
+}
+
 /// **The glossary defines the vocabulary the documents actually use.**
 ///
 /// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It

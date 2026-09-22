@@ -9,7 +9,13 @@ Thin C-ABI surface for Mathless modules (Phase 1). No VM, no interpreter (D02/D1
 | `ml_*` | runtime / reserved | `ml_module_abi_version` |
 | `mlx_*` | user module exports | `mlx_discount` |
 
-- Hosts resolve exports by name via `GetProcAddress` (Windows, measured) or `dlsym` (POSIX, not yet: there is no `.so` target).
+- A **dynamic** host resolves exports by name via `GetProcAddress` (Windows, measured) or
+  `dlsym` (POSIX, not yet: there is no `.so` target). **Two of the three host directories
+  below do not** — `hosts/c-host-link` is bound by the linker from the `.lib`, and
+  `hosts/delphi-host` consumes a generated unit whose functions are `external ML_MODULE`,
+  bound when the program loads. The name still has to match; what differs is who resolves it
+  and when, and that is why a missing reserved symbol fails at link or at startup there
+  rather than returning NULL.
 - `ml_module_abi_version() -> u32`: hosts are **required** to refuse a **major** mismatch. The reference C host does refuse, on every module it loads, before the first call (`hosts/c-host/host.c`, acceptance D). For a **third-party** host it stays a contract — nothing in the module enforces it, and the Rust oracle only asserts the value matches the compiler constant.
 - `ml_iface_hash_<module>() -> u64`: the module's **interface fingerprint** — a hash over its
   host-visible contract (exported signatures including parameter names, and the error table).
@@ -27,10 +33,9 @@ Thin C-ABI surface for Mathless modules (Phase 1). No VM, no interpreter (D02/D1
   host this is a contract: nothing in the module enforces it (`SPEC-iface-hash` §5.1).
 - `ml_abi.h`: the hand-written C header in this directory. **Not compiler output** — `mlc`
   emits `.dll`/`.h`/`.pas`/`.lib` and never copies this file, which is why
-  `LICENSE-OUTPUT-EXCEPTION` §3 names it as *not* Compiler Output. The **C** binding is
-  verified in CI — a real MSVC-built host
-  loads a module and calls it (acceptance D, `hosts/c-host`). The **Delphi** binding is
-  verified too, but only where a Delphi is installed: `MATHLESS_GATE_DELPHI` builds
-  `hosts/delphi-host` with `dcc64` through the IDE (`bds.exe -b`, since the edition here
-  refuses command-line builds) and calls the modules. That gate cannot run in CI — no
-  Delphi, no interactive session. See `docs/phase1/SPEC.md` §3-D.
+  `LICENSE-OUTPUT-EXCEPTION` §3 names it as *not* Compiler Output.
+
+  **Which binding is verified how is stated in `ml_abi.h` itself, not here.** That header is
+  the contract file and the one the compiler tests read; this paragraph used to carry a second
+  copy of its status, and the two drifted — `ml_abi.h` learned the qualified fingerprint name
+  on 2026-09-12 and this file did not. One copy, in the file that owns it.

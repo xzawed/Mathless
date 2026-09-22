@@ -6,8 +6,14 @@ edition available refuses command-line builds, so the gate drives the IDE instea
 every full local test — a different compiler answering a smaller question.
 
 **The gate does not run in CI**: the runner has neither Delphi nor an interactive desktop
-session. So this arm is checked, but not on every push — whoever changes the generator or
-this host has to run the gate themselves.
+session. **What that does and does not mean, separated:**
+
+- **`dcc64` does not run in CI.** Dialect differences — the ones `-Mdelphi` only emulates —
+  are caught by the local gate or not at all.
+- **This `host.dpr` IS built and run on every push.** `MATHLESS_GATE_FPC_HOST: require` has
+  Free Pascal compile it and load real x64 modules, so a syntax error or a broken check here
+  fails the windows job. Whoever edits this file gets told by CI; whoever changes something
+  only real Delphi would notice has to run `MATHLESS_GATE_DELPHI` themselves.
 
 This file has twice described a state it had already left, so the record is kept below
 rather than rewritten:
@@ -50,7 +56,11 @@ refuses command-line builds.
 
 ## What it checks
 
-The same ground `hosts/c-host` covers, from the other language:
+The core paths `hosts/c-host` covers, from the other language — **plus two axes a C host
+cannot reach at all**: the `@Arr[0]` idiom on an empty dynamic array (nil without `$R+`, an
+exception with it), and `Boolean`'s one-byte stride, which produced a silently wrong `TFFF`
+before acceptance E closed it. Array input and array return are in the list below as of
+2026-09-12.
 
 - the load-time gate — abi version **and** interface fingerprint (`SPEC-iface-hash`);
 - scalars, with `Boolean` as **1 byte** (the generated unit says so; `LongBool` would read

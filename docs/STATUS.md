@@ -63,7 +63,10 @@
   > find compiler/tests hosts/rust-oracle/tests -name '*.rs' | xargs wc -l | tail -1
   > ```
 - **수용 A/B/C/D 전부 통과.** **CI가 강제하는 호스트 게이트는 C와 Free Pascal 둘이고, Delphi는 로컬 전용이다**
-  (2026-09-11 갱신 — 아래 문단이 오래 "C뿐"이라고 적고 있었다) — MSVC로 빌드한 C11 호스트가 산출 DLL을
+  (2026-09-11 갱신 — 아래 문단이 오래 **C 하나만 게이트된다고** 적고 있었다. 2026-09-22 재작성:
+  그 옛 표현을 **인용하지 않고 서술한다** — `no_document_says_c_is_the_only_gated_host`가
+  그 문구를 금지하므로, 인용하면 정정문이 자기 가드를 트립시킨다. `CONTRIBUTING.md`에서 같은 일이
+  실제로 일어났다) — MSVC로 빌드한 C11 호스트가 산출 DLL을
   `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **로드하는 모듈 21개 전부**에
   지문 게이트가 붙는다 — 이 수치는 `doc_claims.rs`가 `host.c`의 실제 `load(` 호출 수에 묶어 둔다).
   **체크 개수는 여기 적지 않는다(2026-09-11).** 게이트를 돌려 세고, 세는 명령은 아래 블록에 있다.

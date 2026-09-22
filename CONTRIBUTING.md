@@ -118,12 +118,28 @@ deliberately left, and what not to reopen. Read it before the backlog tables, wh
 
    **Locally, on Windows, run what that job runs — and read the exit codes:**
 
+   ```powershell
+   # PowerShell — the default shell on Windows, and it has NO inline `VAR=value cmd` prefix
+   cargo fmt --all --check
+   cargo clippy --workspace --all-targets -- -D warnings
+   $env:MATHLESS_GATE_D = "require"
+   $env:MATHLESS_GATE_FPC = "require"
+   $env:MATHLESS_GATE_FPC_HOST = "require"
+   cargo test --workspace --locked
+   ```
+
    ```sh
+   # Git Bash / WSL
    cargo fmt --all --check
    cargo clippy --workspace --all-targets -- -D warnings
    MATHLESS_GATE_D=require MATHLESS_GATE_FPC=require MATHLESS_GATE_FPC_HOST=require \
      cargo test --workspace --locked
    ```
+
+   **The PowerShell form is first because the bash prefix silently does nothing there.**
+   `MATHLESS_GATE_D=require cargo test` is a parse error in `cmd` and sets no variable in
+   PowerShell, so the natural repair — dropping the prefixes — is exactly the one-gate run this
+   change exists to stop. Same shape as the pipe warning below: the wrong form still exits 0.
 
    **All three, because CI requires all three.** Until 2026-09-22 this block set only
    `MATHLESS_GATE_D`, and that is worse than it sounds: on a machine without Free Pascal the
@@ -225,8 +241,14 @@ Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
    **9,216 B**로 고정하고 `GITHUB_ACTIONS`로 둘을 가른다. 다른 값은 assert에 걸린다. 모듈의 결함이
    아니다 — 툴체인 핀은 **rustc**를 덮지 MSVC `link.exe`나 Windows SDK를 덮지 않으므로, SDK가
    다르면 크기가 다르다. 실패 메시지가 정확히 이 말과 할 일을 적는다: 다시 재고, **상수와 그 값을
-   싣는 문서 넷**(`README.md`·`README.ko.md`·`docs/SECURITY.md`·`docs/STATUS.md`)을 **같은 커밋에서**
-   고친다. `doc_claims.rs`가 그 문서들을 검사하므로 반만 고치면 계속 빨갛다.
+   싣는 문서 다섯**(`README.md`·`README.ko.md`·`docs/SECURITY.md`·`docs/STATUS.md`, 그리고
+   **이 파일**)을 **같은 커밋에서** 고친다. `doc_claims.rs`가 다섯을 전부 검사하므로 반만 고치면
+   계속 빨갛다. **이 파일은 2026-09-22에 그 목록에 들어왔다** — 그때까지 두 값을 네 번 싣고 있으면서
+   "문서 넷이 가드된다"고 적고 있었다.
+
+   그래도 목록을 믿지 말고 grep하라: 가드의 범위는 **손으로 적은 배열**이라 여섯 번째 문서가
+   아무 소리 없이 들어올 수 있다. 여기 모든 손-범위 가드의 공통 한계이고, 위 8번의 게이트 목록을
+   `ci.yml`에서 **유도**하는 이유다.
 2. **`host.c`를 비롯한 손으로 쓴 C는 순수 ASCII여야 하고, 그 이유가 머신 의존이다.** MSVC는 이
    파일들을 머신의 ANSI 코드 페이지로 읽으므로, 비ASCII 바이트는 `/W4 /WX`에서 `C4819` → `C2220`이
    된다 — **다만 그 코드 페이지가 표현하지 못할 때만.** CP949 머신에서 발견됐고 CP1252였다면 깨끗하게
@@ -269,10 +291,23 @@ Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
 
    **CI가 부르는 방식 그대로 부른다는 것은 게이트 셋을 전부 건다는 뜻이다**(위 영문 블록):
 
+   ```powershell
+   # PowerShell — Windows 기본 셸이고, `VAR=value cmd` 접두어가 **없다**
+   $env:MATHLESS_GATE_D = "require"
+   $env:MATHLESS_GATE_FPC = "require"
+   $env:MATHLESS_GATE_FPC_HOST = "require"
+   cargo test --workspace --locked
+   ```
+
    ```sh
+   # Git Bash / WSL
    MATHLESS_GATE_D=require MATHLESS_GATE_FPC=require MATHLESS_GATE_FPC_HOST=require \
      cargo test --workspace --locked
    ```
+
+   **PowerShell 형태를 먼저 두는 이유**: bash 접두어는 PowerShell에서 **변수를 설정하지 않고**
+   `cmd`에서는 파스 에러다. 그러면 자연스러운 수리가 "접두어를 떼는 것"이 되고, 그것이 바로 이
+   변경이 막으려는 **게이트 하나짜리 실행**이다. 아래 파이프 경고와 같은 모양 — 틀린 형태도 exit 0이다.
 
    **하나만 걸면 안 된다.** 2026-09-22까지 위 블록은 `MATHLESS_GATE_D` 하나만 걸었고, Free Pascal이
    없는 머신에서는 **나머지 둘이 조용히 skip**되어 초록·exit 0이 나온다. 기여자는 그것을 믿고

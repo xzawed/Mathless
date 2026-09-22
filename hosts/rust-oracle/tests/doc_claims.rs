@@ -633,6 +633,52 @@ fn every_message_a_host_readme_quotes_exists_in_that_host() {
     }
 }
 
+/// **The language reference does not deny a feature it goes on to document.**
+///
+/// All three defects this guards were the same shape, and all three were refuted by
+/// `docs/LANGUAGE.md` itself, ten to twenty-five lines further down:
+///
+///   - the type line called `string` parameter-position-only while the file documents
+///     `-> string!` return, and omitted arrays entirely;
+///   - the `try` item limited callees to internal `fn` while the item ten lines below says
+///     export can be called with `try` since #101;
+///   - the literal item said ASCII-only while the file documents `return "승인"` from
+///     2026-09-14. The real constraint was never the character set — it is the position.
+///
+/// A reference that contradicts itself is worse than one that is merely behind: the reader
+/// cannot tell which half is current, and the wrong half is the one that says "you cannot".
+///
+/// Each pair is a denial and the evidence that refutes it, both in this one file. Keyed on
+/// the evidence so the guard is conditional: if `-> string!` return were withdrawn, the
+/// denial would be true again and this stops demanding it.
+#[test]
+fn the_language_reference_does_not_deny_what_it_documents() {
+    let lang = flatten_prose(&read("docs/LANGUAGE.md"));
+    for (evidence, denial, what) in [
+        ("-> string! 반환", "파라미터 위치 전용", "string return"),
+        (
+            "export도 try로 부를 수 있다",
+            "v1의 피호출자는 내부 fn만",
+            "try on exports",
+        ),
+        (
+            "return \"승인\"",
+            "문자열 리터럴 \"KR\" — ASCII만",
+            "non-ASCII literals",
+        ),
+    ] {
+        if !lang.contains(evidence) {
+            continue;
+        }
+        assert!(
+            !lang.contains(denial),
+            "docs/LANGUAGE.md documents {what} (it contains `{evidence}`) and also denies it \
+             (`{denial}`). A reference that contradicts itself leaves the reader unable to \
+             tell which half is current, and the wrong half is the one that says no"
+        );
+    }
+}
+
 /// **The glossary defines the vocabulary the documents actually use.**
 ///
 /// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It

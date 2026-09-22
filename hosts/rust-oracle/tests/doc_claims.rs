@@ -1800,9 +1800,32 @@ fn assigned_on_line(line: &str, name: &str) -> Vec<i64> {
             continue;
         }
 
-        // Markdown puts decoration between the name and the `=`; step over it.
-        let Some(rest) = after.trim_start_matches([' ', '`', '*']).strip_prefix('=') else {
-            continue;
+        // Markdown puts decoration between the name and the value; step over it.
+        //
+        // Two shapes carry a value, and the docstring above has promised both since this
+        // function was written — `NAME = -2` and the parenthesised `NAME (-1)`. Only the first
+        // was implemented: `(` was stripped AFTER `=` had been consumed, so a line with
+        // parentheses and no `=` fell out of the loop. Measured 2026-09-22: of 22 lines
+        // mentioning ML_ST_INSUFFICIENT_BUFFER only 4 were evaluated, and two of the skipped
+        // ones are the Q12 status table in `HOST_ABI.md` — the shipped contract. If `-1` ever
+        // changed, the document a third-party host author reads would go false with nothing
+        // red.
+        //
+        // The parenthesised form requires `=` or a backtick before the digits, and that is not
+        // fussiness. `NAME (2026-09-14 실측)` is a date, and accepting a bare number inside
+        // parentheses would read it as the value. Measured across the tree: 5 lines carry a
+        // real value that way and every one has `=` or a backtick; the single bare `(-1)` is in
+        // `HISTORY.md`, where a number in parentheses may well be a value this repository no
+        // longer uses. Leaving that one unparsed is the safe direction.
+        let dec = after.trim_start_matches([' ', '`', '*']);
+        let (inner, parenthesised) = match dec.strip_prefix('(') {
+            Some(r) => (r.trim_start_matches([' ', '`', '*']), true),
+            None => (dec, false),
+        };
+        let rest = match inner.strip_prefix('=') {
+            Some(r) => r,
+            None if parenthesised && after[dec.len() - inner.len()..].contains('`') => inner,
+            None => continue,
         };
         let rest = rest.trim_start_matches([' ', '`', '*', '(']);
         let neg = rest.starts_with('-');

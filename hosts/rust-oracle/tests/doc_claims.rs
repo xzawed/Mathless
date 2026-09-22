@@ -474,6 +474,49 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     }
 }
 
+/// **No document calls interface metadata unimplemented while every module ships a fingerprint.**
+///
+/// `ARCHITECTURE.md`'s Packaging step said *"인터페이스 메타는 ⏳ 미구현"*. Every module has
+/// exported `ml_iface_hash_<module>()` since #105, every generated header pins
+/// `ML_<MODULE>_IFACE_HASH`, and both reference C hosts refuse a module whose fingerprint
+/// disagrees. The same file, 33 lines below, *relies* on the fingerprint existing — it explains
+/// that a same-signature swap gets past it. One document, two answers.
+///
+/// Scoped to the phrase 인터페이스 메타, which occurs in exactly one place in the tree. That is
+/// the measurement this guard rests on rather than a judgement: there is no legitimate second
+/// user of the phrase to carve out, so a future one is worth a red.
+#[test]
+fn no_document_calls_interface_metadata_unimplemented() {
+    let iface = read("compiler/src/iface.rs");
+    assert!(
+        iface.contains("ml-iface/1"),
+        "compiler/src/iface.rs no longer builds the ml-iface/1 manifest. If the fingerprint \
+         was withdrawn, this guard is wrong and ARCHITECTURE.md would be right"
+    );
+
+    for (path, text) in every_markdown_file() {
+        if path == "docs/HISTORY.md" {
+            continue;
+        }
+        let flat = flatten_prose(&text);
+        let chars: Vec<char> = flat.chars().collect();
+        let nd: Vec<char> = "인터페이스 메타".chars().collect();
+        for start in 0..chars.len().saturating_sub(nd.len()) {
+            if chars[start..start + nd.len()] != nd[..] {
+                continue;
+            }
+            let hi = (start + nd.len() + 40).min(chars.len());
+            let window: String = chars[start..hi].iter().collect();
+            assert!(
+                !(window.contains("미구현") || window.contains('⏳')),
+                "{path} calls 인터페이스 메타 unimplemented, but compiler/src/iface.rs builds the \
+                 ml-iface/1 manifest, every module exports ml_iface_hash_<module>, and both \
+                 reference C hosts refuse a drifted one. Context: …{window}…"
+            );
+        }
+    }
+}
+
 /// **No document says C is the only host with an automated gate.**
 ///
 /// It stopped being true on 2026-09-09, when `MATHLESS_GATE_FPC_HOST: require` put an Object

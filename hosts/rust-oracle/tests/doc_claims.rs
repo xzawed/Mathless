@@ -1491,6 +1491,10 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
         // decision that points at that licence. A grant that under-lists what it grants is the
         // worst place for this drift, and it sat outside this guard until 2026-09-05.
         "docs/DECISIONS.md",
+        // `CLAUDE.md` joined 2026-09-22. It states the artifact set TWICE and is the file
+        // every session loads, so a fifth artifact would have turned six documents red and
+        // left this one quietly wrong — the blind-spot shape §7-3 names.
+        "CLAUDE.md",
     ] {
         let text = read(doc);
         for ext in &exts {

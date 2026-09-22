@@ -161,6 +161,7 @@ itself is never rebuilt.
 | Document | What it covers |
 |----------|----------------|
 | [docs/STATUS.md](docs/STATUS.md) | Measured state of `main`, open decisions, and the next slice |
+| [docs/HISTORY.md](docs/HISTORY.md) | The dated session log (`§9-N`), newest first — what STATUS used to carry |
 | [docs/VISION.md](docs/VISION.md) | Why Mathless exists, and what success looks like |
 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | Surface syntax vs the internal model |
 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | The C ABI, host integration, and the liveness contract |

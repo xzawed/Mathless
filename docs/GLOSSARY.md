@@ -18,11 +18,11 @@
 | **Module** | 컴파일된, 로드 가능한 네이티브 라이브러리 | `docs/ARCHITECTURE.md` |
 | **Host** | 모듈을 로드해 호출하는 애플리케이션 | `docs/HOST_ABI.md` |
 | **`mlx_` / `ml_`** | export 네임스페이스. `mlx_`는 사용자 함수, `ml_`은 예약 심볼 | `runtime/ml_abi.h` |
-| **지문 (interface fingerprint)** | 모듈의 **호스트 가시 계약**에서 계산한 64비트 값. 호스트가 로드 직후 자기가 빌드된 값과 대조해 다르면 거부한다. **무결성(P1)이 아니다** — 막는 것은 실수이지 공격이 아니다 | `docs/slices/SPEC-iface-hash.md` |
+| **지문 (interface fingerprint)** | 모듈의 **호스트 가시 계약**에서 계산한 값. 호스트가 로드 직후 자기가 빌드된 값과 대조해 다르면 거부한다. **무결성(P1)이 아니다** — 막는 것은 실수이지 공격이 아니다 | `docs/slices/SPEC-iface-hash.md` |
 | **매니페스트 (`ml-iface/N`)** | 지문을 계산하는 입력이 되는, 규칙대로 만든 바이트열 | `docs/slices/SPEC-iface-hash.md` §2.1 |
 | **드리프트 (drift)** | 호스트를 다시 빌드하지 않고 모듈만 바꿨을 때 계약이 어긋난 상태. 심볼은 그대로 해석되므로 **조용한 오답**이 될 수 있다 | `docs/slices/SPEC-iface-hash.md` §0.1 |
 | **Q12 / caller-allocates** | 가변 길이 데이터의 소유권 규약 — **호스트가 버퍼와 용량을 주고 모듈이 채운다.** 모듈은 할당하지 않는다 | `docs/HOST_ABI.md` "가변 길이 데이터" |
-| **프록시 (protection proxy)** | 보호를 **직접** 재지 못하므로 대신 재는 관측값(export 개수, 디버그 심볼 유무 등). **"리버싱 난이도"로 환산하지 않는다** | `docs/SECURITY.md` |
+| **프록시 (protection proxy)** | 보호를 **직접** 잴 수 없으므로 대신 재는 관측값. 무엇을 재는지는 정본이 열거한다. **"리버싱 난이도"로 환산하지 않는다** | `docs/SECURITY.md` |
 | **P0 / P1 / P2** | 보호 강도 단계 | `docs/SECURITY.md` |
 | **Galapagos** | Delphi 생태계가 바깥 흐름과 단절된 상태를 가리키는 표현 | `docs/COMPETITIVE.md` |
 

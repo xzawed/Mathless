@@ -715,12 +715,24 @@ fn a_shipped_spec_does_not_still_request_confirmation() {
             continue;
         }
         checked += 1;
-        assert!(
-            !text.contains("사용자 확인 필요"),
-            "docs/slices/{name} says 구현 완료 in its status line and still heads its DP section \
-             with 사용자 확인 필요. CLAUDE.md rule 8 makes finding open DP items a procedure, so \
-             that heading sends the next agent to ask for a confirmation already given"
-        );
+        // Four spellings, and each one was found by widening after the previous round looked
+        // finished. `사용자 확인 필요` caught six headings; the shorter match caught six more
+        // written `권고, **사용자 확인 필요**`; Grok then found two BODY sentences saying the
+        // same thing as `사용자 확인이 필요` and `사용자 확인 전까지`; and the fourth is a
+        // correction note of my own from #261 that quoted the phrase it was correcting.
+        for pending in [
+            "사용자 확인 필요",
+            "사용자 확인이 필요",
+            "사용자 확인 전까지",
+            "확인 전이며",
+        ] {
+            assert!(
+                !text.contains(pending),
+                "docs/slices/{name} says 구현 완료 in its status line and still says \
+                 `{pending}`. CLAUDE.md rule 8 makes finding open DP items a procedure, so that \
+                 sentence sends the next agent to ask for a confirmation already given"
+            );
+        }
     }
     assert!(
         checked >= 20,

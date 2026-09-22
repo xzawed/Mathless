@@ -3269,3 +3269,48 @@ fn no_document_publishes_a_baseline_that_requires_only_some_gates() {
         }
     }
 }
+
+/// **Both READMEs' document map must list every `docs/*.md`.**
+///
+/// `CLAUDE.md` used to carry its own reading order — eleven documents, in the file every
+/// session loads — while declaring in the line above that the README map was the source of
+/// truth. The copy had lost `docs/STATUS.md`, which is the map's first row and the one
+/// document that says of itself *"새 세션은 이 문서를 먼저 읽는다"*. Three files named three
+/// different first reads.
+///
+/// The copy is gone and `CLAUDE.md` now points at the map. That only helps while the map is
+/// complete, which is what this checks: a document added under `docs/` and not listed is
+/// invisible to every session that follows the pointer. Deleting a duplicate moves the whole
+/// weight onto the survivor, so the survivor gets the guard.
+///
+/// Derived from `read_dir`, not from a list here — a list would be the same defect one level
+/// down.
+#[test]
+fn both_readmes_map_every_document() {
+    let mut docs: Vec<String> = std::fs::read_dir(repo_root().join("docs"))
+        .expect("docs/ is readable")
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.ends_with(".md"))
+        .collect();
+    docs.sort();
+    assert!(
+        docs.len() >= 8,
+        "read_dir(docs/) returned {docs:?} — the map covers more than that, so this walk is \
+         reading the wrong directory and would pass by finding nothing to require"
+    );
+
+    for readme in ["README.md", "README.ko.md"] {
+        let text = read(readme);
+        for doc in &docs {
+            let link = format!("](docs/{doc})");
+            assert!(
+                text.contains(&link),
+                "{readme}'s document map does not link docs/{doc}. CLAUDE.md sends every new \
+                 session to this map instead of carrying its own reading order, so a document \
+                 missing here is a document nobody is told to read — which is how the copy \
+                 that map replaced lost docs/STATUS.md."
+            );
+        }
+    }
+}

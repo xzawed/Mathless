@@ -63,10 +63,15 @@ machine is therefore not "fixing the setup" — it lets you run one more local g
    out. That is not a defect in the module: the toolchain pin covers **rustc**, not MSVC
    `link.exe` or the Windows SDK, so a different SDK gives a different size. The failure
    message says exactly this and what to do — re-measure, and update the constant **and every
-   document that publishes the pair** in the same commit. `doc_claims.rs` guards four of them
-   (`README.md`, `README.ko.md`, `docs/SECURITY.md`, `docs/STATUS.md`), so a partial update of
-   those stays red. **This file is a fifth and is not guarded** — the two numbers are in the
-   sentence above. Grep for them rather than trusting this list.
+   document that publishes the pair** in the same commit. `doc_claims.rs` guards five —
+   `README.md`, `README.ko.md`, `docs/SECURITY.md`, `docs/STATUS.md` and **this file**, which
+   joined on 2026-09-22 after publishing both values four times while telling you only four
+   documents were guarded. A partial update stays red.
+
+   Still grep rather than trusting this list: the guard's scope is a hand-written array, and
+   a sixth document can publish the pair without anything noticing. That is the general limit
+   of every hand-scoped guard here, and it is why the gate list in step 8 is derived from
+   `ci.yml` instead.
 2. **`host.c` and the other hand-written C must stay pure ASCII**, and the reason is
    machine-dependent: MSVC reads them in the machine's ANSI code page, so a non-ASCII byte is
    `C4819` → `C2220` under `/W4 /WX` — but only on a code page that cannot represent it. It was
@@ -116,8 +121,20 @@ deliberately left, and what not to reopen. Read it before the backlog tables, wh
    ```sh
    cargo fmt --all --check
    cargo clippy --workspace --all-targets -- -D warnings
-   MATHLESS_GATE_D=require cargo test --workspace --locked
+   MATHLESS_GATE_D=require MATHLESS_GATE_FPC=require MATHLESS_GATE_FPC_HOST=require \
+     cargo test --workspace --locked
    ```
+
+   **All three, because CI requires all three.** Until 2026-09-22 this block set only
+   `MATHLESS_GATE_D`, and that is worse than it sounds: on a machine without Free Pascal the
+   other two **skip**, the suite prints green and exits 0, and CI is the one that says no —
+   after review time has been spent. A skipped gate is loud on stdout and silent in the exit
+   code, which is the same failure the paragraph below warns about for pipes. It warned about
+   the wrapper and not about itself. `doc_claims.rs` now derives this list from `ci.yml`, so a
+   fourth required gate cannot be added without this block failing.
+
+   `MATHLESS_GATE_DELPHI` is **not** in that list on purpose — it is not `require` in CI,
+   because the runner has no Delphi. Run it separately if you have one.
 
    Without `MATHLESS_GATE_D=require`, a machine with no MSVC **skips** acceptance D and still
    prints a green summary — the skip is loud on stdout, but the exit code is 0. And never pipe
@@ -249,6 +266,19 @@ Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
    한때 "88개 실행 / 19개 제외"라고 적어 뒀다가 그대로 낡았다(그 합 107은 오늘 수치가 아니다).
    테스트 수의 정본은 `docs/STATUS.md` §1이다. 머지 전 둘 다 green 유지.
    (`.so`/ELF **타깃**은 여전히 D22와 함께 이연 — Linux 잡은 D22가 아니다.)
+
+   **CI가 부르는 방식 그대로 부른다는 것은 게이트 셋을 전부 건다는 뜻이다**(위 영문 블록):
+
+   ```sh
+   MATHLESS_GATE_D=require MATHLESS_GATE_FPC=require MATHLESS_GATE_FPC_HOST=require \
+     cargo test --workspace --locked
+   ```
+
+   **하나만 걸면 안 된다.** 2026-09-22까지 위 블록은 `MATHLESS_GATE_D` 하나만 걸었고, Free Pascal이
+   없는 머신에서는 **나머지 둘이 조용히 skip**되어 초록·exit 0이 나온다. 기여자는 그것을 믿고
+   올리고 CI가 빨개진다. **skip된 게이트는 stdout에서 시끄럽고 종료 코드에서는 조용하다** —
+   바로 아래 문단이 파이프에 대해 경고하는 그 실패다. `MATHLESS_GATE_DELPHI`는 **일부러 뺀다**:
+   CI가 그것을 require로 걸지 않는다(러너에 Delphi가 없다).
 
    **이 명령들은 CI가 부르는 방식 그대로 부르고, 종료 코드로 판단한다.** 출력을 줄이려고
    파이프로 감싸지 않는다. `cargo fmt --all --check | tail -1 && echo clean`은 **파이프라인의**

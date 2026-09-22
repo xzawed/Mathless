@@ -472,6 +472,21 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
             );
         }
     }
+
+    // `CLAUDE.md` is checked for the GATES only — built-ins are the READMEs' job. It enumerates
+    // the required gates in the same sentence that says the canonical list is `ci.yml` and must
+    // not be copied here, which is a rule and its violation in one breath. The copy is worth
+    // keeping (a session has to know which gates exist) so the fix is to make the copy
+    // self-maintaining rather than to delete it: a fourth required gate turns this red.
+    let claude = read("CLAUDE.md");
+    for g in &gates {
+        assert!(
+            claude.contains(g.as_str()),
+            "CLAUDE.md does not name {g}, which .github/workflows/ci.yml sets to `require`. \
+             Every session loads CLAUDE.md and takes its gate list as the merge bar; a gate \
+             missing from it is one nobody runs before pushing"
+        );
+    }
 }
 
 /// **Every PR number the slice index cites is a PR that exists.**

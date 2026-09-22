@@ -472,6 +472,21 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
             );
         }
     }
+
+    // `CLAUDE.md` is checked for the GATES only — built-ins are the READMEs' job. It enumerates
+    // the required gates in the same sentence that says the canonical list is `ci.yml` and must
+    // not be copied here, which is a rule and its violation in one breath. The copy is worth
+    // keeping (a session has to know which gates exist) so the fix is to make the copy
+    // self-maintaining rather than to delete it: a fourth required gate turns this red.
+    let claude = read("CLAUDE.md");
+    for g in &gates {
+        assert!(
+            claude.contains(g.as_str()),
+            "CLAUDE.md does not name {g}, which .github/workflows/ci.yml sets to `require`. \
+             Every session loads CLAUDE.md and takes its gate list as the merge bar; a gate \
+             missing from it is one nobody runs before pushing"
+        );
+    }
 }
 
 /// **Every PR number the slice index cites is a PR that exists.**
@@ -1491,6 +1506,10 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
         // decision that points at that licence. A grant that under-lists what it grants is the
         // worst place for this drift, and it sat outside this guard until 2026-09-05.
         "docs/DECISIONS.md",
+        // `CLAUDE.md` joined 2026-09-22. It states the artifact set TWICE and is the file
+        // every session loads, so a fifth artifact would have turned six documents red and
+        // left this one quietly wrong — the blind-spot shape §7-3 names.
+        "CLAUDE.md",
     ] {
         let text = read(doc);
         for ext in &exts {

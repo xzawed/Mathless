@@ -24,7 +24,15 @@ jobs:
     name: frontend fmt + clippy + test (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 because `every_pr_the_slice_index_cites_exists` derives the set of real
+      # PR numbers from `git log` subjects. The default shallow clone gives it one commit, and
+      # its floor assertion then fails rather than passing by reading nothing -- which is the
+      # right failure, but it makes the guard unusable without the history. This repository's
+      # history is a few hundred text commits; the extra fetch is not measurable next to the
+      # Rust build.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Ensure rustfmt + clippy
         run: rustup component add rustfmt clippy
       - name: Format check
@@ -45,7 +53,11 @@ jobs:
     name: fmt + clippy + test (windows-latest)
     runs-on: windows-latest
     steps:
+      # fetch-depth: 0 for the same reason as the linux job above — the slice index's PR
+      # numbers are checked against `git log`, and a shallow clone has none.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Ensure rustfmt + clippy
         run: rustup component add rustfmt clippy
       - name: Format check

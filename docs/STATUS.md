@@ -137,7 +137,7 @@
 - **`out` 파라미터**(#80) `export fn f(a: f64, out t: i32) -> f64` — 값을 여러 개 돌려주는 수단.
   C는 `T*`, Delphi는 `out p: T`. **쓰기 전용**, **정상 반환 경로마다 대입 강제**, `export fn` 전용.
   실패 가능 함수와 합칠 때 `out_value`가 **언제나 마지막**이다(DP-O1)
-- **실패 가능 함수 호출**(#97) `let x = try f(a)` · `x = try f(a)` · `return try f(a)` — 피호출자의
+- **실패 가능 함수 호출**(#98·#99) `let x = try f(a)` · `x = try f(a)` · `return try f(a)` — 피호출자의
   status가 **그대로** 전파된다. **`try`는 문장 전용**이라 식 안에 못 들어간다. 호출자도 `-> T!`여야
   하고, v1의 피호출자는 **내부 `fn`만**이다. **C ABI 무변경**(테스트로 못박음)
 - 실패 가능 함수 `-> T!` + `error NAME = N` + `fail NAME`(D17: i32 status + out-param).

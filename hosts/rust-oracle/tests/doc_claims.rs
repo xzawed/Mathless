@@ -679,6 +679,56 @@ fn the_language_reference_does_not_deny_what_it_documents() {
     }
 }
 
+/// **A shipped SPEC does not still ask for the confirmation it already got.**
+///
+/// Six SPECs carried a §4 heading reading *미확정, 사용자 확인 필요* while their own line 3
+/// said 확정 · 구현 완료. That is not a cosmetic mismatch: `CLAUDE.md` rule 8 makes "find the
+/// DP items awaiting user confirmation" a procedure, and an agent following it reads these
+/// headings and goes asking for a confirmation that was given — in one case over three weeks
+/// earlier, for a feature that has been in the compiler since.
+///
+/// Wholly derivable from inside each file: the status line says whether the slice shipped, and
+/// the DP heading says whether its decisions are open. Those two cannot both be true.
+///
+/// The DP TABLES are left alone. They are the record of what was decided and why, and this
+/// guard says nothing about them — only about a heading that describes them as pending.
+#[test]
+fn a_shipped_spec_does_not_still_request_confirmation() {
+    let dir = repo_root().join("docs").join("slices");
+    let mut checked = 0usize;
+    for entry in std::fs::read_dir(&dir).expect("read docs/slices") {
+        let path = entry.expect("a directory entry").path();
+        let name = path
+            .file_name()
+            .expect("a file name")
+            .to_string_lossy()
+            .into_owned();
+        if !name.starts_with("SPEC-") || !name.ends_with(".md") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("read a SPEC");
+        let shipped = text
+            .lines()
+            .take(8)
+            .any(|l| l.contains("상태:") && l.contains("구현 완료"));
+        if !shipped {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            !text.contains("사용자 확인 필요"),
+            "docs/slices/{name} says 구현 완료 in its status line and still heads its DP section \
+             with 사용자 확인 필요. CLAUDE.md rule 8 makes finding open DP items a procedure, so \
+             that heading sends the next agent to ask for a confirmation already given"
+        );
+    }
+    assert!(
+        checked >= 20,
+        "only {checked} shipped SPECs were examined, fewer than the twenty known to exist — \
+         the status-line match stopped working and this guard would pass by skipping everything"
+    );
+}
+
 /// **The glossary defines the vocabulary the documents actually use.**
 ///
 /// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It

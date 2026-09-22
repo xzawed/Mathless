@@ -1817,15 +1817,26 @@ fn assigned_on_line(line: &str, name: &str) -> Vec<i64> {
         // real value that way and every one has `=` or a backtick; the single bare `(-1)` is in
         // `HISTORY.md`, where a number in parentheses may well be a value this repository no
         // longer uses. Leaving that one unparsed is the safe direction.
+        // The backtick has to be looked for in the span actually consumed between `(` and the
+        // digits -- NOT in the tail of the line. Grok caught the first version doing the
+        // latter, which made any backtick anywhere later on the line qualify, so
+        // `NAME (2026-09-14 실측)` followed by any code span would have been read as 2026. Both
+        // plants used to check this change happened to be the shape that worked.
         let dec = after.trim_start_matches([' ', '`', '*']);
-        let (inner, parenthesised) = match dec.strip_prefix('(') {
-            Some(r) => (r.trim_start_matches([' ', '`', '*']), true),
-            None => (dec, false),
-        };
-        let rest = match inner.strip_prefix('=') {
-            Some(r) => r,
-            None if parenthesised && after[dec.len() - inner.len()..].contains('`') => inner,
-            None => continue,
+        let rest = match dec.strip_prefix('(') {
+            Some(open) => {
+                let inner = open.trim_start_matches([' ', '`', '*']);
+                let consumed = &open[..open.len() - inner.len()];
+                match inner.strip_prefix('=') {
+                    Some(r) => r,
+                    None if consumed.contains('`') => inner,
+                    None => continue,
+                }
+            }
+            None => match dec.strip_prefix('=') {
+                Some(r) => r,
+                None => continue,
+            },
         };
         let rest = rest.trim_start_matches([' ', '`', '*', '(']);
         let neg = rest.starts_with('-');

@@ -54,7 +54,7 @@ export fn discount2(price: f64, vip: bool) -> f64 {
 
 - **A. 컴파일:** `examples/discount2.mls`(지역 변수 사용) → `mlc build` → `discount2.dll`.
 - **B. 로드·호출 (오라클):** `mlx_discount2(100,true)==90`, `(100,false)==100`, `abi==1`.
-- **C. 보호 (D04/D05):** export = **정확히** `mlx_discount2` + `ml_module_abi_version`(지역 변수
+- **C. 보호 (D04/D05):** export = **정확히** `mlx_discount2` + `ml_module_abi_version`(당시 2개 — `ml_iface_hash_<모듈>`이 2026-09-02에 합류해 오늘은 3개다)(지역 변수
   비유출). strip/no_std 유지 — 스칼라 슬라이스와 동일한 프록시.
 - **부정(타입체크) 케이스:**
   - `let x = x` → use-before-def 거부

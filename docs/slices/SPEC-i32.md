@@ -55,7 +55,8 @@ export fn add(a: i32, b: i32) -> i32 {
 - **A. 컴파일:** `examples/add.mls` → `mlc build` → `add.dll`.
 - **B. 로드·호출 (오라클):** `mlx_add(2, 3) == 5`, `mlx_add(10, -4) == 6`(음수 리터럴 경유), `abi==1`.
 - **C. 바인딩·보호:** `.h`에 `int32_t mlx_add(int32_t a, int32_t b);`, `.pas`에 `Integer`.
-  export = 정확히 `mlx_add` + `ml_module_abi_version`. strip 유지.
+  export = 정확히 `mlx_add` + `ml_module_abi_version`(당시 2개 — `ml_iface_hash_<모듈>`이
+  2026-09-02에 합류해 오늘은 3개다). strip 유지.
 - **부정(타입체크) 케이스:**
   - `i32`와 `f64` 혼합: `export fn f(a: i32) -> i32 { return a + 1.0 }` → 타입 에러(혼합)
   - 반환 타입 불일치: `export fn f() -> i32 { return 1.0 }` → 에러(f64를 i32 위치에)

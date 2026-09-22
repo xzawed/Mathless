@@ -117,8 +117,14 @@ exports exactly the three symbols it should — `mlx_discount` plus the reserved
 **Delphi is gated, but not in CI.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with
 `dcc64` and calls the modules across the C ABI. The edition available refuses command-line
 builds, so the gate drives the IDE instead (`bds.exe -b`), which it does allow. That gate
-runs on a developer machine only — the CI runner has neither Delphi nor an interactive
-session — so of D14's two official hosts, **C is the half checked on every push**.
+runs on a developer machine only — the CI runner has neither Delphi nor an interactive session.
+
+What CI does check on the Pascal side is **Object Pascal, not Delphi**: `MATHLESS_GATE_FPC`
+compiles every generated unit and `MATHLESS_GATE_FPC_HOST` builds a Pascal host that loads x64
+modules and calls them, both with Free Pascal. That is a real host path, and it is the reason
+the count above is four. It is **not** a stand-in for the Delphi gate — `-Mdelphi` is dialect
+emulation, and the two disagree on something as basic as what `string` means. So the precise
+gap is Delphi itself, not the language.
 
 For current numbers, open decisions and the next piece of work, see
 [docs/STATUS.md](docs/STATUS.md).

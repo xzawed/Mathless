@@ -111,8 +111,13 @@ CI에서는 돌 수 없습니다 — 러너에 Delphi도 대화형 세션도 없
 **Delphi에는 게이트가 있습니다 — 단 CI에는 없습니다.** `MATHLESS_GATE_DELPHI`가
 `hosts/delphi-host`를 `dcc64`로 빌드해 C ABI 너머로 모듈을 호출합니다. 가지고 있는 에디션이
 명령줄 빌드를 거부하므로 게이트는 IDE(`bds.exe -b`)를 부르고, 그것은 허용됩니다. 이 게이트는
-**개발 머신에서만** 돕니다 — CI 러너에는 Delphi도 대화형 세션도 없습니다. 그래서 D14의 공식
-호스트 둘 중 **매 푸시마다 검사되는 쪽은 C입니다**.
+**개발 머신에서만** 돕니다 — CI 러너에는 Delphi도 대화형 세션도 없습니다.
+
+CI가 Pascal 쪽에서 검사하는 것은 **Object Pascal이지 Delphi가 아닙니다**: `MATHLESS_GATE_FPC`가
+생성 유닛 전부를 컴파일하고, `MATHLESS_GATE_FPC_HOST`가 Pascal 호스트를 빌드해 x64 모듈을
+로드·호출합니다(둘 다 Free Pascal). 그것은 **실제 호스트 경로**이고, 위에서 넷을 센 이유입니다.
+다만 **Delphi 게이트를 대신하지는 못합니다** — `-Mdelphi`는 방언 에뮬레이션이고, 둘은 `string`의
+기본 뜻처럼 기초적인 데서 갈립니다. 그래서 정확한 공백은 **언어가 아니라 Delphi 자신**입니다.
 
 현재 수치와 열린 결정, 다음 작업은 [docs/STATUS.md](docs/STATUS.md)에 있습니다.
 

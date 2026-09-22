@@ -35,7 +35,13 @@ Thin C-ABI surface for Mathless modules (Phase 1). No VM, no interpreter (D02/D1
   emits `.dll`/`.h`/`.pas`/`.lib` and never copies this file, which is why
   `LICENSE-OUTPUT-EXCEPTION` §3 names it as *not* Compiler Output.
 
-  **Which binding is verified how is stated in `ml_abi.h` itself, not here.** That header is
-  the contract file and the one the compiler tests read; this paragraph used to carry a second
-  copy of its status, and the two drifted — `ml_abi.h` learned the qualified fingerprint name
-  on 2026-09-12 and this file did not. One copy, in the file that owns it.
+  **Which binding is verified how is stated in `ml_abi.h` itself, not here.** This paragraph
+  used to carry a second copy of that status and the two drifted — `ml_abi.h` learned the
+  qualified fingerprint name on 2026-09-12 and this file did not. One copy is better than two
+  for the ordinary reason: two copies rot apart and nobody notices which.
+
+  > ⚠ **One copy is not a guarded copy.** `doc_claims.rs` reads `ml_abi.h` for the reserved
+  > **declarations** and the error-constant shape; the prose about which binding CI proves is
+  > checked by nothing, there or here. So the Delphi-only-locally caveat could still go stale
+  > without a test failing. Removing the duplicate halves that exposure; it does not close it.
+  > The canonical statement of which gates run where is `.github/workflows/ci.yml`.

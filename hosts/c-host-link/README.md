@@ -25,9 +25,10 @@ host uses those declarations only as a `_Generic` type oracle and calls through
 ## What it does NOT prove
 
 - **That skipping the gate is safe.** This host calls `ml_module_abi_version()` and
-  `ml_iface_hash()` and refuses on a mismatch, because a linked host is *more* exposed than a
-  dynamic one: a drifted module exporting the same names with the same C types resolves
-  perfectly well. Measured — the harness runs this binary beside a drifted `discount.dll`
+  `ml_iface_hash_<module>()` — one per linked module, which is the whole reason the
+  fingerprint export carries the module stem (`SPEC-qualified-iface-hash`, #215) — and refuses
+  on a mismatch, because a linked host is *more* exposed than a dynamic one: a drifted module
+  exporting the same names with the same C types resolves perfectly well. Measured — the harness runs this binary beside a drifted `discount.dll`
   and it exits `3` with `refuse: interface …`. Nothing in the module forces a third-party
   host to check (`SPEC-iface-hash.md` §5.1).
 - **Anything about Delphi**, or any C compiler other than MSVC.

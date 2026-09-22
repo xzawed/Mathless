@@ -474,6 +474,60 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     }
 }
 
+/// **The glossary defines the vocabulary the documents actually use.**
+///
+/// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It
+/// defined nine, and none of them was a term the repository actually leans on. Measured across
+/// the 45 documents under `docs/` excluding the history file: `DP-` appears 585 times,
+/// 슬라이스 392, 수용 237, 지문 177, Q12 163, 게이트 162, `mlx_` 132, 오라클 130, E2 104. The
+/// glossary defined **zero** of them, and had not been touched since 2026-08-30.
+///
+/// That is not a document being wrong. It is a document being absent while claiming to be
+/// present, which no other guard here can see: every one of them checks a claim against a
+/// source, and this file's failure was that it made no claims.
+///
+/// **An explicit list is right here, unlike everywhere else in this file.** The audit's
+/// standing complaint is hand-written scopes, and it holds when the list is a SAMPLE of
+/// something derivable. Here the list IS the deliverable — "these words need defining" is the
+/// contract, not an approximation of one. The numbers above are the measurement behind it and
+/// live in this comment, not in the document.
+///
+/// Only that the term is defined, never how. A definition that drifts is a separate problem,
+/// and the document answers it by pointing at an owner instead of restating one — which is the
+/// shape Grok proposed when it named the risk of extending this file at all: process
+/// definitions copied in become the stale second copy.
+#[test]
+fn the_glossary_defines_the_vocabulary_the_docs_use() {
+    let glossary = read("docs/GLOSSARY.md");
+    for term in [
+        "슬라이스",
+        "SPEC",
+        "DP-",
+        "수용",
+        "게이트",
+        "오라클",
+        "코퍼스",
+        "골든",
+        "E0",
+        "E1",
+        "E2",
+        "지문",
+        "매니페스트",
+        "드리프트",
+        "Q12",
+        "caller-allocates",
+        "프록시",
+        "mlx_",
+    ] {
+        assert!(
+            glossary.contains(term),
+            "docs/GLOSSARY.md does not define `{term}`, which the documents under docs/ use \
+             heavily. README calls this file the place where this repository's terms are \
+             precise; a term it omits is one a reader has to infer from usage"
+        );
+    }
+}
+
 /// **A slice decided against is not "not done yet".**
 ///
 /// The index marks `SPEC-symbol-embedded-hash.md` ⛔ 하지 않는다 — DP-H3(b) was measured,

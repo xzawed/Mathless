@@ -14,9 +14,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 문서를 읽는 순서
 
-`README.md`의 문서 지도가 정본이다. 새 세션은 이 순서로 읽는다:
-
-`CLAUDE.md`(이 파일) → `docs/VISION.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/LANGUAGE.md` → `docs/HOST_ABI.md` → `docs/SECURITY.md` → `docs/ROADMAP.md` → `docs/OPEN_QUESTIONS.md` → `docs/COMPETITIVE.md` → `docs/GLOSSARY.md`
+`README.md`의 **"Documentation" 표가 문서 지도의 정본이다.** 새 세션은 이 파일 다음에 그 표의
+순서대로 읽는다. **여기에 체인을 복제하지 않는다** — 복제해 둔 체인에서 실제로 `docs/STATUS.md`가
+빠져 있었고, 하필 그것이 지도의 첫 행이자 *"새 세션은 이 문서를 먼저 읽는다"* 고 자칭하는 문서였다
+(2026-09-23 감사).
 
 ## 큰 그림 (여러 문서를 종합한 아키텍처)
 
@@ -127,4 +128,4 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 
 ## 성공 기준 (초기)
 
-호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **달성**: Rust 오라클(수용 A/B)과 **실제 C 호스트**(MSVC `cl`, 수용 D, 2026-08-29). **Delphi도 달성됐다(2026-09-07)** — IDE에서 `dcc64`가 생성 `.pas`를 컴파일했고 Win64 호스트가 모듈을 로드·호출했다. 처음엔 **한 번, 손으로**였지만 2026-09-09에 **반복 가능한 로컬 게이트**가 됐다(§9-20, `bds.exe -b`). **CI에서 도는 게이트는 C와 Free Pascal뿐이다** — Delphi는 러너에 없다.
+호스트를 재컴파일하지 않고 Mathless로 컴파일한 네이티브 모듈을 로드해, 타입이 있는 함수(예: `discount(price, vip)`)를 호출할 수 있으면 1차 성공이다. → **달성했다.** 어느 호스트가 어디까지 게이트되는지는 `docs/STATUS.md`가 정본이다 — 여기 복제하지 않는다(그 사실의 여섯 번째 사본이었고, 다섯만 가드가 지켰다).

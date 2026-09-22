@@ -741,6 +741,147 @@ fn a_shipped_spec_does_not_still_request_confirmation() {
     );
 }
 
+/// **"Run what that job runs" runs what that job runs.**
+///
+/// `CONTRIBUTING.md` tells a contributor to reproduce CI locally and then gives a command that
+/// sets ONE gate. CI requires three. On a machine without Free Pascal the other two **skip**,
+/// the suite prints green and exits 0, the contributor pushes, and CI goes red — after review
+/// time has already been spent.
+///
+/// The block itself is the only thing that made this invisible: a skipped gate is loud on
+/// stdout and silent in the exit code, which is the exact failure mode the paragraph
+/// underneath that block warns about for pipes. It warned about the wrapper and not about
+/// itself.
+///
+/// Derived from `ci.yml`, so it cannot drift the way a hand-copied list does: every
+/// `MATHLESS_GATE_*: require` there must appear in the code fence under the "run what that job
+/// runs" heading. Adding a fourth required gate to CI without telling contributors turns this
+/// red.
+///
+/// `MATHLESS_GATE_DELPHI` is deliberately NOT implied by this: it is not `require` in ci.yml,
+/// because the runner has no Delphi. The guard asks only for parity with what CI actually
+/// enforces.
+#[test]
+fn the_local_command_block_runs_every_gate_ci_requires() {
+    let ci = read(".github/workflows/ci.yml");
+    let mut required: Vec<String> = Vec::new();
+    for line in ci.lines() {
+        let t = line.trim();
+        let Some((name, value)) = t.split_once(':') else {
+            continue;
+        };
+        if name.starts_with("MATHLESS_GATE_") && value.trim() == "require" {
+            required.push(name.to_string());
+        }
+    }
+    required.sort();
+    required.dedup();
+    assert!(
+        required.len() >= 3,
+        "only {} required gates parsed out of ci.yml ({required:?}) — fewer than the three \
+         known to be required, so this guard would demand almost nothing",
+        required.len()
+    );
+
+    let contributing = read("CONTRIBUTING.md");
+    let fences: Vec<&str> = contributing.split("```").skip(1).step_by(2).collect();
+    let blocks: Vec<&&str> = fences
+        .iter()
+        .filter(|f| f.contains("cargo test --workspace"))
+        .collect();
+    assert!(
+        !blocks.is_empty(),
+        "CONTRIBUTING.md has no fenced block running `cargo test --workspace` — the guard can \
+         no longer find the command it checks"
+    );
+
+    for block in &blocks {
+        for gate in &required {
+            assert!(
+                block.contains(gate.as_str()),
+                "a CONTRIBUTING.md command block runs `cargo test --workspace` without setting \
+                 {gate}, which .github/workflows/ci.yml requires. On a machine missing that \
+                 toolchain the gate SKIPS, the suite exits 0, and CI is the one that says no"
+            );
+        }
+    }
+}
+
+/// **No document states a Rust version that is not the pinned one.**
+///
+/// The global rule puts dependency versions in the build file and nowhere else. This
+/// repository copies the pin into five documents instead — `CONTRIBUTING.md`, both READMEs,
+/// `docs/STATUS.md`, `docs/phase1/WBS.md` — and nothing compared any of them to
+/// `rust-toolchain.toml`. All five are right today, which is the whole problem: raising the
+/// pin makes five documents false at once and a person is the only thing that would notice.
+///
+/// Same shape as the abi-constant guard: the source states the value, the documents may
+/// repeat it, and repeating it wrongly fails. That is the form the global rule allows — "put
+/// the number in a machine-checkable form or do not put it in a document".
+///
+/// Matches any `1.<minor>.<patch>` so a document cannot escape by being stale in a way the
+/// needle does not expect; versions that are not Rust releases live in other shapes here
+/// (`ml-iface/1`, SDK `10.0.20348`) and do not match.
+#[test]
+fn no_document_states_a_rust_version_other_than_the_pin() {
+    let toml = read("rust-toolchain.toml");
+    let pin = toml
+        .lines()
+        .find_map(|l| {
+            let t = l.trim();
+            let rest = t.strip_prefix("channel")?.trim_start().strip_prefix('=')?;
+            Some(rest.trim().trim_matches('"').to_string())
+        })
+        .expect("rust-toolchain.toml states a channel");
+    assert!(
+        pin.starts_with("1."),
+        "rust-toolchain.toml's channel is `{pin}`, which is not a numbered release — this \
+         guard compares documents against a version number and has nothing to compare"
+    );
+
+    let mut seen = 0usize;
+    for (path, text) in every_markdown_file() {
+        if path == "docs/HISTORY.md" {
+            continue;
+        }
+        let bytes: Vec<char> = text.chars().collect();
+        for (idx, _) in text.match_indices("1.") {
+            let tail: String = text[idx..].chars().take(12).collect();
+            let mut parts = tail.splitn(3, '.');
+            let (Some(_), Some(minor), Some(rest)) = (parts.next(), parts.next(), parts.next())
+            else {
+                continue;
+            };
+            let patch: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            if minor.len() < 2 || !minor.chars().all(|c| c.is_ascii_digit()) || patch.is_empty() {
+                continue;
+            }
+            // A digit immediately before means this is the tail of a longer number.
+            let before = text[..idx].chars().next_back();
+            if before.is_some_and(|c| c.is_ascii_digit() || c == '.') {
+                continue;
+            }
+            let found = format!("1.{minor}.{patch}");
+            if !(found.starts_with("1.8") || found.starts_with("1.9")) {
+                continue;
+            }
+            seen += 1;
+            assert_eq!(
+                found, pin,
+                "{path} states Rust {found}, but rust-toolchain.toml pins {pin}. The pin is \
+                 the source; a document may repeat it, and repeating it wrongly is what this \
+                 catches"
+            );
+        }
+        let _ = &bytes;
+    }
+    assert!(
+        seen >= 5,
+        "only {seen} Rust version mentions were found across the documents, fewer than the \
+         five known to exist — the scan stopped seeing them and would pass by checking nothing"
+    );
+}
+
 /// **The glossary defines the vocabulary the documents actually use.**
 ///
 /// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It
@@ -1505,11 +1646,17 @@ fn the_published_module_size_carries_both_measurements() {
     // publishing "about 9.7 KB" — the dev machine's value alone — for a slice after the
     // measurement that disproved it. They are the outermost documents in a public
     // repository, so leaving them out was the wrong half to leave out.
+    //
+    // `CONTRIBUTING.md` joined on 2026-09-22 for the same reason, found the same way. It
+    // publishes both values four times AND told the reader that "the four documents that
+    // publish it" are guarded — while being an unguarded fifth. A list that names its own
+    // scope is the one place a missing entry reads as a promise.
     for doc in [
         "docs/SECURITY.md",
         "docs/STATUS.md",
         "README.md",
         "README.ko.md",
+        "CONTRIBUTING.md",
     ] {
         let text = read(doc);
         for n in observed {

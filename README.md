@@ -19,8 +19,9 @@ source is not acceptable either.
 surface syntax, and the compiler turns them into a native module at compile time. Your
 application loads that module over a plain **C ABI**. What you ship is the binary.
 
-It is built for native hosts: Delphi, C, C++, C#. Today the path that has actually been proven
-end to end is C — see Status below.
+It is built for native hosts: Delphi, C, C++, C#. Two of those are proven end to end on every
+push — a C host and an Object Pascal host both load a module and call it in CI — and real
+Delphi (`dcc64`) does the same in a local gate. C# is not verified yet. See Status below.
 
 한국어 → **[README.ko.md](README.ko.md)**
 
@@ -79,8 +80,9 @@ before the first write, a call that does not fit writes nothing at all. One diff
 knowing: for an array return `ml_cap` and `*ml_needed` count **elements**, where a string
 return counts bytes. Control flow is `if`, `while` and `return`; there is no `else` yet. Locals are
 `let` and `let mut`, with assignment. Operators include unary `-` and `!`, plus `&&` and
-`||`. There are four built-ins — `floor`, `ceil`, `round`, `trunc` — which match C's
-`<math.h>` exactly. A function can be fallible: `-> T!` with `error NAME = N` and
+`||`. The built-ins are `floor`, `ceil`, `round` and `trunc` — which match C's
+`<math.h>` exactly — plus `len` for arrays, `byte_len` and `byte_slice` for strings, and
+`fixed` for decimal formatting. A function can be fallible: `-> T!` with `error NAME = N` and
 `fail NAME`, which lowers to an integer status and an out-parameter, and it can declare
 extra `out` parameters to return several values. Internal `fn` declarations can call each
 other, but recursion is rejected at compile time.
@@ -90,11 +92,19 @@ other, but recursion is rejected at compile time.
 a `.h` C header, a `.pas` Delphi import unit, and a `.lib` import library so a C host can
 link against the header instead of resolving every symbol at run time.
 
-**Three host paths, all measured.** A Rust `kernel32` oracle loads the module and calls it. So
-does a real C host built with MSVC, which compiles the generated header and resolves the exports
-through `LoadLibrary` and `GetProcAddress`. And a second C host does it the ordinary way —
-`#include` the header, link the packaged `.lib`, call the function, with no run-time lookup at
-all. Both C hosts check the module's interface fingerprint first and refuse one that drifted.
+**Four host paths run in CI, all measured.** A Rust `kernel32` oracle loads the module and calls
+it. So does a real C host built with MSVC, which compiles the generated header and resolves the
+exports through `LoadLibrary` and `GetProcAddress` (`MATHLESS_GATE_D`). A second C host does it
+the ordinary way — `#include` the header, link the packaged `.lib`, call the function, with no
+run-time lookup at all. Both C hosts check the module's interface fingerprint first and refuse
+one that drifted. And an **Object Pascal host** built with Free Pascal loads x64 modules and
+calls them, alongside a gate that compiles every generated `.pas` (`MATHLESS_GATE_FPC_HOST` and
+`MATHLESS_GATE_FPC`).
+
+**A fifth runs locally only.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with real
+`dcc64` — through the IDE builder when the edition refuses command-line builds — and it passes
+on the development machine. It cannot run in CI: the runner has neither Delphi nor an
+interactive session. Free Pascal's `-Mdelphi` is dialect emulation and does not stand in for it.
 
 Acceptance A, B, C and D all pass. It compiles, the oracle calls it, the export and size proxies
 hold, and a real C host loads the same module. The stripped `no_std` build is about 9.0-9.5 KB —
@@ -107,8 +117,14 @@ exports exactly the three symbols it should — `mlx_discount` plus the reserved
 **Delphi is gated, but not in CI.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with
 `dcc64` and calls the modules across the C ABI. The edition available refuses command-line
 builds, so the gate drives the IDE instead (`bds.exe -b`), which it does allow. That gate
-runs on a developer machine only — the CI runner has neither Delphi nor an interactive
-session — so of D14's two official hosts, **C is the half checked on every push**.
+runs on a developer machine only — the CI runner has neither Delphi nor an interactive session.
+
+What CI does check on the Pascal side is **Object Pascal, not Delphi**: `MATHLESS_GATE_FPC`
+compiles every generated unit and `MATHLESS_GATE_FPC_HOST` builds a Pascal host that loads x64
+modules and calls them, both with Free Pascal. That is a real host path, and it is the reason
+the count above is four. It is **not** a stand-in for the Delphi gate — `-Mdelphi` is dialect
+emulation, and the two disagree on something as basic as what `string` means. So the precise
+gap is Delphi itself, not the language.
 
 For current numbers, open decisions and the next piece of work, see
 [docs/STATUS.md](docs/STATUS.md).
@@ -201,8 +217,11 @@ GPLv2-compatible, and Apache-2.0 adds an explicit patent grant.
 **What `mlc` produces from your source is yours** — see
 [LICENSE-OUTPUT-EXCEPTION](LICENSE-OUTPUT-EXCEPTION). The generated `.dll`, `.h`, `.pas` and `.lib`
 carry no obligation from the licences above, even though a generated header is mostly our
-template text (measured: `discount.h` is 39 lines, 1 from your source and 38 from ours — which
-is exactly why the exception is written down rather than assumed). It covers **output only**;
+template text — a generated header for a one-function module carries a single declaration line
+from your source and everything else from ours, which is exactly why the exception is written
+down rather than assumed. (A line count used to stand here; it was measured once in 2026-09-02
+and was wrong by the time anyone re-ran it. Build `examples/discount.mls` and count.)
+It covers **output only**;
 the compiler itself stays Apache-2.0 OR MIT. It is not legal advice.
 
 Unless you say otherwise, any contribution you intentionally submit for inclusion in this work,

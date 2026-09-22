@@ -373,6 +373,107 @@ fn no_document_says_the_generated_unit_is_unbuilt_while_the_gates_build_it() {
     }
 }
 
+/// **The READMEs name every built-in the compiler has, and every gate CI requires.**
+///
+/// Both counts were wrong in the same direction: the public first screen claimed LESS than the
+/// product does. `README.md` said *"There are four built-ins — floor, ceil, round, trunc"* while
+/// `typeck.rs` also declares `len`, `byte_len`, `byte_slice` and `fixed`; it said *"Three host
+/// paths, all measured"* and named the Rust oracle and the two C hosts, while `ci.yml` has
+/// required an Object Pascal host that loads x64 modules and calls them since 2026-09-09.
+///
+/// Understating is not the harmless direction. A reader deciding whether this can reach their
+/// host counts the hosts, and half of D14's flagship arm was missing from the count.
+///
+/// **Both halves are derived from the source, not from a list here.** The built-ins come from
+/// `Rounder::ALL` plus the `*_BUILTIN` constants in `typeck.rs`; the gates come from the
+/// `MATHLESS_GATE_*: require` lines in `ci.yml`. Adding either without telling users turns
+/// this red, which is the case that actually happened four times.
+///
+/// Names, not counts. A count is one number to update and nothing to check it against — the
+/// §1 LOC block is what that looks like after three months. A name is checkable against the
+/// thing that defines it.
+#[test]
+fn the_readmes_name_every_builtin_and_every_required_gate() {
+    let typeck = read("compiler/src/typeck.rs");
+    let ci = read(".github/workflows/ci.yml");
+    let en = read("README.md");
+    let ko = read("README.ko.md");
+
+    let mut builtins: Vec<String> = Vec::new();
+    for line in typeck.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("pub const ") {
+            if let Some((name, tail)) = rest.split_once(": &str = ") {
+                if name.ends_with("_BUILTIN") {
+                    builtins.push(
+                        tail.trim()
+                            .trim_end_matches(';')
+                            .trim_matches('"')
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        // The rounders are spelled as match arms rather than constants.
+        if let Some(rest) = t.strip_prefix("Rounder::") {
+            if let Some((_, name)) = rest.split_once("=> ") {
+                builtins.push(
+                    name.trim()
+                        .trim_end_matches(',')
+                        .trim_matches('"')
+                        .to_string(),
+                );
+            }
+        }
+    }
+    builtins.sort();
+    builtins.dedup();
+    assert!(
+        builtins.len() >= 8,
+        "only {} built-ins parsed out of typeck.rs ({builtins:?}) — fewer than the eight known \
+         to exist, so this guard would pass by checking almost nothing",
+        builtins.len()
+    );
+
+    let mut gates: Vec<String> = Vec::new();
+    for line in ci.lines() {
+        let t = line.trim();
+        let Some((name, value)) = t.split_once(':') else {
+            continue;
+        };
+        if name.starts_with("MATHLESS_GATE_") && value.trim() == "require" {
+            gates.push(name.to_string());
+        }
+    }
+    gates.sort();
+    gates.dedup();
+    assert!(
+        gates.len() >= 3,
+        "only {} required gates parsed out of ci.yml ({gates:?}) — fewer than the three known \
+         to be required",
+        gates.len()
+    );
+
+    for (doc, text) in [("README.md", &en), ("README.ko.md", &ko)] {
+        for b in &builtins {
+            assert!(
+                text.contains(b.as_str()),
+                "{doc} does not name the built-in `{b}`, which compiler/src/typeck.rs declares. \
+                 The READMEs are where a reader learns what the language has; a built-in that \
+                 ships without appearing here is one nobody can find"
+            );
+        }
+        for g in &gates {
+            assert!(
+                text.contains(g.as_str()),
+                "{doc} does not name {g}, which .github/workflows/ci.yml sets to `require`. \
+                 A host path CI proves on every push, missing from the page that says which \
+                 host paths are proven, understates the product"
+            );
+        }
+    }
+}
+
 /// **No document calls array return unimplemented while codegen emits it.**
 ///
 /// `CLAUDE.md` names `docs/HOST_ABI.md`'s "현재 구현된 경계" as the canonical statement of what

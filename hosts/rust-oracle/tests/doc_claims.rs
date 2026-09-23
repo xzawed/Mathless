@@ -3386,3 +3386,66 @@ fn every_pointer_to_the_current_state_names_status() {
          guard was written, so the sentence has been reworded and the needles no longer see it"
     );
 }
+
+/// **The "여기서 시작한다" block has to be somewhere you can start.**
+///
+/// The heading is a claim: this is where a session picks up work, and `CLAUDE.md` sends every
+/// new session to it by name. It had grown to **759 lines across 45 dated entries**, 40 of
+/// them summaries of a `§9-N` whose body is in `HISTORY.md` — the same narrative written
+/// twice, in the file whose third line says a session reads it first. A block that long is a
+/// log, and a log falsifies the heading above it.
+///
+/// So this is not a style rule about length; it is the heading's own claim, checked. The
+/// budget is 200 lines because that is the number the global instructions use for a document
+/// loaded every session, and because it is the only number in play that was not invented
+/// here. After the move the block sat at 93, so the room left is real rather than nominal.
+///
+/// **What to do when it goes red** is in the message and matters more than the limit: move
+/// the oldest DATED ENTRIES to `HISTORY.md` verbatim and leave a dated row in the block's
+/// index. `#265` and the 2026-09-23 move both did that and verified the moved text
+/// byte-for-byte against `git show` afterwards.
+///
+/// Two wrong answers, one of which was made and caught. Trimming by deleting is the first.
+/// The second is moving more than the dated entries: the first cut of the 2026-09-23 move
+/// swallowed the standing N·D·X·R·A queue that follows them, and `X1`–`X3`, `R1` and `R3` are
+/// not closed — live work went into the history file. Grok's review caught it. The queue is
+/// not a dated record and does not move.
+#[test]
+fn the_start_here_block_is_a_starting_point_not_a_log() {
+    const BUDGET: usize = 200;
+    let status = read("docs/STATUS.md");
+    let lines: Vec<&str> = status.lines().collect();
+
+    let start = lines
+        .iter()
+        .position(|l| l.starts_with("> ## ▶"))
+        .expect("docs/STATUS.md no longer has the ▶ block that CLAUDE.md sends sessions to");
+    let end = lines[start + 1..]
+        .iter()
+        .position(|l| l.starts_with("## "))
+        .map(|i| start + 1 + i)
+        .unwrap_or(lines.len());
+
+    let len = end - start;
+    assert!(
+        len <= BUDGET,
+        "the ▶ block in docs/STATUS.md is {len} lines, over the {BUDGET}-line budget. The \
+         heading says it is where a session starts, and CLAUDE.md sends every session to it — \
+         at {len} lines it is a log instead. Move the oldest DATED ENTRIES to docs/HISTORY.md \
+         VERBATIM and leave a dated row in the block's index, then verify byte-for-byte \
+         against `git show`. Do not trim by deleting, and do not move the standing N·D·X·R·A \
+         queue that follows the entries — X1–X3, R1 and R3 are still open."
+    );
+
+    // The open queue stays in this file. Moving it was the mistake the docstring records, and
+    // it is silent: the rows read the same in either file, so only their absence here shows.
+    for row in ["**X1**", "**X2**", "**X3**", "**R1**", "**R3**"] {
+        assert!(
+            status.contains(row),
+            "docs/STATUS.md no longer carries the standing queue row {row}. Those are open — \
+             X1–X3 wait on external conditions and R1/R3 on a reproduction — so they belong in \
+             the file a session reads for what to do next, not in docs/HISTORY.md. If one has \
+             since closed, mark it ✅ here rather than moving it."
+        );
+    }
+}

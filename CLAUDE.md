@@ -77,7 +77,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 구현 게이트
 
-Phase 0의 게이트(`OPEN_QUESTIONS.md`의 **Q1~Q5** — 주력 호스트 2개 / 표면 문법 계열 / 메모리 모델 / 에러 모델 / 모듈 파일 포맷)는 **닫혔다(2026-08-28, D14~D18)**. Phase 1 툴체인 결정(D19~D22)도 확정되어 **Phase 1(수직 슬라이스) 구현이 진행 중**이다(현재 상태는 `ROADMAP.md`·`docs/phase1/WBS.md`).
+Phase 0의 게이트(`OPEN_QUESTIONS.md`의 **Q1~Q5** — 주력 호스트 2개 / 표면 문법 계열 / 메모리 모델 / 에러 모델 / 모듈 파일 포맷)는 **닫혔다(2026-08-28, D14~D18)**. Phase 1 툴체인 결정(D19~D22)도 확정되어 **Phase 1(수직 슬라이스) 구현이 진행 중**이다 — **현재 상태의 정본은 `docs/STATUS.md`다.** phase의 정의와 경계는 `docs/ROADMAP.md`, 그 phase의 작업 분해는 `docs/phase1/WBS.md`이며, **두 문서 다 자기 머리말에서 현재 상태를 `docs/STATUS.md`로 넘긴다** — 여기서 그쪽을 가리키면 한 홉이 는다.
 
 각 **새 슬라이스**는 여전히 SDD 게이트를 지킨다: 먼저 `docs/slices/SPEC-<이름>.md`를 쓰고 **사용자 확인 후** 구현한다(아래 "개발 방법론"). 스펙 없는 구현은 시작하지 않는다. 색인은 `docs/slices/README.md`.
 

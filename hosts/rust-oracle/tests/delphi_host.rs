@@ -369,6 +369,27 @@ fn a_real_delphi_host_loads_and_calls_the_module() {
         );
     }
 
+    // The complement, and it was missing: every W1044 dcc64 reports must sit on a MARKED
+    // line. The two loops above ask "did the marked lines warn" and "did the silent lines
+    // stay quiet"; neither notices a W1044 somewhere else. Three expected warnings are
+    // exactly the cover an accidental fourth would hide behind — and an accidental
+    // `PAnsiChar(S)` in this host is a real encoding bug, the one HOST_ABI.md's string rule 5
+    // is about.
+    let unexpected: Vec<&&str> = said
+        .iter()
+        .filter(|l| l.contains("W1044"))
+        .filter(|l| {
+            !flagged
+                .iter()
+                .any(|n| l.contains(&format!("host.dpr({n})")))
+        })
+        .collect();
+    assert!(
+        unexpected.is_empty(),
+        "dcc64 reported W1044 (Suspicious typecast of string to PAnsiChar) on a line this          host does not mark with `{{ ML_W1044 }}`. The marked ones are deliberate — they          demonstrate the spelling that is wrong but not silent — and an unmarked one is an          accidental cast, which is the encoding bug HOST_ABI.md's string rule 5 exists for.          If the new site is also deliberate, mark it:
+{unexpected:#?}"
+    );
+
     let run = Command::new(&exe)
         .arg(mlc::ML_MODULE_ABI_VERSION.to_string())
         .current_dir(work.path())

@@ -3505,3 +3505,87 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
         );
     }
 }
+
+/// **A test that builds a module carries a Windows gate.**
+///
+/// `codegen::build_cdylib` looks for `target/release/<name>.dll`. On Linux cargo writes
+/// `lib<name>.so`, so the build succeeds and the artifact lookup fails — the unstarted D22
+/// gap, documented on `compiler/tests/generated_crate_output.rs`, whose own success-path test
+/// is `#[cfg(windows)]` for exactly this reason. **Every test that calls `emit_artifacts` or
+/// `build_cdylib` and expects an artifact is Windows-only whether or not it says so.**
+///
+/// Thirty-seven test files call one of those two entry points and thirty-six carried a gate.
+/// The one that did not was written the day this guard was: a test *about* temp trees, whose
+/// only case that creates one is a successful build. The ubuntu job caught it in 24 seconds,
+/// which is what that job is for — but a red CI on a PR is still a claim made and retracted,
+/// and this is a `grep` that costs nothing.
+///
+/// **It is a floor, not a proof, and the difference is worth stating.** It requires the file
+/// to contain a windows gate *somewhere*; it cannot tell that the gate is on the call. Two
+/// files (`diagnostics.rs`, `emit_robustness.rs`) gate per-test rather than file-wide and are
+/// green on ubuntu, so demanding `#![cfg(windows)]` at the top would be wrong. What this
+/// catches is the case that actually happened: no gate at all.
+#[test]
+fn every_module_building_test_is_windows_gated() {
+    let mut checked = 0usize;
+    for (path, text) in every_file_ending_in(&[".rs"]) {
+        if !path.contains("/tests/") {
+            continue;
+        }
+        // A call that expects SUCCESS. `diagnostics.rs` calls `emit_artifacts` and takes
+        // `unwrap_err()` — a rejection never reaches the cdylib build, so it is correctly
+        // cross-platform and an unconditional rule would have forced a wrong gate onto it.
+        // Measured: 37 files expect success, and before this guard exactly one had no gate.
+        let expects_success = ["emit_artifacts(", "build_cdylib("].iter().any(|entry| {
+            text.match_indices(entry).any(|(at, _)| {
+                let stmt = &text[at..];
+                let end = stmt.find(';').unwrap_or(stmt.len().min(300));
+                let stmt = &stmt[..end];
+                !stmt.contains("unwrap_err") && !stmt.contains("is_err")
+            })
+        });
+        // The other way a test builds a module: spawning the CLI. `cli_temp_trees.rs` does
+        // that and calls neither entry point, so the library needles alone would have missed
+        // the very mistake this guard was written for — the plant caught that.
+        //
+        // `diagnostics.rs` spawns `mlc build` too and is correctly cross-platform, because it
+        // only ever asserts the build FAILED. The discriminator is that: take the text before
+        // each `.success()` on its line and see whether any of them lacks a `!`. Measured
+        // across the three files that spawn the CLI — two need a gate and have one, one does
+        // not and has none, no false positives either way.
+        let cli_expects_success = text.contains("CARGO_BIN_EXE_mlc")
+            && text.contains("\"build\"")
+            && text.lines().any(|l| {
+                l.find(".success()").is_some_and(|at| {
+                    // The `!` immediately before the RECEIVER, not anywhere in the line.
+                    // `assert!(!out.status.success())` is negated; `assert!(out.status
+                    // .success())` is not — and both contain a `!`, from `assert!`. The first
+                    // version looked for one anywhere and so measured "is it inside an
+                    // assert", which classified every line the same way. A plant caught it.
+                    let head = l[..at]
+                        .trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == '.');
+                    !head.ends_with('!')
+                })
+            });
+
+        if !expects_success && !cli_expects_success {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            text.contains("cfg(windows)"),
+            "{path} builds a module (`emit_artifacts` or `build_cdylib`) with no Windows gate \
+             anywhere in the file. `build_cdylib` looks for `target/release/<name>.dll` and \
+             Linux cargo writes `lib<name>.so`, so this passes here and fails on the ubuntu \
+             job. Add `#![cfg(windows)]` at the top, or `#[cfg(windows)]` on the tests that \
+             build — and if the property you want is cross-platform, assert it in the front \
+             end instead, which is both portable and stronger."
+        );
+    }
+    assert!(
+        checked >= 20,
+        "found only {checked} test files calling emit_artifacts/build_cdylib; the tree had 37 \
+         when this guard was written, so the walk or the entry-point names have moved and this \
+         is passing by checking almost nothing"
+    );
+}

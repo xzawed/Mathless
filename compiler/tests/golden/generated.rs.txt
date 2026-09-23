@@ -1291,7 +1291,7 @@ pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 pub extern "C" fn ml_iface_hash_pack() -> u64 { 0xDA0077B3A04515AB }
 
 fn ml_fn_boxes(qty: i32, per_box: i32) -> i32 {
-    return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } };
+    return { let __l = qty; let __d = per_box; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } };
 }
 #[no_mangle]
 pub extern "C" fn mlx_boxes(qty: i32, per_box: i32) -> i32 {
@@ -1299,7 +1299,7 @@ pub extern "C" fn mlx_boxes(qty: i32, per_box: i32) -> i32 {
 }
 
 fn ml_fn_loose(qty: i32, per_box: i32) -> i32 {
-    return { let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_rem(__d) } };
+    return { let __l = qty; let __d = per_box; if __d == 0 { 0i32 } else { __l.wrapping_rem(__d) } };
 }
 #[no_mangle]
 pub extern "C" fn mlx_loose(qty: i32, per_box: i32) -> i32 {
@@ -1310,7 +1310,7 @@ fn ml_fn_boxes_checked(qty: i32, per_box: i32) -> Result<i32, i32> {
     if (per_box == 0i32) {
         return Err(1);
     }
-    return Ok({ let __d = per_box; if __d == 0 { 0i32 } else { (qty).wrapping_div(__d) } });
+    return Ok({ let __l = qty; let __d = per_box; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } });
 }
 #[no_mangle]
 pub extern "C" fn mlx_boxes_checked(qty: i32, per_box: i32, out_value: *mut i32) -> i32 {
@@ -1660,7 +1660,7 @@ fn ml_fn_schedule(principal: i32, months: i32, ml_buf: *mut i32, ml_cap: i32, ml
         {
             let __i = i;
             if __i < 0 || __i >= __n { return -2; }
-            unsafe { *ml_buf.add(__i as usize) = { let __d = months; if __d == 0 { 0i32 } else { (principal).wrapping_div(__d) } }; }
+            unsafe { *ml_buf.add(__i as usize) = { let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } }; }
         }
         i = (i).wrapping_add(1i32);
     }
@@ -1680,9 +1680,9 @@ fn ml_fn_one_payment(principal: i32, months: i32, month: i32) -> Result<i32, i32
     if (month >= months) {
         return Err(1);
     }
-    let base = { let __d = months; if __d == 0 { 0i32 } else { (principal).wrapping_div(__d) } };
+    let base = { let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } };
     if (month == 0i32) {
-        return Ok((base).wrapping_add({ let __d = months; if __d == 0 { 0i32 } else { (principal).wrapping_rem(__d) } }));
+        return Ok((base).wrapping_add({ let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_rem(__d) } }));
     }
     return Ok(base);
 }

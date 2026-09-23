@@ -908,8 +908,24 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             // there, hanging the host thread (STATUS §5-4), so both edges close here:
             // `wrapping_*` handles MIN/-1 and the guard handles the zero.
             //
-            // The divisor is bound first so it is evaluated exactly once — `a / f(b)` must not
-            // call `f` twice just because the emitted form mentions the divisor in two places.
+            // The divisor is bound so it is evaluated exactly once — `a / f(b)` must not call
+            // `f` twice just because the emitted form mentions the divisor in two places.
+            //
+            // The dividend is bound too, and BEFORE it, which is the whole of
+            // `SPEC-division-guard-operands`. The first version put `<lhs>` inside the `else`,
+            // and that cost two things nobody chose:
+            //
+            //   1. the left operand was SKIPPED when the divisor was zero, and
+            //   2. the right operand was evaluated FIRST, against source order and against
+            //      what the `+ - *` arm below does (there the left operand is the receiver).
+            //
+            // Neither mattered while no expression could early-return. `#200` gave one:
+            // `xs[i]` reports `ML_ST_INDEX_OUT_OF_RANGE` from expression position. So
+            // `xs[999] / 0` came back as status 0 with value 0 — the bounds check never ran.
+            // Measured through a loaded module, with a control, in
+            // `hosts/rust-oracle/tests/division_guard_operands.rs`.
+            //
+            // DP-N4 is untouched: a zero divisor still yields the defined `0i32`.
             if matches!(op, IrBinOp::Div | IrBinOp::Rem) && lhs.ty == IrType::I32 {
                 let method = if matches!(op, IrBinOp::Div) {
                     "wrapping_div"
@@ -917,9 +933,9 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                     "wrapping_rem"
                 };
                 return format!(
-                    "{{ let __d = {}; if __d == 0 {{ 0i32 }} else {{ ({}).{}(__d) }} }}",
-                    emit_expr(rhs, abi),
+                    "{{ let __l = {}; let __d = {}; if __d == 0 {{ 0i32 }} else {{ __l.{}(__d) }} }}",
                     emit_expr(lhs, abi),
+                    emit_expr(rhs, abi),
                     method
                 );
             }

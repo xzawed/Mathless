@@ -2929,23 +2929,27 @@ fn no_document_says_a_closed_question_is_open() {
     }
 }
 
-/// **`STATUS.md` §5-6 describes an emitted shape; this fails when that shape moves.**
+/// **`STATUS.md` §5-6 quotes an emitted shape; this fails when that shape moves.**
 ///
-/// The debt is that `i32 /` and `%` put their LEFT operand inside the `else` of the totality
-/// guard `#76` added, so a zero divisor skips it — and the only expression that can early
-/// return from that position today is an array index, whose bounds check therefore does not
-/// run. Measured through a loaded module: the same out-of-range index returns
-/// `ML_ST_INDEX_OUT_OF_RANGE` with divisor 2 and status 0 with divisor 0.
+/// §5-6 recorded the defect: `i32 /` and `%` put their LEFT operand inside the `else` of the
+/// totality guard `#76` added, so a zero divisor skipped it and an out-of-range index came
+/// back as status 0. `SPEC-division-guard-operands` closed it by binding the dividend first
+/// and outside the `else`, and §5-6 now quotes the shape that replaced it.
 ///
-/// The entry is prose about generated code, which is the kind of claim this file exists to
-/// keep honest. It is not pinned as *correct* — it is pinned as *current*. Whoever changes
-/// the emitted shape, whether to fix the debt or for an unrelated reason, gets a red test
-/// naming the paragraph that has to change with it. A debt entry nobody rereads is how §5-1
-/// stayed open for five slices after its observation channel arrived.
+/// **The first version of this guard did not do what its own docstring promised**, and the
+/// slice that changed the shape is what proved it. It pinned four fragments — `let __d =`,
+/// `if __d == 0 { 0i32 } else {`, `wrapping_div`, `wrapping_rem` — and the new emission
+/// contains all four, so the shape moved and the guard stayed green. The plant that had
+/// "proved" it worked inverted the condition, which is not the change that happened.
 ///
-/// Deliberately not a behavioural test. Pinning the wrong answer as an expectation is how a
-/// defect becomes a contract; the oracle asserts what the language promises, and this asserts
-/// only that a document still matches the source it describes.
+/// It now pins the WHOLE template, both halves of it, against the document that quotes it:
+/// the emitted text and §5-6's code block have to be the same string. That is the only form
+/// where "the shape moved" and "this test fails" are the same statement — a fragment list is
+/// a guess about which part will move.
+///
+/// Deliberately not a behavioural test: `division_guard.rs` and `division_guard_operands.rs`
+/// own the behaviour. This owns only the agreement between the source and the document that
+/// describes it.
 #[test]
 fn the_recorded_division_debt_still_matches_what_codegen_emits() {
     // The emitter writes this as a `format!` template, so the source carries doubled braces.
@@ -2955,29 +2959,47 @@ fn the_recorded_division_debt_still_matches_what_codegen_emits() {
     let codegen = read("compiler/src/codegen.rs")
         .replace("{{", "{")
         .replace("}}", "}");
-    let flat = flatten_prose(&codegen);
 
-    // The guard itself: divisor bound first, left operand reached only in the `else`.
-    for shape in [
-        "let __d =",
-        "if __d == 0 { 0i32 } else {",
-        "wrapping_div",
-        "wrapping_rem",
-    ] {
-        assert!(
-            flat.contains(shape),
-            "compiler/src/codegen.rs no longer emits `{shape}`. `docs/STATUS.md` §5-6 records \
-             the shape of the i32 division guard and the measurement that follows from it — a \
-             zero divisor skipping the left operand's bounds check. If the shape changed, that \
-             entry is describing code that is gone: update it, or close the debt there"
+    // The template with its placeholders still in, exactly as §5-6 prints it. `{}` is what
+    // `format!` leaves for the operands; the document writes `<lhs>`/`<rhs>` in their place,
+    // so the two are compared after the same substitution.
+    let emitted = codegen
+        .lines()
+        .map(str::trim)
+        .find(|l| l.contains("if __d == 0 { 0i32 } else {"))
+        .map(|l| l.trim_matches(|c| c == '"' || c == ',').to_string())
+        .expect(
+            "compiler/src/codegen.rs no longer emits an `if __d == 0 { 0i32 } else { … }` \
+             guard for i32 division. docs/STATUS.md §5-6 quotes that shape; if it is gone, \
+             that section is describing code that is gone",
         );
-    }
-
-    let status = flatten_prose(&read("docs/STATUS.md"));
     assert!(
-        status.contains("5-6.") && status.contains("if __d == 0 { 0i32 } else {"),
-        "docs/STATUS.md no longer carries §5-6 with the emitted shape it describes. The debt \
-         is still in the compiler; removing the record does not pay it"
+        emitted.contains("let __l =") && emitted.find("let __l =") < emitted.find("let __d ="),
+        "the i32 division guard no longer binds the dividend before the divisor. That \
+         ordering is what SPEC-division-guard-operands closed §5-6 with, and \
+         compiler/tests/division_guard.rs is where the reason lives:\n  {emitted}"
+    );
+
+    // Three placeholders, in emission order: dividend, divisor, method. The document writes
+    // the operands as `<lhs>`/`<rhs>` and the method out in full, so the comparison is made
+    // after the same substitution rather than by loosening either side.
+    let shape = emitted
+        .replacen("{}", "<lhs>", 1)
+        .replacen("{}", "<rhs>", 1)
+        .replacen("{}", "wrapping_div", 1);
+    let status = read("docs/STATUS.md");
+    assert!(
+        status.contains("§5-6") || status.contains("5-6."),
+        "docs/STATUS.md no longer carries §5-6. The record of what this shape is for does not \
+         go away when the debt is paid — §5's whole point is that a paid debt is marked, not \
+         deleted"
+    );
+    assert!(
+        status.contains(&shape),
+        "docs/STATUS.md §5-6 does not quote the shape codegen.rs emits.\n  emitted: {shape}\n\
+         Update the code block there in the same commit that changes the emitter — that is \
+         what this guard is for, and the version of it that pinned fragments instead of the \
+         whole template missed exactly this change."
     );
 }
 

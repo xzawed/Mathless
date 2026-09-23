@@ -943,10 +943,22 @@ Q12가 지배하는 것은 **가변 길이**(문자열·배열·문자열을 품
     - **이 항목은 Grok이 찾았다.** 제가 세운 감사 주장 셋을 검증하면서 "가장 위험한 미검증 표면"으로
       지목했고, 코드로 재확인해 정확했다.
 
-### 5-6. `i32 /`·`%`가 왼쪽 피연산자를 건너뛴다 — 범위 밖 인덱스가 status 0이 된다 (2026-09-23, 미해결)
+### 5-6. ✅ 갚음 — `i32 /`·`%`가 왼쪽 피연산자를 건너뛰었다 (발견 2026-09-23, 상환 2026-09-23)
+
+> **`SPEC-division-guard-operands`가 갚았다**(SPEC #287 / 구현은 이 항목이 가리키는 PR).
+> 오늘 `compiler/src/codegen.rs`가 내는 모양은 이것이고, `doc_claims.rs`의
+> `the_recorded_division_debt_still_matches_what_codegen_emits`가 **이 코드 블록과 방출 텍스트가
+> 같은 문자열인지**를 검사한다:
+>
+> ```rust
+> { let __l = <lhs>; let __d = <rhs>; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } }
+> ```
+>
+> 아래는 **발견 당시의 기록**이다. 지우지 않는 이유는 §5의 요점 그대로다 — 갚은 것도 조용히
+> 사라지면 안 된다.
 
 `#76`이 나눗셈·나머지를 **전역(total)** 으로 만들면서 0 제수를 `0i32`로 되돌린다. 그 보호막이
-**왼쪽 피연산자를 `else` 안으로 밀어 넣는다** — `compiler/src/codegen.rs`가 내는 모양:
+**왼쪽 피연산자를 `else` 안으로 밀어 넣었다** — 그때 `compiler/src/codegen.rs`가 내던 모양:
 
 ```rust
 { let __d = <rhs>; if __d == 0 { 0i32 } else { (<lhs>).wrapping_div(__d) } }

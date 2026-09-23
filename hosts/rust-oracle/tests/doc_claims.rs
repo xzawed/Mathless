@@ -3314,3 +3314,75 @@ fn both_readmes_map_every_document() {
         }
     }
 }
+
+/// **A document that names where the current state lives must name `docs/STATUS.md`.**
+///
+/// `STATUS.md:3` says a new session reads it first, and three documents already send current
+/// state there — `ROADMAP.md`, `phase1/SPEC.md`, `phase1/WBS.md`, each in its own opening
+/// lines. `CLAUDE.md` pointed at two of those three instead, so the file every session loads
+/// sent the reader one hop away from the answer and the document it landed on immediately
+/// redirected. Not false, but a pointer that costs a hop is a pointer that goes stale in a
+/// place nobody looks.
+///
+/// Measured before it was written: four lines in the tree name a source for 현재 상태, three
+/// already correct and one not. A guard for a single site is worth it here only because the
+/// needle is narrow and the failure is silent — the next copy of that sentence would be as
+/// hard to see as this one was.
+///
+/// This is a rule rather than a derivation, and it says so: nothing in the code makes
+/// `STATUS.md` canonical. What makes it checkable is that the claim is stated in one place and
+/// repeated nowhere — which is exactly the property the guard preserves.
+#[test]
+fn every_pointer_to_the_current_state_names_status() {
+    const CANONICAL: &str = "STATUS.md";
+    let mut found = 0usize;
+
+    for (path, text) in every_markdown_file() {
+        for (no, line) in text.lines().enumerate() {
+            let flat = flatten_prose(line);
+            for lead in ["현재 상태는 ", "현재 상태의 정본은 ", "최신 상태의 정본은 "]
+            {
+                // Every occurrence, not the first — a line may carry the lead twice, and the
+                // first one being right must not answer for a later one. Third time this
+                // file has needed `match_indices` over `find`; Grok found all three.
+                for (at, _) in flat.match_indices(lead) {
+                    // The FIRST document named after the lead is the one it points at. Taking
+                    // the sentence up to a separator and asking whether STATUS.md appears in
+                    // it anywhere is too loose: `…정본은 docs/STATUS.md다. phase의 정의는
+                    // docs/ROADMAP.md` has no separator between the two names (an ASCII `.`
+                    // is not one), so the whole run would pass on the first name while a
+                    // reversed version would pass on the second. Grok raised exactly that.
+                    let tail = &flat[at + lead.len()..];
+                    let Some(end) = tail.find(".md") else {
+                        continue; // names no document: prose, not a pointer
+                    };
+                    let named: String = tail[..end + ".md".len()]
+                        .chars()
+                        .rev()
+                        .take_while(|c| !c.is_whitespace() && !matches!(c, '(' | '·' | ','))
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    found += 1;
+                    assert!(
+                        named.ends_with(CANONICAL),
+                        "{path}:{} says the current state lives in '{named}', not {CANONICAL}. \
+                         docs/STATUS.md is where a new session is told to look first, and the \
+                         documents named here send it back there in their own opening lines — \
+                         so this pointer costs a hop and goes stale where nobody reads it.",
+                        no + 1
+                    );
+                }
+            }
+        }
+    }
+
+    // Floor: the sentence still exists somewhere. A needle that matches nothing asserts
+    // nothing, and this one is prose rather than a derived value, so nothing else would notice.
+    assert!(
+        found >= 3,
+        "found {found} document pointers to the current state; the tree had four when this \
+         guard was written, so the sentence has been reworded and the needles no longer see it"
+    );
+}

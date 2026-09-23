@@ -3110,8 +3110,18 @@ fn no_spec_calls_a_paid_debt_open() {
                 if !real {
                     continue;
                 }
-                for needle in ["열린 채", "그대로다", "여전히 없다", "관측 수단이 없다"]
-                {
+                for needle in [
+                    "열린 채",
+                    "그대로다",
+                    "여전히 없다",
+                    "관측 수단이 없다",
+                    // Added 2026-09-23 after §5-6 was paid: two SPECs described it as
+                    // 미해결 and this guard did not know the word. Measured when added —
+                    // zero hits either way, so it exists for the NEXT copy, not this one.
+                    "미해결",
+                    "아직 열려",
+                    "미상환",
+                ] {
                     assert!(
                         !flat.contains(needle),
                         "{path}:{} cites §{key} and says '{needle}', but docs/STATUS.md marks \
@@ -3434,7 +3444,14 @@ fn every_pointer_to_the_current_state_names_status() {
 /// not a dated record and does not move.
 #[test]
 fn the_start_here_block_is_a_starting_point_not_a_log() {
-    const BUDGET: usize = 200;
+    // The budget is on the NARRATIVE, not the whole block, and the difference was measured
+    // rather than assumed. After the 2026-09-23 move the block was 198 lines: 48 of live
+    // entry and 150 of index. The index grows by ONE ROW PER SESSION and each row is one
+    // line — bounded by construction, and it is the navigation the block needs. The entries
+    // are what grew to 759 lines. Budgeting the block punished the part that cannot run away
+    // and left two lines of headroom for the part that can; the first version did exactly
+    // that, and it fired on the commit that closed the slice.
+    const BUDGET: usize = 120;
     let status = read("docs/STATUS.md");
     let lines: Vec<&str> = status.lines().collect();
 
@@ -3448,14 +3465,31 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
         .map(|i| start + 1 + i)
         .unwrap_or(lines.len());
 
-    let len = end - start;
+    // The index heading separates the two. Its absence is a floor: without it this would
+    // measure the whole block again and quietly go back to punishing the index.
+    let index_at = lines[start..end]
+        .iter()
+        .position(|l| l.contains("그 앞의 항목들"))
+        .map(|i| start + i)
+        .expect(
+            "the ▶ block no longer has its `그 앞의 항목들` index heading. That heading is \
+             what separates the live entries from the dated index, and this guard budgets \
+             only the first — if the index is gone, the moved entries have nowhere to be \
+             found from and the budget below is measuring the wrong thing",
+        );
+
+    let len = index_at - start;
     assert!(
         len <= BUDGET,
-        "the ▶ block in docs/STATUS.md is {len} lines, over the {BUDGET}-line budget. The \
-         heading says it is where a session starts, and CLAUDE.md sends every session to it — \
-         at {len} lines it is a log instead. Move the oldest DATED ENTRIES to docs/HISTORY.md \
-         VERBATIM and leave a dated row in the block's index, then verify byte-for-byte \
-         against `git show`. Do not trim by deleting, and do not move the standing N·D·X·R·A \
+        "the ▶ block's live entries run {len} lines, over the {BUDGET}-line budget (the dated \
+         index below them is not counted — it grows one line per session and is bounded). The \
+         heading says this is where a session starts, and CLAUDE.md sends every session to it; \
+         at {len} lines of narrative it is a log instead. Move the oldest DATED ENTRIES to \
+         docs/HISTORY.md VERBATIM and leave a dated row in the index, then verify \
+         byte-for-byte against `git show`. If there is only ONE entry, the entry itself is too \
+         long: its retrospective belongs in that session's §9-N, and durable rules belong in \
+         §7 — leave a pointer, not a summary. Do not trim by deleting, and do not move the \
+         standing N·D·X·R·A \
          queue that follows the entries — X1–X3, R1 and R3 are still open."
     );
 

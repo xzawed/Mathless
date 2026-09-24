@@ -587,12 +587,13 @@ Q12가 지배하는 것은 **가변 길이**(문자열·배열·문자열을 품
    *(2026-09-24 정정: 여기 그 둘이 API로는 안 된다는 단정이 있었다(#73). `X3`가 2026-09-23에 그것을
    **미판정**으로 되돌렸다 — 계정 설정이고 GET이 없어(404) 이 토큰으로는 확인할 수 없다. 같은
    사실이 두 곳에 있었고 한 곳만 갱신됐다.)*
-10. **공개 저장소 위생 두 가지** — 보안 문제는 아니고 취향이다. **현재 상태의 정본은 `X3`다.**
+10. ✅ **닫힘 (2026-09-24) — 공개 저장소 위생 두 가지** — 보안 문제는 아니고 취향이다. (a)는 껐고
+    (b)는 **기본값 유지로 결정됐다**(사용자 확인). **현재 상태의 정본은 `X3`다.**
     **(a) Wiki** — ✅ **껐다(2026-09-07, `gh repo edit --enable-wiki=false`).** 2026-09-24 재측정도
     `has_wiki: false`다. *(이 줄은 켜져 있다고 적고 있었고, 끈 뒤에도 17일 동안 그대로였다.)*
     **(b) 포크 PR 워크플로 승인 정책** — **API로 읽힌다**(`X3` ② — 쓰기는 같은 경로의 `PUT`이지만,
     바꾸지 않았으므로 **쓰기는 잰 적이 없다**). 값은 첫 기여자 승인 요구
-    (`first_time_contributors`, 2026-09-24 재측정)이고 **그대로 둬도 된다** — 바꿀지는 사용자 판단이다.
+    (`first_time_contributors`, 2026-09-24 재측정)이고 **그대로 둔다 — 2026-09-24 사용자 확인**(근거는 `X3` ②).
     *(2026-09-24 정정: 이 줄은 API로는 못 만진다고 적고 422를 근거로 들었다. **그 메시지는 다른
     설정의 것이다** — 오늘 `actions/permissions/access`가 같은 문장을 그대로 돌려주는데, 그 경로는
     저장소 **밖** 워크플로의 접근 수준이고 internal·private 저장소 전용이다. 승인 정책은 자기 경로
@@ -1703,8 +1704,9 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 >
 > **착수 대기 — `R3`는 코드로 닫혔다.** 이 항목은 처음에 *"코드나 문서로 닫을 행이 없다, `R3`는 경쟁
 > 상태가 필요하다"* 고 적었고 **같은 날 측정이 그것을 반증했다** — ACL 하나로 경쟁 없이 도달했다(§5-5.6).
-> 남은 `X1`은 러너가, `X3`는 사용자의 설정 판단이 필요하다(이유는 각 행에). §4에 ✅ 없이 남은 것도
-> **저장소·계정 설정**이다.
+> 남은 `X1`은 Delphi가 있는 러너가 필요하고(이 PC를 자체 호스팅 러너로 쓰는 안은 검토 끝에 쓰지
+> 않는다), `X3`는 ②가 결정으로 닫혀 **①(계정의 Emails 설정)을 사용자가 한 번 보는 일**만 남았다(이유는
+> 각 행에). §4에 ✅ 없이 남은 것도 **저장소·계정 설정**이다.
 >
 > **다음 슬라이스는 없다.** §7이 강제하는 것이 없었고(§9-63.9), 사용자가 이번 세션을 기록 후 멈추기로
 > 했다. 후보는 `docs/slices/README.md`의 "다음 슬라이스" 절이다 — **고르기 전에 §7을 다시 돌린다**
@@ -1815,15 +1817,23 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 | # | 무엇 | 조건 |
 |---|---|---|
-| **X1** | **Delphi 검증 — D14의 나머지 절반** | **실체는 2026-09-07에 측정됐다(§9-15): IDE에서 `dcc64`로 빌드한 Win64 호스트가 모듈을 로드·호출해 14개 검사 전부 통과(`GATE_DELPHI_OK`).** **로컬 자동화도 2026-09-09에 닫혔다(§9-20)**: `dcc64`가 거부하면 게이트가 `bds.exe -b`로 IDE 빌드를 부르고, CE에서 통과한다(`MATHLESS_GATE_DELPHI=require` 초록). **남은 것은 CI뿐이다** — 러너에 Delphi도 대화형 세션도 없다. 그전 사유: 가진 에디션이 명령줄 빌드를 거부한다: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. (§9-15가 그 한 줄을 실제로 못 돌린 이유를 적는다) |
+| **X1** | **Delphi 검증 — D14의 나머지 절반** | **실체는 2026-09-07에 측정됐다(§9-15): IDE에서 `dcc64`로 빌드한 Win64 호스트가 모듈을 로드·호출해 14개 검사 전부 통과(`GATE_DELPHI_OK`).** **로컬 자동화도 2026-09-09에 닫혔다(§9-20)**: `dcc64`가 거부하면 게이트가 `bds.exe -b`로 IDE 빌드를 부르고, CE에서 통과한다(`MATHLESS_GATE_DELPHI=require` 초록). **남은 것은 CI뿐이다** — 러너에 Delphi도 대화형 세션도 없다. **이 개발 PC를 자체 호스팅 러너로 쓰는 안은 검토했고 쓰지 않는다(2026-09-24, Grok 동의·사용자 확인)**: 공개 저장소라 포크 PR이 그 러너에서 코드를 실행할 수 있다 — GitHub 문서(*Secure use reference* → *Hardening for self-hosted runners*): *"Self-hosted runners should almost never be used for public repositories on GitHub, because any user can open pull requests against the repository and compromise the environment."* 그리고 IDE 빌드는 대화형 세션이 필요하고, 이 머신의 전체 게이트는 6회 중 2회 실패한다(§9-63.5) — required 게이트로 걸면 CI가 그만큼 흔들린다. **그래서 X1은 외부 조건으로 열어 둔다.** 그전 사유: 가진 에디션이 명령줄 빌드를 거부한다: 이 `dcc64`는 *"This version of the product does not support command line compiling"* 을 찍고 **아무것도 만들지 않으면서 exit 0** 이다(실측). 명령줄 빌드는 Community Edition이 막는 기능이므로, **필요한 것은 설치가 아니라 그것을 허용하는 에디션**이다. 그전 조건: `dcc64` 설치. **준비는 끝났다**(#111): `MATHLESS_GATE_DELPHI=require cargo test -p ml_oracle --test delphi_host -- --nocapture` 한 줄이면 검증된다. (§9-15가 그 한 줄을 실제로 못 돌린 이유를 적는다) |
 | **X2** | **생성 `.pas`의 Delphi 하류 게이트** | 같은 조건. **§9-14가 한 걸음 더 갔다** — FPC가 유닛을 컴파일할 뿐 아니라 `host.dpr`를 빌드해 **모듈을 로드·호출**한다(결함 하나를 잡았다). **컴파일하는 것이 0개이던 상태는 §9-11이 바꿨고**, §9-15에서 **Delphi 자신이 유닛을 컴파일했다**(IDE, 한 번). **✅ 자동화도 닫혔다(2026-09-09, §9-20)** — `MATHLESS_GATE_DELPHI`가 `bds.exe -b`로 IDE 빌드를 불러 생성 유닛을 컴파일하고 호스트를 빌드하며, 이 머신에서 **반복 가능하게** 통과한다. **남은 것은 CI뿐이고 그것은 여기서 못 닫는다**(러너에 Delphi도 대화형 세션도 없다) — 바로 위 X1 행과 같은 상태다. *(2026-09-22 정정: 이 행만 "반복해서 도는 게이트는 아직 없다"로 남아 **같은 표의 두 행이 모순**했고, 이 표가 착수 대기의 정본이라 다음 세션이 이미 있는 것을 다시 만들러 갈 자리였다.)* 그전 기록: 골든이 **498줄**을 고정하는데 컴파일하는 것이 **0개**였다 — D21의 "DRAFT"가 실제로 얼마나 큰지의 수치다(§5-5.10) |
 | **X3** | **§4-9 후반 · §4-10 일부** | **여기서 할 수 있는 것은 했다(2026-09-07).** Wiki는 **껐다**(`gh repo edit --enable-wiki=false`, `has_wiki: false` 실측 — 위키 저장소는 만들어진 적조차 없어 잃은 내용이 없다). 홈페이지 URL은 **가리킬 것이 없어 두었다**(§4-5). ~~**남은 것은 진짜 웹 UI 전용 둘뿐이다**: Emails 체크박스 2개와 포크 PR 승인 정책.~~ **"넷 다 웹 UI 전용"이라고 적혀 있던 것은 틀렸다** — 둘은 `gh`로 됐다. **→ 그 "남은 둘" 중 하나가 반증됐다(2026-09-23 실측).** 둘은 ① Emails 체크박스 묶음과 ② 포크 PR 승인 정책이었다.
 
 **② 는 웹 UI 전용이 아니다**: `gh api repos/<owner>/<repo>/actions/permissions/fork-pr-contributor-approval`이 **읽힌다** — 오늘 값은 `{"approval_policy":"first_time_contributors"}`(GitHub 기본값)이고 같은 경로의 `PUT`이 쓰기다. **바꾸지 않았다** — 저장소 설정 변경은 대외적이라 사용자 판단이다.
 
+✅ **② 닫힘 (2026-09-24, 사용자 확인 — Grok 동의): 기본값 `first_time_contributors`를 그대로 둔다.** 근거는 워크플로 쪽이다: CI는 `push`(main)와 `pull_request`만 받고 `pull_request_target`이 없으며, 비밀을 하나도 참조하지 않고, GitHub 호스팅 러너에서만 돈다. 워크플로 토큰의 기본 권한도 읽기 전용이다(`default_workflow_permissions: read`, 실측). 더 엄격한 `all_external_contributors`는 외부 기여마다 승인을 요구하는데, 그것이 막을 위험이 이 워크플로에는 없다.
+
 **① 은 반증도 확인도 못 했다**: 계정 설정이고 GET 엔드포인트가 없어(`user/email/visibility`는 404) 이 토큰으로는 읽을 수 없다. **미판정으로 둔다** — "웹 UI 전용"이라고도, 아니라고도 적지 않는다.
 
-즉 **하나는 반증, 하나는 미판정**이다. "절반 틀렸다"로 적지 않는 이유가 그것이다 — 나머지 절반은 **맞은 것이 아니라 안 본 것**이다 |
+**① 을 2026-09-24에 다시 쟀다 — 사용자가 "설명한 설정이 없다"고 물어서.** 여기 적힌 위치를 확인 없이 전했던 것이다.
+- **위치**: 저장소 Settings가 아니라 **계정** Settings → 사이드바 *Access* → *Emails*(`github.com/settings/emails`). GitHub 문서(2026-09-24 확인)의 이름은 *Keep my email addresses private* 와 *Block command line pushes that expose my email* 이고, 뒤의 것은 **앞의 것을 켠 뒤에** 켜는 것으로 적혀 있다.
+- **GET이 없는 것이 아니었다**: `GET /user/emails`가 있고 `visibility`를 준다. 404의 이유는 이 토큰에 `user` 범위가 없어서다(`gist, read:org, repo, workflow`). 그 `visibility`가 위 체크박스와 같은 것인지는 문서가 말하지 않는다.
+- **간접 실측**: `main`의 squash 커밋은 GitHub가 만드는 웹 작업인데, 작성자가 **2026-08-28(`93abafb`)부터 전부 noreply**다 — 그때 브랜치 커밋은 개인 주소였다(`Co-authored-by` 66개). 웹 작업은 *Keep my email addresses private* 가 켜져 있을 때 noreply를 쓰므로, **그 체크박스는 적어도 그때부터 켜져 있었을 가능성이 높다**(추론이다). *Block command line pushes…* 는 **2026-08-30까지 꺼져 있었다**(개인 주소 커밋이 푸시됐다). 지금은 모른다 — **시험 푸시로 재지 않는다**, 주소를 공개할 수 있다.
+- **남은 일**: 사용자가 그 페이지를 한 번 본다. *Block command line pushes…* 가 꺼져 있으면 켜는 것이 권장안이다 — 로컬 `user.email`이 이미 noreply라 평소 작업은 막히지 않는다.
+
+즉 **하나는 반증, 하나는 미판정**이었다. "절반 틀렸다"로 적지 않는 이유가 그것이다 — 나머지 절반은 **맞은 것이 아니라 안 본 것**이다. *(2026-09-24: ②는 결정으로 닫혔고, ①은 사용자가 페이지 하나를 보는 일로 좁혀졌다.)* |
 
 #### 재현하지 않은 채 남은 것 — 손대기 전에 재라
 

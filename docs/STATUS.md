@@ -1828,12 +1828,12 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 
 ✅ **② 닫힘 (2026-09-24, 사용자 확인 — Grok 동의): 기본값 `first_time_contributors`를 그대로 둔다.** 근거는 워크플로 쪽이다: CI는 `push`(main)와 `pull_request`만 받고 `pull_request_target`이 없으며, 비밀을 하나도 참조하지 않고, GitHub 호스팅 러너에서만 돈다. 워크플로 토큰의 기본 권한도 읽기 전용이다(`default_workflow_permissions: read`, 실측). 더 엄격한 `all_external_contributors`는 외부 기여마다 승인을 요구하는데, 그것이 막을 위험이 이 워크플로에는 없다.
 
-**① 은 반증도 확인도 못 했다**: 계정 설정이고 ~~GET 엔드포인트가 없어~~(`user/email/visibility`는 404 — **↓ 2026-09-24: GET은 `user/emails`에 있고, 이 토큰에 범위가 없었다**) 이 토큰으로는 읽을 수 없다. **미판정으로 둔다** — "웹 UI 전용"이라고도, 아니라고도 적지 않는다.
+**① 은 반증도 확인도 못 했다**: 계정 설정이고 GET 엔드포인트가 없어(`user/email/visibility`는 404) 이 토큰으로는 읽을 수 없다. **↓ 2026-09-24: 그 404는 맞았다 — 그 경로는 PATCH 전용이다. 틀린 것은 이유다 — 읽는 GET은 다른 경로 `GET /user/emails`에 있다. 결론(이 토큰으로는 못 읽는다)은 다른 이유로 여전히 맞다 — 이 토큰에 `user` 범위가 없다.** **미판정으로 둔다** — "웹 UI 전용"이라고도, 아니라고도 적지 않는다.
 
 **① 을 2026-09-24에 다시 쟀다 — 사용자가 "설명한 설정이 없다"고 물어서.** 여기 적힌 위치를 확인 없이 전했던 것이다.
 - **위치**: 저장소 Settings가 아니라 **계정** Settings → 사이드바 *Access* → *Emails*(`github.com/settings/emails`). GitHub 문서(2026-09-24 확인)의 이름은 *Keep my email addresses private* 와 *Block command line pushes that expose my email* 이고, 뒤의 것은 **앞의 것을 켠 뒤에** 켜는 것으로 적혀 있다.
-- **GET이 없는 것이 아니었다**: `GET /user/emails`가 있고 `visibility`를 준다. 404의 이유는 이 토큰에 `user` 범위가 없어서다(`gist, read:org, repo, workflow`). 그 `visibility`가 위 체크박스와 같은 것인지는 문서가 말하지 않는다.
-- **간접 실측**: `main`의 squash 커밋은 GitHub가 만드는 웹 작업인데, 작성자가 **2026-08-28(`93abafb`)부터 전부 noreply**다 — 그때 브랜치 커밋은 개인 주소였다(`Co-authored-by` 66개). 웹 작업은 *Keep my email addresses private* 가 켜져 있을 때 noreply를 쓰므로, **그 체크박스는 적어도 그때부터 켜져 있었을 가능성이 높다**(추론이다). *Block command line pushes…* 는 **2026-08-30까지 꺼져 있었다**(개인 주소 커밋이 푸시됐다). 지금은 모른다 — **시험 푸시로 재지 않는다**, 주소를 공개할 수 있다.
+- **읽는 GET은 다른 경로에 있었다**: `GET /user/emails`가 `visibility`를 준다. **404가 두 번이고 원인이 다르다** — `GET user/email/visibility`(2026-09-23)는 그 경로에 GET이 없어서(PATCH 전용), `GET /user/emails`(2026-09-24)는 이 토큰에 `user` 범위가 없어서다(`gist, read:org, repo, workflow`). 그 `visibility`가 위 체크박스와 같은 것인지는 문서가 말하지 않는다.
+- **간접 실측**: `main`의 squash 커밋은 GitHub가 만드는 웹 작업인데, 작성자가 **2026-08-28(`93abafb`)부터 전부 noreply**다 — 그때 브랜치 커밋은 개인 주소였다(병합 전 커밋을 PR 커밋 API로 직접 쟀다: **#1과 #66 모두 병합 전 작성자는 개인 주소, 그 squash 커밋은 noreply**. `Co-authored-by`의 개인 주소 66개가 같은 사실의 흔적이다). 웹 작업은 *Keep my email addresses private* 가 켜져 있을 때 noreply를 쓰므로, **그 체크박스는 적어도 그때부터 켜져 있었을 가능성이 높다**(추론이다). *Block command line pushes…* 는 **2026-08-30까지 꺼져 있었다**(개인 주소 커밋이 푸시됐다). 지금은 모른다 — **시험 푸시로 재지 않는다**, 주소를 공개할 수 있다.
 - **남은 일**: 사용자가 그 페이지를 한 번 본다. *Block command line pushes…* 가 꺼져 있으면 켜는 것이 권장안이다 — 로컬 `user.email`이 이미 noreply라 평소 작업은 막히지 않는다.
 
 즉 **하나는 반증, 하나는 미판정**이었다. "절반 틀렸다"로 적지 않는 이유가 그것이다 — 나머지 절반은 **맞은 것이 아니라 안 본 것**이다. *(2026-09-24: ②는 결정으로 닫혔고, ①은 사용자가 페이지 하나를 보는 일로 좁혀졌다.)* |

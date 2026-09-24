@@ -150,6 +150,60 @@ fn the_cli_prints_the_parse_position_on_stderr() {
     );
 }
 
+/// **The usage line answers "how do I invoke this?", so only an invocation error earns it.**
+///
+/// `main.rs` printed it after EVERY error: after a type error, after an unreadable input, and
+/// after the one message that tells a user to move files back by hand (`RollbackIncomplete`),
+/// where it sat below an instruction the user has to act on. None of those is a question
+/// about the command line.
+#[test]
+fn a_build_that_fails_does_not_end_with_the_usage_line() {
+    let stderr = cli_stderr_for("nousage", "export fn f(a: f64) -> f64 { return a < 1.0 }");
+    assert!(stderr.contains("type error:"), "{stderr}");
+    assert!(
+        !stderr.contains("usage:"),
+        "a source error is not a usage error — {stderr}"
+    );
+
+    // An input that cannot be read: the command line was well formed.
+    let dir = common::TempOut::new("diag_cli_unreadable");
+    let out = Command::new(env!("CARGO_BIN_EXE_mlc"))
+        .args(["build".as_ref(), dir.join("missing.mls").as_os_str()])
+        .output()
+        .expect("run mlc");
+    assert!(!out.status.success(), "reading a missing file should fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("cannot read"), "{stderr}");
+    assert!(
+        !stderr.contains("usage:"),
+        "an unreadable input is not a usage error — {stderr}"
+    );
+}
+
+#[test]
+fn an_invocation_error_still_prints_the_usage_line() {
+    let invocations: [&[&str]; 6] = [
+        &[],
+        &["frobnicate"],
+        &["build"],
+        &["build", "--frob"],
+        &["build", "a.mls", "-o"],
+        &["build", "a.mls", "b.mls"],
+    ];
+    for args in invocations {
+        let out = Command::new(env!("CARGO_BIN_EXE_mlc"))
+            .args(args)
+            .output()
+            .expect("run mlc");
+        assert!(!out.status.success(), "{args:?} should fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("usage: mlc build"),
+            "{args:?} is a mistake in the command line, so it must show how to invoke — {stderr}"
+        );
+    }
+}
+
 #[test]
 fn dead_code_after_return_says_so_instead_of_blaming_the_return() {
     // The function DOES return on every path — the problem is the statement after it. Saying

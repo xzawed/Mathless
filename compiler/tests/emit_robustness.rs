@@ -396,11 +396,7 @@ fn a_failure_moving_the_import_library_unwinds_all_three_earlier_moves() {
 #[test]
 fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     let tmp = fresh_out("noundo");
-    // Not `tmp` itself. On the CI runner a directory made in `%TEMP%` carries EXPLICIT
-    // full-control entries for SYSTEM, Administrators and the user (measured, windows-latest),
-    // which `/inheritance:r` does not remove and which grant the very DELETE this test must
-    // withhold — the first CI run got `Io` for exactly that reason. A subdirectory's entries
-    // are all inherited, so `/inheritance:r` leaves only the three grants below.
+    // A subfolder, so the `/reset` below has a parent of ours to recompute from.
     let out = tmp.join("acl");
     std::fs::create_dir(&out).unwrap();
     emit_artifacts(SRC, "umod", &out).expect("first emit");
@@ -415,6 +411,14 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
 
     let _restore = InheritedAclRestored(out.clone());
     let me = format!("*{}", current_user_sid());
+    // `/reset` first. On the CI runner a new directory under `%TEMP%` carries full control for
+    // SYSTEM, Administrators and the user as plain copies — not flagged inherited — so
+    // `/inheritance:r` leaves them, and they grant the very DELETE this test withholds
+    // (measured on windows-latest, twice: once on the TempOut directory, once on this
+    // subfolder). `/reset` drops every entry that is not flagged inherited and recomputes the
+    // flagged ones from the parent; `/inheritance:r` then removes those, whatever SIDs the
+    // environment added.
+    icacls(&out, &["/reset"]);
     icacls(
         &out,
         &[

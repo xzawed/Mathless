@@ -432,6 +432,8 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
             &format!("{me}:(OI)(IO)(RX,W)"),
         ],
     );
+    // The one exception to "never DELETE": the PREVIOUS deliverables, which `publish` must
+    // still move aside (and would move back). Only the files built after this point lack it.
     for (name, _) in &previous {
         icacls(&out.join(name), &["/grant", &format!("{me}:(D)")]);
     }

@@ -1736,9 +1736,10 @@ DP-H3(b) SPEC 작업 중 `grok_build_plan` 1회 + `grok_build_verify` 2회를 �
 >    ② `ROADMAP.md` Phase 4의 **ABI 버전 정책**과 **C++ 헤더 컴파일**은 이미 구현됐다(`HOST_ABI.md`
 >    "버전" · `c_host.rs`의 `/TP` 게이트) — 상태를 복제하지 말고 정본을 가리키는 표시만 단다.
 >    Grok: 닫힌 질문으로 verify.
-> 2. **다음 슬라이스 선택 — 사용자 결정.** Phase 2 후보(정본은 `docs/slices/README.md` "다음 슬라이스"):
->    struct · 호스트 함수 import(콜백) · D16 context handle(모듈 상태) · **인터페이스 정의 파일(설계부터
->    — ROADMAP에 이름만 있다)** · 개발/배포 빌드 분리(D13). **고르기 전에 §7을 다시 돌린다**(§9 절차
+> 2. **다음 슬라이스 선택 — 사용자 결정.** Phase 2 후보: struct · 호스트 함수 import(콜백) · D16 context
+>    handle(모듈 상태) · **인터페이스 정의 파일(설계부터 — ROADMAP에 이름만 있다)** · 개발/배포 빌드
+>    분리(D13). 전체 후보의 정본은 `docs/slices/README.md` "다음 슬라이스"다 — Phase 2 밖의 복합 대입·C#
+>    호스트도 거기 있다. **고르기 전에 §7을 다시 돌린다**(§9 절차
 >    4번 — 09-23 측정은 강제되는 것이 없었다). Grok: 선택지를 라벨 + `CHOICE`로 plan 게이트에 보내고,
 >    고른 뒤 SPEC → 사용자 확인 → 구현.
 > 3. **작은 항목**: 상태 머신 예제(Phase 3 — 순수 상태 전이 함수는 오늘 언어로 쓸 수 있다) · C# 호스트

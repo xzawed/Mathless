@@ -395,7 +395,14 @@ fn a_failure_moving_the_import_library_unwinds_all_three_earlier_moves() {
 #[cfg(windows)]
 #[test]
 fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
-    let out = fresh_out("noundo");
+    let tmp = fresh_out("noundo");
+    // Not `tmp` itself. On the CI runner a directory made in `%TEMP%` carries EXPLICIT
+    // full-control entries for SYSTEM, Administrators and the user (measured, windows-latest),
+    // which `/inheritance:r` does not remove and which grant the very DELETE this test must
+    // withhold — the first CI run got `Io` for exactly that reason. A subdirectory's entries
+    // are all inherited, so `/inheritance:r` leaves only the three grants below.
+    let out = tmp.join("acl");
+    std::fs::create_dir(&out).unwrap();
     emit_artifacts(SRC, "umod", &out).expect("first emit");
     let previous: Vec<(&str, Vec<u8>)> = ["umod.dll", "umod.h", "umod.pas"]
         .into_iter()
@@ -406,7 +413,7 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     std::fs::remove_file(out.join("umod.lib")).unwrap();
     std::fs::create_dir(out.join("umod.lib")).unwrap();
 
-    let _restore = InheritedAclRestored(out.to_path_buf());
+    let _restore = InheritedAclRestored(out.clone());
     let me = format!("*{}", current_user_sid());
     icacls(
         &out,

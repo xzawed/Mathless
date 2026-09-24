@@ -468,8 +468,9 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
     // §9-23 measured the line that separates the two compilers most sharply: `PAnsiChar(T)`
     // with `T: string` answers status 0 under -Mdelphi and status 1 under Delphi, because
     // `string` is AnsiString in one and UnicodeString in the other. Free Pascal has the second
-    // meaning too — -Mdelphiunicode defines FPC_UNICODESTRINGS, and host.dpr selects its
-    // expectation on that, not on FPC. Measured 2026-09-25: this pass answers status 1, as
+    // meaning too — -Mdelphiunicode defines FPC_UNICODESTRINGS, and host.dpr expects status 0
+    // only for `FPC AND NOT FPC_UNICODESTRINGS`, not for FPC alone (Delphi, which defines
+    // neither, takes the status-1 branch). Measured 2026-09-25: this pass answers status 1, as
     // Delphi does. So CI, which has no Delphi (X1), now sees the trap. It is still Free
     // Pascal; `delphi_host.rs` remains what closes X1.
     let uni_units = work.path().join("units-unicode");

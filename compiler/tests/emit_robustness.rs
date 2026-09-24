@@ -92,6 +92,39 @@ fn current_user_sid() -> String {
     sid
 }
 
+/// Whether a file placed the way `publish` places one — created in a subfolder, renamed into
+/// `out` — can then be deleted under the ACL the test has set. `false` means this process
+/// deletes THROUGH the DACL, so the state the test needs cannot be built here.
+#[cfg(windows)]
+fn delete_is_blocked_for_a_placed_file(out: &Path) -> bool {
+    let probe_dir = out.join("probe.d");
+    std::fs::create_dir(&probe_dir).unwrap();
+    std::fs::write(probe_dir.join("p"), b"p").unwrap();
+    std::fs::rename(probe_dir.join("p"), out.join("probe")).unwrap();
+    std::fs::remove_file(out.join("probe")).is_err()
+}
+
+/// `whoami /priv` and the integrity label, for a message that has to say WHY a token passed.
+#[cfg(windows)]
+fn token_report() -> String {
+    let run = |args: &[&str]| {
+        std::process::Command::new("whoami")
+            .args(args)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_default()
+    };
+    format!(
+        "{}\n{}",
+        run(&["/priv", "/fo", "csv", "/nh"]).trim(),
+        run(&["/groups", "/fo", "csv", "/nh"])
+            .lines()
+            .filter(|l| l.contains("S-1-16-"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+
 /// Gives a tree its inherited ACL back when dropped. `TempOut` cannot delete files a test made
 /// undeletable on purpose, so a guard of this type must be declared AFTER the `TempOut` — locals
 /// drop in reverse order, so it then runs first, on the panic path too.
@@ -384,6 +417,12 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     for (name, _) in &previous {
         icacls(&out.join(name), &["/grant", &format!("{me}:(D)")]);
     }
+    assert!(
+        delete_is_blocked_for_a_placed_file(&out),
+        "this process deleted a placed file THROUGH the ACL, so RollbackIncomplete cannot be \
+         built here. Token:\n{}",
+        token_report()
+    );
 
     // DIFFERENT source, so the stage's copies can be told apart from the new ones.
     let err = emit_artifacts("export fn g(a: f64) -> f64 { return a }", "umod", &out).unwrap_err();

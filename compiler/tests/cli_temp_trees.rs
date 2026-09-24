@@ -213,13 +213,15 @@ fn a_build_tree_that_cannot_be_removed_does_not_fail_the_build() {
         &[
             "/inheritance:r",
             "/grant:r",
-            // TEMP itself: may add folders and files, may NOT delete its children.
+            // TEMP itself: may add folders and files. It does not grant "delete child", so a
+            // child can be deleted only if the child itself grants DELETE.
             &format!("{me}:(RX,W)"),
-            // everything below: full control, so cargo can build inside the tree.
+            // everything below: full control (DELETE included), so cargo builds as usual.
             &format!("{me}:(OI)(CI)(IO)(F)"),
         ],
     );
-    // Direct child folders only (NP): the build root cannot be deleted.
+    // ...and the direct child FOLDERS are denied exactly that DELETE (NP: not what is inside
+    // them), so the build root cannot be removed while everything in it can.
     common::icacls(&tmp, &["/deny", &format!("{me}:(CI)(NP)(IO)(DE)")]);
 
     let child = Command::new(env!("CARGO_BIN_EXE_mlc"))

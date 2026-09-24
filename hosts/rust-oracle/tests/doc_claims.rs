@@ -297,7 +297,8 @@ fn no_file_says_the_version_refusal_is_unimplemented_while_host_c_implements_it(
 ///     is merely stale: the reader cannot tell which half to act on.
 ///   - *"D14's Delphi arm is BLOCKED"* — `MATHLESS_GATE_DELPHI` passes on the dev machine
 ///     (§9-20); what is left is CI, which is a different claim.
-///   - *"the unit ships marked DRAFT"* — `grep -rn DRAFT compiler/ runtime/ hosts/` is **0**.
+///   - *"the unit ships marked DRAFT"* — `grep -rn DRAFT compiler/ runtime/ hosts/` finds
+///     **only this file** — its own denylist and messages.
 ///     The banner was rewritten twice and the document followed neither time.
 ///
 /// Conditional on the source, the same shape as the ABI-refusal guard above: the three facts

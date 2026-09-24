@@ -3491,18 +3491,20 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
          long: its retrospective belongs in that session's §9-N, and durable rules belong in \
          §7 — leave a pointer, not a summary. Do not trim by deleting, and do not move the \
          standing N·D·X·R·A \
-         queue that follows the entries — X1–X3, R1 and R3 are still open."
+         queue that follows the entries — it is a list, not a record."
     );
 
-    // The open queue stays in this file. Moving it was the mistake the docstring records, and
-    // it is silent: the rows read the same in either file, so only their absence here shows.
+    // The standing queue stays in this file. Moving it was the mistake the docstring records,
+    // and it is silent: the rows read the same in either file, so only their absence here shows.
+    // Which rows are still open is the rows' own ✅ marks, not a list here — this message named
+    // R1 and R3 as open after both had closed (R1 on 2026-09-23, R3 on 2026-09-24).
     for row in ["**X1**", "**X2**", "**X3**", "**R1**", "**R3**"] {
         assert!(
             status.contains(row),
-            "docs/STATUS.md no longer carries the standing queue row {row}. Those are open — \
-             X1–X3 wait on external conditions and R1/R3 on a reproduction — so they belong in \
-             the file a session reads for what to do next, not in docs/HISTORY.md. If one has \
-             since closed, mark it ✅ here rather than moving it."
+            "docs/STATUS.md no longer carries the standing queue row {row}. The queue is a \
+             list a session reads for what to do next, not a dated record, so its rows belong \
+             here and not in docs/HISTORY.md — open or closed. If one has closed, mark it ✅ \
+             here rather than moving it: other documents cite the rows by number."
         );
     }
 }

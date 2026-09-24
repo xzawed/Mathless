@@ -17,8 +17,12 @@
 //! Spawning `mlc` gives a pid nobody else can be using.
 //!
 //! **What this does NOT cover**, so nobody reads it as more: the branch where `remove_dir_all`
-//! itself fails — a locked destination — is unreachable from a filesystem arrangement and
-//! needs a race, which is the same wall §5-5.6 documents for `RollbackIncomplete`.
+//! itself fails — a locked destination — is unreachable from a filesystem arrangement. This
+//! used to add that it needs a race, "the same wall §5-5.6 documents for `RollbackIncomplete`".
+//! That wall fell on 2026-09-24 to an ACL, with no race (`emit_robustness.rs`,
+//! `a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies`). Whether the same kind of
+//! ACL reaches THIS branch — the build tree lives under `%TEMP%`, not `out_dir` — was not
+//! measured.
 //!
 //! **Windows-only, and the first version of this file was not.** A successful `mlc build` is
 //! what creates the tree this measures, and `codegen::build_cdylib` looks for

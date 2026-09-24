@@ -21,9 +21,12 @@
   spellings on purpose and pins what each one sends (see the section near the end). That
   measurement corrected HOST_ABI.md rather than confirming it. It also showed the hazard is
   NOT purely an Embarcadero property -- Free Pascal sends the same bytes for an explicit
-  UnicodeString. What Free Pascal cannot show is the part that actually bites: in Delphi
-  plain `string` IS UnicodeString, and in -Mdelphi it is AnsiString, so the same source
-  line is wrong here and right there.
+  UnicodeString. The part that actually bites is what plain `string` MEANS: in Delphi it IS
+  UnicodeString, and in -Mdelphi it is AnsiString, so the same source line is wrong here and
+  right there. This paragraph used to say Free Pascal cannot show that part. It can:
+  -Mdelphiunicode gives `string` Delphi's meaning, and the Free Pascal gate now builds this
+  file a second time in that mode, where the line answers status 1 exactly as Delphi does
+  (2026-09-25). It is still Free Pascal -- the Delphi gate remains the one that counts.
 
   WHAT IT IS MEANT TO PROVE, once it compiles and runs:
     - the GENERATED `.pas` units are valid Object Pascal and their declarations are
@@ -366,15 +369,20 @@ begin
   FillChar(Buf, SizeOf(Buf), 0);
   Needed := -1;
   Status := mlx_carrier_name(PAnsiChar(T), @Buf[0], SizeOf(Buf), Needed);  { ML_W1044 }
-{$IFDEF FPC}
+  { Which answer is right depends on what `string` MEANS, not on which compiler reads the
+    line: Free Pascal defines FPC_UNICODESTRINGS under -Mdelphiunicode, and there `string` is
+    UnicodeString exactly as in Delphi -- measured, the same status 1. So CI, which has no
+    Delphi, still sees the trap through that pass. }
+{$IF DEFINED(FPC) AND NOT DEFINED(FPC_UNICODESTRINGS)}
   Check(Status = 0,
-    'Free Pascal: `string` is AnsiString, so PAnsiChar(T) is the CORRECT spelling here -- ' +
-    'status ' + IntToStr(Status) + ' (Delphi answers 1 for this same line)');
+    'string = AnsiString (Free Pascal -Mdelphi), so PAnsiChar(T) is the CORRECT spelling ' +
+    'here -- status ' + IntToStr(Status) + ' (a UnicodeString default answers 1 for this same line)');
 {$ELSE}
   Check(Status = 1,
-    'Delphi: `string` IS UnicodeString, so the natural PAnsiChar(T) sends UTF-16 -- ' +
-    'status ' + IntToStr(Status) + ' (Free Pascal answers 0 for this same line)');
-{$ENDIF}
+    'string = UnicodeString (Delphi, or Free Pascal -Mdelphiunicode), so the natural ' +
+    'PAnsiChar(T) sends UTF-16 -- status ' + IntToStr(Status) +
+    ' (the AnsiString default answers 0 for this same line)');
+{$IFEND}
 
   { ---- Array INPUT (SPEC-array-input). ----
 

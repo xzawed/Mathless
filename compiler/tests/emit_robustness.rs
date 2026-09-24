@@ -52,46 +52,6 @@ fn no_stage_left(dir: &Path) -> bool {
     entries(dir).iter().all(|e| !e.starts_with(".mlc-stage-"))
 }
 
-/// Run `icacls` and fail loudly: an ACL the test only believes it set would make the
-/// assertions that follow measure the machine rather than `mlc`.
-#[cfg(windows)]
-fn icacls(path: &Path, args: &[&str]) {
-    let run = std::process::Command::new("icacls")
-        .arg(path)
-        .args(args)
-        .output()
-        .expect("icacls ships with Windows");
-    assert!(
-        run.status.success(),
-        "icacls {} {args:?} failed: {}",
-        path.display(),
-        String::from_utf8_lossy(&run.stdout)
-    );
-}
-
-/// The current user's SID, from `whoami /user /fo csv /nh` (`"domain\user","S-1-5-…"`). A SID
-/// rather than a name: the name is locale- and domain-dependent, the SID is what the ACL holds.
-#[cfg(windows)]
-fn current_user_sid() -> String {
-    let run = std::process::Command::new("whoami")
-        .args(["/user", "/fo", "csv", "/nh"])
-        .output()
-        .expect("whoami ships with Windows");
-    let text = String::from_utf8_lossy(&run.stdout);
-    let sid = text
-        .trim()
-        .rsplit(',')
-        .next()
-        .unwrap_or_default()
-        .trim_matches('"')
-        .to_string();
-    assert!(
-        sid.starts_with("S-1-"),
-        "could not read the current user's SID from whoami: {text:?}"
-    );
-    sid
-}
-
 /// Whether a file placed the way `publish` places one — created in a subfolder, renamed into
 /// `out` — can then be deleted under the ACL the test has set. `false` means this process
 /// deletes THROUGH the DACL, so the state the test needs cannot be built here.
@@ -130,22 +90,6 @@ fn token_report() -> String {
         run(&["/priv", "/fo", "csv", "/nh"]).trim(),
         run(&["/groups", "/fo", "csv", "/nh"]).trim()
     )
-}
-
-/// Gives a tree its inherited ACL back when dropped. `TempOut` cannot delete files a test made
-/// undeletable on purpose, so a guard of this type must be declared AFTER the `TempOut` — locals
-/// drop in reverse order, so it then runs first, on the panic path too.
-#[cfg(windows)]
-struct InheritedAclRestored(std::path::PathBuf);
-
-#[cfg(windows)]
-impl Drop for InheritedAclRestored {
-    fn drop(&mut self) {
-        let _ = std::process::Command::new("icacls")
-            .arg(&self.0)
-            .args(["/reset", "/T", "/C", "/Q"])
-            .output();
-    }
 }
 
 #[test]
@@ -409,8 +353,8 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     std::fs::remove_file(out.join("umod.lib")).unwrap();
     std::fs::create_dir(out.join("umod.lib")).unwrap();
 
-    let _restore = InheritedAclRestored(out.clone());
-    let me = format!("*{}", current_user_sid());
+    let _restore = common::InheritedAclRestored(out.clone());
+    let me = format!("*{}", common::current_user_sid());
     // `/reset` first. On the CI runner a new directory under `%TEMP%` carries full control for
     // SYSTEM, Administrators and the user as plain copies — not flagged inherited — so
     // `/inheritance:r` leaves them, and they grant the very DELETE this test withholds
@@ -418,8 +362,8 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     // subfolder). `/reset` drops every entry that is not flagged inherited and recomputes the
     // flagged ones from the parent; `/inheritance:r` then removes those, whatever SIDs the
     // environment added.
-    icacls(&out, &["/reset"]);
-    icacls(
+    common::icacls(&out, &["/reset"]);
+    common::icacls(
         &out,
         &[
             "/inheritance:r",
@@ -435,7 +379,7 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     // The one exception to "never DELETE": the PREVIOUS deliverables, which `publish` must
     // still move aside (and would move back). Only the files built after this point lack it.
     for (name, _) in &previous {
-        icacls(&out.join(name), &["/grant", &format!("{me}:(D)")]);
+        common::icacls(&out.join(name), &["/grant", &format!("{me}:(D)")]);
     }
     if let Err(acls) = delete_is_blocked_for_a_placed_file(&out) {
         panic!(

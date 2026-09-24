@@ -96,12 +96,23 @@ fn current_user_sid() -> String {
 /// `out` — can then be deleted under the ACL the test has set. `false` means this process
 /// deletes THROUGH the DACL, so the state the test needs cannot be built here.
 #[cfg(windows)]
-fn delete_is_blocked_for_a_placed_file(out: &Path) -> bool {
+fn delete_is_blocked_for_a_placed_file(out: &Path) -> Result<(), String> {
     let probe_dir = out.join("probe.d");
     std::fs::create_dir(&probe_dir).unwrap();
     std::fs::write(probe_dir.join("p"), b"p").unwrap();
     std::fs::rename(probe_dir.join("p"), out.join("probe")).unwrap();
-    std::fs::remove_file(out.join("probe")).is_err()
+    let acl = |p: &Path| {
+        std::process::Command::new("icacls")
+            .arg(p)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_default()
+    };
+    let before = format!("{}{}", acl(out), acl(&out.join("probe")));
+    match std::fs::remove_file(out.join("probe")) {
+        Err(_) => Ok(()),
+        Ok(()) => Err(before),
+    }
 }
 
 /// `whoami /priv` and the integrity label, for a message that has to say WHY a token passed.
@@ -117,11 +128,7 @@ fn token_report() -> String {
     format!(
         "{}\n{}",
         run(&["/priv", "/fo", "csv", "/nh"]).trim(),
-        run(&["/groups", "/fo", "csv", "/nh"])
-            .lines()
-            .filter(|l| l.contains("S-1-16-"))
-            .collect::<Vec<_>>()
-            .join("\n")
+        run(&["/groups", "/fo", "csv", "/nh"]).trim()
     )
 }
 
@@ -417,12 +424,13 @@ fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
     for (name, _) in &previous {
         icacls(&out.join(name), &["/grant", &format!("{me}:(D)")]);
     }
-    assert!(
-        delete_is_blocked_for_a_placed_file(&out),
-        "this process deleted a placed file THROUGH the ACL, so RollbackIncomplete cannot be \
-         built here. Token:\n{}",
-        token_report()
-    );
+    if let Err(acls) = delete_is_blocked_for_a_placed_file(&out) {
+        panic!(
+            "this process deleted a placed file THROUGH the ACL, so RollbackIncomplete cannot \
+             be built here. ACLs before the delete:\n{acls}\nToken:\n{}",
+            token_report()
+        );
+    }
 
     // DIFFERENT source, so the stage's copies can be told apart from the new ones.
     let err = emit_artifacts("export fn g(a: f64) -> f64 { return a }", "umod", &out).unwrap_err();

@@ -16,13 +16,11 @@
 //! see their in-flight trees and fail for reasons that have nothing to do with the CLI.
 //! Spawning `mlc` gives a pid nobody else can be using.
 //!
-//! **What this does NOT cover**, so nobody reads it as more: the branch where `remove_dir_all`
-//! itself fails — a locked destination — is unreachable by placing files or directories. This
-//! used to add that it needs a race, "the same wall §5-5.6 documents for `RollbackIncomplete`".
-//! That wall fell on 2026-09-24 to an ACL, with no race (`emit_robustness.rs`,
-//! `a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies`). Whether the same kind of
-//! ACL reaches THIS branch — the build tree lives under `%TEMP%`, not `out_dir` — was not
-//! measured.
+//! **The branch where `remove_dir_all` itself fails** was the one gap this file admitted:
+//! unreachable by placing files or directories, and once said to need a race — "the same wall
+//! §5-5.6 documents for `RollbackIncomplete`". That wall fell on 2026-09-24 to an ACL, with no
+//! race (`emit_robustness.rs`), and this one fell to the same technique on 2026-09-25: the child
+//! gets an ACL'd directory as TEMP (`a_build_tree_that_cannot_be_removed_does_not_fail_the_build`).
 //!
 //! **Windows-only, and the first version of this file was not.** A successful `mlc build` is
 //! what creates the tree this measures, and `codegen::build_cdylib` looks for
@@ -39,9 +37,14 @@ use std::process::Command;
 mod common;
 
 fn temp_trees_for(pid: u32) -> Vec<PathBuf> {
+    trees_in(&std::env::temp_dir(), pid)
+}
+
+/// The build trees a process with this pid left in `dir` — the directory it was given as TEMP.
+fn trees_in(dir: &Path, pid: u32) -> Vec<PathBuf> {
     let prefix = format!("mlc-build-{pid}-");
-    std::fs::read_dir(std::env::temp_dir())
-        .expect("%TEMP% is readable")
+    std::fs::read_dir(dir)
+        .expect("the TEMP directory is readable")
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
@@ -177,5 +180,92 @@ fn a_build_leaves_no_temp_tree_behind_however_it_ends() {
          path §5-5.7 was written about — the tree exists by then, and the failure is what the \
          documents claim does not change the cleanup",
         left.len()
+    );
+}
+
+/// **The branch this file used to say it could not reach: `remove_dir_all` itself fails.**
+///
+/// `emit.rs` discards the result on purpose (`let _ = std::fs::remove_dir_all(&build_root)`): a
+/// build that succeeded must not fail because its scratch space could not be cleared. That was
+/// a reading of the code. This measures it. The child's TEMP is a directory whose ACL denies
+/// DELETE on its direct child folders only (`(CI)(NP)`) and grants full control below them, so
+/// cargo builds as usual, `remove_dir_all` empties the tree — and then cannot remove the root.
+///
+/// Measured 2026-09-25: exit 0, all four artifacts, the usual success message, and the EMPTY
+/// root left behind. Only the root: everything inside it was removed. Whether a warning should
+/// say so is a separate question — this pins what the code promises today, not that silence.
+#[test]
+fn a_build_tree_that_cannot_be_removed_does_not_fail_the_build() {
+    let work = common::TempOut::new("clitemp_noremove");
+    let tmp = work.join("tmp");
+    std::fs::create_dir(&tmp).expect("create the child's TEMP");
+    let good = work.join("good.mls");
+    std::fs::write(&good, "export fn f(a: f64) -> f64 { return a }\n").expect("write source");
+    let out = work.join("out");
+
+    // Declared after `work`, so it drops first: the ACL goes back before the tree is deleted.
+    let _restore = common::InheritedAclRestored(tmp.clone());
+    let me = format!("*{}", common::current_user_sid());
+    // `/reset` first — see the ACL note in `common/mod.rs` for why the runner needs it.
+    common::icacls(&tmp, &["/reset"]);
+    common::icacls(
+        &tmp,
+        &[
+            "/inheritance:r",
+            "/grant:r",
+            // TEMP itself: may add folders and files. It does not grant "delete child", so a
+            // child can be deleted only if the child itself grants DELETE.
+            &format!("{me}:(RX,W)"),
+            // everything below: full control (DELETE included), so cargo builds as usual.
+            &format!("{me}:(OI)(CI)(IO)(F)"),
+        ],
+    );
+    // ...and the direct child FOLDERS are denied exactly that DELETE (NP: not what is inside
+    // them), so the build root cannot be removed while everything in it can.
+    common::icacls(&tmp, &["/deny", &format!("{me}:(CI)(NP)(IO)(DE)")]);
+
+    let child = Command::new(env!("CARGO_BIN_EXE_mlc"))
+        .arg("build")
+        .arg(&good)
+        .arg("-o")
+        .arg(&out)
+        .env("TEMP", &tmp)
+        .env("TMP", &tmp)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn mlc");
+    let pid = child.id();
+    let done = child.wait_with_output().expect("wait for mlc");
+    let stderr = String::from_utf8_lossy(&done.stderr);
+
+    assert!(
+        done.status.success(),
+        "a build tree that could not be removed failed the build; `emit.rs` discards that \
+         error so a successful build is not lost to its scratch space. stderr:\n{stderr}"
+    );
+    for ext in ["dll", "h", "pas", "lib"] {
+        assert!(
+            out.join(format!("good.{ext}")).is_file(),
+            "the build succeeded but good.{ext} is missing"
+        );
+    }
+
+    // The branch was really reached: the root is still there, and empty.
+    let left = trees_in(&tmp, pid);
+    assert_eq!(
+        left.len(),
+        1,
+        "the ACL should have kept exactly the build root, or this measured nothing: {left:?}"
+    );
+    let inside: Vec<_> = std::fs::read_dir(&left[0])
+        .expect("read the build root")
+        .collect();
+    assert!(
+        inside.is_empty(),
+        "remove_dir_all removes everything it can before failing on the root; {} entries are \
+         still inside {}",
+        inside.len(),
+        left[0].display()
     );
 }

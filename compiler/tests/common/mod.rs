@@ -298,3 +298,66 @@ pub fn strip_pascal_comments(src: &str) -> String {
     }
     out
 }
+
+// ---- ACLs, for tests that make a file undeletable on purpose ----
+//
+// Two measurements need a state the filesystem cannot be arranged into: a file that can be
+// PLACED but not REMOVED (`emit_robustness.rs`, RollbackIncomplete) and a directory that can be
+// emptied but not removed (`cli_temp_trees.rs`, the build tree). An ACL builds both without a
+// race. Two things were learned getting them to hold on `windows-latest` as well as here:
+// an explicit DENY on DELETE also blocks the rename that places a file, and a directory the
+// runner creates under `%TEMP%` holds full control as PLAIN copies, which `/inheritance:r`
+// leaves in place — so a test resets first (`icacls <dir> /reset`) and then removes what
+// is inherited.
+
+/// Run `icacls` and fail loudly: an ACL the test only believes it set would make the
+/// assertions that follow measure the machine rather than `mlc`.
+pub fn icacls(path: &Path, args: &[&str]) {
+    let run = std::process::Command::new("icacls")
+        .arg(path)
+        .args(args)
+        .output()
+        .expect("icacls ships with Windows");
+    assert!(
+        run.status.success(),
+        "icacls {} {args:?} failed: {}",
+        path.display(),
+        String::from_utf8_lossy(&run.stdout)
+    );
+}
+
+/// The current user's SID, from `whoami /user /fo csv /nh` (`"domain\user","S-1-5-…"`). A SID
+/// rather than a name: the name is locale- and domain-dependent, the SID is what the ACL holds.
+pub fn current_user_sid() -> String {
+    let run = std::process::Command::new("whoami")
+        .args(["/user", "/fo", "csv", "/nh"])
+        .output()
+        .expect("whoami ships with Windows");
+    let text = String::from_utf8_lossy(&run.stdout);
+    let sid = text
+        .trim()
+        .rsplit(',')
+        .next()
+        .unwrap_or_default()
+        .trim_matches('"')
+        .to_string();
+    assert!(
+        sid.starts_with("S-1-"),
+        "could not read the current user's SID from whoami: {text:?}"
+    );
+    sid
+}
+
+/// Gives a tree its inherited ACL back when dropped. `TempOut` cannot delete files a test made
+/// undeletable on purpose, so a guard of this type must be declared AFTER the `TempOut` — locals
+/// drop in reverse order, so it then runs first, on the panic path too.
+pub struct InheritedAclRestored(pub PathBuf);
+
+impl Drop for InheritedAclRestored {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("icacls")
+            .arg(&self.0)
+            .args(["/reset", "/T", "/C", "/Q"])
+            .output();
+    }
+}

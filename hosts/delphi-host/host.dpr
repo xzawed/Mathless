@@ -366,15 +366,20 @@ begin
   FillChar(Buf, SizeOf(Buf), 0);
   Needed := -1;
   Status := mlx_carrier_name(PAnsiChar(T), @Buf[0], SizeOf(Buf), Needed);  { ML_W1044 }
-{$IFDEF FPC}
+  { Which answer is right depends on what `string` MEANS, not on which compiler reads the
+    line: Free Pascal defines FPC_UNICODESTRINGS under -Mdelphiunicode, and there `string` is
+    UnicodeString exactly as in Delphi -- measured, the same status 1. So CI, which has no
+    Delphi, still sees the trap through that pass. }
+{$IF DEFINED(FPC) AND NOT DEFINED(FPC_UNICODESTRINGS)}
   Check(Status = 0,
-    'Free Pascal: `string` is AnsiString, so PAnsiChar(T) is the CORRECT spelling here -- ' +
-    'status ' + IntToStr(Status) + ' (Delphi answers 1 for this same line)');
+    'string = AnsiString (Free Pascal -Mdelphi), so PAnsiChar(T) is the CORRECT spelling ' +
+    'here -- status ' + IntToStr(Status) + ' (a UnicodeString default answers 1 for this same line)');
 {$ELSE}
   Check(Status = 1,
-    'Delphi: `string` IS UnicodeString, so the natural PAnsiChar(T) sends UTF-16 -- ' +
-    'status ' + IntToStr(Status) + ' (Free Pascal answers 0 for this same line)');
-{$ENDIF}
+    'string = UnicodeString (Delphi, or Free Pascal -Mdelphiunicode), so the natural ' +
+    'PAnsiChar(T) sends UTF-16 -- status ' + IntToStr(Status) +
+    ' (the AnsiString default answers 0 for this same line)');
+{$IFEND}
 
   { ---- Array INPUT (SPEC-array-input). ----
 

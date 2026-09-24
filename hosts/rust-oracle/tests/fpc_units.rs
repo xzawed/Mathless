@@ -258,10 +258,15 @@ fn every_generated_unit_is_valid_object_pascal() {
 /// Build and RUN `hosts/delphi-host/host.dpr` with Free Pascal, against real modules.
 ///
 /// **This is not the Delphi gate and must never be read as one.** D14 names `dcc64`;
-/// `-Mdelphi` is a dialect emulation, and the Embarcadero-only hazard the generated units
-/// warn about — a `UnicodeString` passed where `PAnsiChar` is expected, which compiles and
-/// silently matches nothing — cannot be shown here at all. `delphi_host.rs` is the test that
-/// closes X1, and it still cannot run.
+/// `-Mdelphi` is a dialect emulation. `delphi_host.rs` is the test that closes X1, and CI
+/// cannot run it.
+///
+/// This used to say the hazard the generated units warn about — a `UnicodeString` passed where
+/// `PAnsiChar` is expected, which compiles and silently matches nothing — "cannot be shown
+/// here at all". §9-23 found that what differs is not the compiler but what `string` MEANS,
+/// and Free Pascal has Delphi's meaning under `-Mdelphiunicode`. So the host now runs twice:
+/// `-Mdelphi` (AnsiString, status 0) and `-Mdelphiunicode` (UnicodeString, status 1 — the
+/// same line Delphi answers 1 for). The second pass is the trap, measured in CI.
 ///
 /// What this one adds is what nothing else could: an Object Pascal host that actually LOADS
 /// the modules and CALLS them. The `.pas` compile check above proves the text parses; this
@@ -395,6 +400,12 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
         "the staged Pascal host did not pass under Free Pascal:\n{stdout}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
+    // Which branch of the `string` trap ran is the point of the second pass at the end, so
+    // this pass says which one IT took.
+    assert!(
+        stdout.contains("string = AnsiString (Free Pascal -Mdelphi)"),
+        "-Mdelphi must take the AnsiString branch of the PAnsiChar(T) check:\n{stdout}"
+    );
 
     // ---- the claim host.dpr makes about itself, which nothing was checking ----
     //
@@ -450,5 +461,62 @@ fn the_staged_pascal_host_builds_and_calls_the_modules() {
         "GATE_FPC_HOST_LOADBIND_OK: a missing module killed the host before `begin` (no \
          output, status {})",
         dead.status
+    );
+
+    // ---- the same host with `string` = UnicodeString: Delphi's default, in CI ----
+    //
+    // §9-23 measured the line that separates the two compilers most sharply: `PAnsiChar(T)`
+    // with `T: string` answers status 0 under -Mdelphi and status 1 under Delphi, because
+    // `string` is AnsiString in one and UnicodeString in the other. Free Pascal has the second
+    // meaning too — -Mdelphiunicode defines FPC_UNICODESTRINGS, and host.dpr selects its
+    // expectation on that, not on FPC. Measured 2026-09-25: this pass answers status 1, as
+    // Delphi does. So CI, which has no Delphi (X1), now sees the trap. It is still Free
+    // Pascal; `delphi_host.rs` remains what closes X1.
+    let uni_units = work.path().join("units-unicode");
+    std::fs::create_dir(&uni_units).expect("create the -Mdelphiunicode unit dir");
+    let uni_exe = work.path().join("host_unicode.exe");
+    let mut cmd = Command::new(&fpc);
+    cmd.arg("-Mdelphiunicode")
+        // Rebuild every unit: the pass above left AnsiString-compiled units in `work`.
+        .arg("-B")
+        .arg("-Px86_64")
+        .arg(format!("-FU{}", uni_units.display()))
+        .arg(format!("-o{}", uni_exe.display()))
+        .arg(&host_dpr)
+        .current_dir(work.path());
+    let build = common::output_with_deadline(
+        cmd,
+        std::time::Duration::from_secs(180),
+        "fpc host (-Mdelphiunicode)",
+    );
+    assert!(
+        uni_exe.is_file(),
+        "fpc -Mdelphiunicode exited {} but produced no {}:\n{}{}",
+        build.status,
+        uni_exe.display(),
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let mut run = Command::new(&uni_exe);
+    run.arg(mlc::ML_MODULE_ABI_VERSION.to_string())
+        .current_dir(work.path());
+    let out =
+        common::output_with_deadline(run, std::time::Duration::from_secs(120), "host_unicode.exe");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    println!("{stdout}");
+    assert!(
+        out.status.success() && stdout.contains("GATE_DELPHI_OK"),
+        "the staged Pascal host did not pass under Free Pascal -Mdelphiunicode:\n{stdout}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("string = UnicodeString (Delphi, or Free Pascal -Mdelphiunicode)")
+            && stdout.contains("PAnsiChar(T) sends UTF-16 -- status 1"),
+        "-Mdelphiunicode must take the UnicodeString branch and answer status 1, as Delphi \
+         does:\n{stdout}"
+    );
+    println!(
+        "GATE_FPC_HOST_UNICODE_OK: with `string` = UnicodeString, PAnsiChar(T) answered status \
+         1 — Delphi's answer, measured without Delphi"
     );
 }

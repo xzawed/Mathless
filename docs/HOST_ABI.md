@@ -193,9 +193,12 @@ int        ml_module_set_host_fn(MlModule*, const char* name, void* fn);
    > **평범한 `string`을 쓰면 두 번째 줄에 해당한다.** Delphi에서 `string`은 곧 `UnicodeString`이므로,
    > 호스트가 가장 자연스럽게 쓰는 `PAnsiChar(MyString)`이 바로 틀린 철자다.
    >
-   > **Free Pascal은 이것을 흉내 내지 못한다.** `-Mdelphi` 모드의 `string`은 `AnsiString`이라
+   > **`-Mdelphi`의 Free Pascal은 이것을 흉내 내지 못한다.** 그 모드의 `string`은 `AnsiString`이라
    > **같은 소스가 거기서는 맞고 여기서는 틀리다**(양쪽 실측: FPC status 0, Delphi status 1).
    > `MATHLESS_GATE_FPC_HOST`가 `MATHLESS_GATE_DELPHI`를 대신할 수 없는 이유의 가장 선명한 사례다.
+   > *(2026-09-25: **`-Mdelphiunicode`의 Free Pascal은 흉내 낸다** — `string`이 `UnicodeString`이라 같은 줄이
+   > Delphi처럼 **status 1**이다(실측). 그래서 `MATHLESS_GATE_FPC_HOST`가 호스트를 그 모드로 한 번 더 돌려
+   > **CI에서 이 함정을 잰다.** 그래도 Free Pascal이다 — Delphi 게이트를 대신하지는 않는다.)*
    >
    > 명시적으로 `S: UnicodeString`을 선언한 경우에는 **FPC도 같은 바이트를 보낸다**(실측). 즉 이
    > 함정 자체는 Embarcadero 고유가 아니고, **`string`의 기본 뜻이 다른 것**이 고유하다.

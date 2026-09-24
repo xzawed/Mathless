@@ -21,9 +21,12 @@
   spellings on purpose and pins what each one sends (see the section near the end). That
   measurement corrected HOST_ABI.md rather than confirming it. It also showed the hazard is
   NOT purely an Embarcadero property -- Free Pascal sends the same bytes for an explicit
-  UnicodeString. What Free Pascal cannot show is the part that actually bites: in Delphi
-  plain `string` IS UnicodeString, and in -Mdelphi it is AnsiString, so the same source
-  line is wrong here and right there.
+  UnicodeString. The part that actually bites is what plain `string` MEANS: in Delphi it IS
+  UnicodeString, and in -Mdelphi it is AnsiString, so the same source line is wrong here and
+  right there. This paragraph used to say Free Pascal cannot show that part. It can:
+  -Mdelphiunicode gives `string` Delphi's meaning, and the Free Pascal gate now builds this
+  file a second time in that mode, where the line answers status 1 exactly as Delphi does
+  (2026-09-25). It is still Free Pascal -- the Delphi gate remains the one that counts.
 
   WHAT IT IS MEANT TO PROVE, once it compiles and runs:
     - the GENERATED `.pas` units are valid Object Pascal and their declarations are

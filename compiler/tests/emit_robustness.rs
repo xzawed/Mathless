@@ -52,6 +52,62 @@ fn no_stage_left(dir: &Path) -> bool {
     entries(dir).iter().all(|e| !e.starts_with(".mlc-stage-"))
 }
 
+/// Run `icacls` and fail loudly: an ACL the test only believes it set would make the
+/// assertions that follow measure the machine rather than `mlc`.
+#[cfg(windows)]
+fn icacls(path: &Path, args: &[&str]) {
+    let run = std::process::Command::new("icacls")
+        .arg(path)
+        .args(args)
+        .output()
+        .expect("icacls ships with Windows");
+    assert!(
+        run.status.success(),
+        "icacls {} {args:?} failed: {}",
+        path.display(),
+        String::from_utf8_lossy(&run.stdout)
+    );
+}
+
+/// The current user's SID, from `whoami /user /fo csv /nh` (`"domain\user","S-1-5-…"`). A SID
+/// rather than a name: the name is locale- and domain-dependent, the SID is what the ACL holds.
+#[cfg(windows)]
+fn current_user_sid() -> String {
+    let run = std::process::Command::new("whoami")
+        .args(["/user", "/fo", "csv", "/nh"])
+        .output()
+        .expect("whoami ships with Windows");
+    let text = String::from_utf8_lossy(&run.stdout);
+    let sid = text
+        .trim()
+        .rsplit(',')
+        .next()
+        .unwrap_or_default()
+        .trim_matches('"')
+        .to_string();
+    assert!(
+        sid.starts_with("S-1-"),
+        "could not read the current user's SID from whoami: {text:?}"
+    );
+    sid
+}
+
+/// Gives a tree its inherited ACL back when dropped. `TempOut` cannot delete files a test made
+/// undeletable on purpose, so a guard of this type must be declared AFTER the `TempOut` — locals
+/// drop in reverse order, so it then runs first, on the panic path too.
+#[cfg(windows)]
+struct InheritedAclRestored(std::path::PathBuf);
+
+#[cfg(windows)]
+impl Drop for InheritedAclRestored {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("icacls")
+            .arg(&self.0)
+            .args(["/reset", "/T", "/C", "/Q"])
+            .output();
+    }
+}
+
 #[test]
 fn rejects_a_module_name_that_is_a_target_reserved_word() {
     // `if.mls` -> crate named `if` -> cargo rejects it as a Rust keyword, far from the cause.
@@ -277,6 +333,90 @@ fn a_failure_moving_the_import_library_unwinds_all_three_earlier_moves() {
         "a completed rollback must take its staging directory with it: {:?}",
         entries(&out)
     );
+}
+
+/// **The rollback that cannot undo — `RollbackIncomplete`, end to end, with no race**
+/// (STATUS §5-5.6 · R3).
+///
+/// The test above is the twin that succeeds: `.lib` fails last and all three earlier moves are
+/// undone. Here the undo itself fails, which is the one situation in which `mlc` leaves files
+/// behind on purpose — the displaced previous deliverables then exist ONLY in the staging
+/// directory, so `emit_artifacts` must not delete it. `rollback`'s bookkeeping and the error's
+/// `Display` are unit-tested inside `emit.rs`; the wiring between them — `publish` choosing the
+/// variant, `emit_artifacts` keeping the stage — had never run.
+///
+/// **It was recorded as needing a race, and a DENY does not reach it** (measured 2026-09-24): a
+/// deny-DELETE that stops the rollback from removing a newly placed file also stops the rename
+/// that places it — the parent's "delete child" does not override an explicit deny. What does
+/// reach it is an ACL that never GRANTS delete on files under `out_dir`. The stage, a subfolder,
+/// grants "delete child", so a file may LEAVE it; `out_dir` itself does not, so the same file
+/// cannot then be REMOVED from `out_dir`. The previous deliverables get an explicit DELETE so
+/// they can still be moved aside.
+#[cfg(windows)]
+#[test]
+fn a_rollback_that_cannot_undo_keeps_the_stage_and_the_only_copies() {
+    let out = fresh_out("noundo");
+    emit_artifacts(SRC, "umod", &out).expect("first emit");
+    let previous: Vec<(&str, Vec<u8>)> = ["umod.dll", "umod.h", "umod.pas"]
+        .into_iter()
+        .map(|name| (name, std::fs::read(out.join(name)).unwrap()))
+        .collect();
+
+    // A later move must fail, as in the test above: a directory where the `.lib` goes.
+    std::fs::remove_file(out.join("umod.lib")).unwrap();
+    std::fs::create_dir(out.join("umod.lib")).unwrap();
+
+    let _restore = InheritedAclRestored(out.to_path_buf());
+    let me = format!("*{}", current_user_sid());
+    icacls(
+        &out,
+        &[
+            "/inheritance:r",
+            "/grant:r",
+            // out_dir itself: may add files and folders, may NOT delete its children.
+            &format!("{me}:(RX,W)"),
+            // subfolders (the stage): full, so a file may be renamed out of one.
+            &format!("{me}:(CI)(IO)(F)"),
+            // files: read and write, never DELETE.
+            &format!("{me}:(OI)(IO)(RX,W)"),
+        ],
+    );
+    for (name, _) in &previous {
+        icacls(&out.join(name), &["/grant", &format!("{me}:(D)")]);
+    }
+
+    // DIFFERENT source, so the stage's copies can be told apart from the new ones.
+    let err = emit_artifacts("export fn g(a: f64) -> f64 { return a }", "umod", &out).unwrap_err();
+    let mlc::emit::EmitError::RollbackIncomplete {
+        stage_dir,
+        stranded,
+        ..
+    } = &err
+    else {
+        panic!(
+            "the undo could not remove the files it had placed, so this must be \
+             RollbackIncomplete: {err:?}"
+        );
+    };
+    assert!(
+        stage_dir.is_dir(),
+        "the stage holds the only copies of the previous deliverables and must be kept: {:?}",
+        entries(&out)
+    );
+    assert_eq!(stranded.len(), previous.len(), "{stranded:?}");
+    for (name, bytes) in &previous {
+        let kept = stage_dir.join(format!("{name}.prev"));
+        assert!(
+            stranded.contains(&kept),
+            "{} is not reported as stranded: {stranded:?}",
+            kept.display()
+        );
+        assert!(
+            std::fs::read(&kept).is_ok_and(|b| b == *bytes),
+            "{} must be byte-for-byte the {name} that was there before the failed rebuild",
+            kept.display()
+        );
+    }
 }
 
 #[test]

@@ -4,19 +4,8 @@ use super::*;
 
 /// **Every PR number the slice index cites is a PR that exists.**
 ///
-/// `CLAUDE.md` calls `docs/slices/README.md` the canonical list of closed slices, and the last
-/// column of every row is how a reader gets from a slice to the change that made it. One of
-/// them pointed at **#97, which has never existed in this repository** — `try` was implemented
-/// by #98 and #99, and the SPEC's own body says so. The wrong number had spread to three more
-/// documents.
-///
-/// Derived from git, not from a list: the merged-commit subjects carry `(#N)`, so the set of
-/// real PR numbers is `git log`'s to give. A citation outside that set is a dead pointer, and
-/// nothing else in this file could see it — every other guard compares documents to source
-/// code, and a PR number is neither.
-///
-/// Numbers are compared as a SET, not as a range. #97 sits between two numbers that do exist,
-/// so any bounds check would have passed it.
+/// Why: a row pointed at a PR that never existed, and the number spread to three documents.
+/// The real set comes from `git log`, compared as a set, not a range. (#273)
 #[test]
 fn every_pr_the_slice_index_cites_exists() {
     let out = std::process::Command::new("git")
@@ -73,28 +62,10 @@ fn every_pr_the_slice_index_cites_exists() {
     }
 }
 
-/// **The glossary defines the vocabulary the documents actually use.**
+/// **The glossary defines the terms the documents lean on most.**
 ///
-/// `README.md` calls `docs/GLOSSARY.md` *"the terms this repository uses precisely"*. It
-/// defined nine, and none of them was a term the repository actually leans on. Measured across
-/// the 45 documents under `docs/` excluding the history file: `DP-` appears 585 times,
-/// 슬라이스 392, 수용 237, 지문 177, Q12 163, 게이트 162, `mlx_` 132, 오라클 130, E2 104. The
-/// glossary defined **zero** of them, and had not been touched since 2026-08-30.
-///
-/// That is not a document being wrong. It is a document being absent while claiming to be
-/// present, which no other guard here can see: every one of them checks a claim against a
-/// source, and this file's failure was that it made no claims.
-///
-/// **An explicit list is right here, unlike everywhere else in this file.** The audit's
-/// standing complaint is hand-written scopes, and it holds when the list is a SAMPLE of
-/// something derivable. Here the list IS the deliverable — "these words need defining" is the
-/// contract, not an approximation of one. The numbers above are the measurement behind it and
-/// live in this comment, not in the document.
-///
-/// Only that the term is defined, never how. A definition that drifts is a separate problem,
-/// and the document answers it by pointing at an owner instead of restating one — which is the
-/// shape Grok proposed when it named the risk of extending this file at all: process
-/// definitions copied in become the stale second copy.
+/// Why: it defined nine terms and none of the most used (`DP-` 585 times, 슬라이스 392, …). An
+/// explicit list is right here: it is the vocabulary, not a sample of scope. (#272)
 #[test]
 fn the_glossary_defines_the_vocabulary_the_docs_use() {
     let glossary = read("docs/GLOSSARY.md");
@@ -127,25 +98,10 @@ fn the_glossary_defines_the_vocabulary_the_docs_use() {
     }
 }
 
-/// **Every `§9-N` this repository cites resolves to a heading in `docs/HISTORY.md`.**
+/// **Every `§9-N` cited anywhere resolves to a heading in the HISTORY index.**
 ///
-/// `docs/STATUS.md` grew a dated session log — `### 9-1.` through `### 9-62.` — inside the
-/// document whose own line 10 promises it holds 현재와 다음만. It reached 3,774 lines, 62% of
-/// the file, in a file that line 3 tells every new session to read FIRST. The global rule
-/// sends completed-work narrative to a history document; this repository had none, so it
-/// accumulated where it could.
-///
-/// **This guard is what makes moving it safe.** Those entries are not inert: 46 files outside
-/// `STATUS.md` cite `§9-N` 150 times, and six of them are product source comments —
-/// `compiler/src/codegen.rs`, `header.rs`, `iface.rs`, `ir.rs`, `lexer.rs`, `lib.rs`. A move
-/// that dropped, renumbered or mangled one entry would strand those citations silently,
-/// because nothing about a prose reference fails at compile time.
-///
-/// Derived, not listed: collect every `§9-<n>` mentioned anywhere in the tree, collect every
-/// `### 9-<n>.` heading in `docs/HISTORY.md`, and require the first set inside the second.
-/// The relation was measured to hold BEFORE the move (36 distinct numbers cited, 62 headings,
-/// numbering 1–62 with no gaps, 0 dangling), so a failure here means the move broke something
-/// rather than that the repository was already broken.
+/// Why: 46 files cite `§9-N` 150 times, six of them product source comments, and a dropped,
+/// renumbered or mangled entry would strand them silently. (#265)
 #[test]
 fn every_cited_history_entry_has_a_heading() {
     // Headings live on the index pages: `HISTORY.md` and, once it has been rolled,
@@ -213,21 +169,10 @@ fn every_cited_history_entry_has_a_heading() {
     }
 }
 
-/// **Both READMEs' document map must list every `docs/*.md`.**
+/// **Both READMEs' document map lists every `docs/*.md`.**
 ///
-/// `CLAUDE.md` used to carry its own reading order — eleven documents, in the file every
-/// session loads — while declaring in the line above that the README map was the source of
-/// truth. The copy had lost `docs/STATUS.md`, which is the map's first row and the one
-/// document that says of itself *"새 세션은 이 문서를 먼저 읽는다"*. Three files named three
-/// different first reads.
-///
-/// The copy is gone and `CLAUDE.md` now points at the map. That only helps while the map is
-/// complete, which is what this checks: a document added under `docs/` and not listed is
-/// invisible to every session that follows the pointer. Deleting a duplicate moves the whole
-/// weight onto the survivor, so the survivor gets the guard.
-///
-/// Derived from `read_dir`, not from a list here — a list would be the same defect one level
-/// down.
+/// Why: `CLAUDE.md` points at the map instead of carrying a reading order of its own, so a
+/// document missing from the map is invisible to every session that follows it. (#285)
 #[test]
 fn both_readmes_map_every_document() {
     let mut docs: Vec<String> = std::fs::read_dir(repo_root().join("docs"))
@@ -258,23 +203,10 @@ fn both_readmes_map_every_document() {
     }
 }
 
-/// **A document that names where the current state lives must name `docs/STATUS.md`.**
+/// **A document that names where the current state lives names `docs/STATUS.md`.**
 ///
-/// `STATUS.md:3` says a new session reads it first, and three documents already send current
-/// state there — `ROADMAP.md`, `phase1/SPEC.md`, `phase1/WBS.md`, each in its own opening
-/// lines. `CLAUDE.md` pointed at two of those three instead, so the file every session loads
-/// sent the reader one hop away from the answer and the document it landed on immediately
-/// redirected. Not false, but a pointer that costs a hop is a pointer that goes stale in a
-/// place nobody looks.
-///
-/// Measured before it was written: four lines in the tree name a source for 현재 상태, three
-/// already correct and one not. A guard for a single site is worth it here only because the
-/// needle is narrow and the failure is silent — the next copy of that sentence would be as
-/// hard to see as this one was.
-///
-/// This is a rule rather than a derivation, and it says so: nothing in the code makes
-/// `STATUS.md` canonical. What makes it checkable is that the claim is stated in one place and
-/// repeated nowhere — which is exactly the property the guard preserves.
+/// Why: `CLAUDE.md` pointed at a document that redirects to STATUS — a hop that goes stale where
+/// nobody looks. (#288)
 #[test]
 fn every_pointer_to_the_current_state_names_status() {
     const CANONICAL: &str = "STATUS.md";
@@ -330,23 +262,10 @@ fn every_pointer_to_the_current_state_names_status() {
     );
 }
 
-/// **Every `STATUS §<n>` cited anywhere resolves to a heading or a numbered item in `STATUS.md`
-/// or in its closed registry.**
+/// **Every STATUS §-citation resolves on `STATUS.md` or its closed registry.**
 ///
-/// The same relation `every_cited_history_entry_has_a_heading` keeps for `§9-N`, and for the
-/// same reason: a prose reference does not fail at compile time, so a stranded one is silent.
-/// Measured before the 2026-09-25 slimming: 150 citations of this form outside the session
-/// log, 0 dangling — and three plants went red (a renumbered heading, a numbered item that
-/// lost its `N. `, and a `§5-7` that must not borrow item `7.` from `### 5-5.`). A closed item
-/// moves to `docs/history/status-closed-NNN.md` with its heading and number (`status_pages`),
-/// so its address resolves there; this is what notices when an address is lost instead.
-///
-/// A label resolves if a page has a heading numbered with it (`## 1.`, `### 3a-9.`,
-/// `### 5-5.`), or if it names an item under such a heading — `4-2` is item `2.` under
-/// `## 4.`, `5-5.7` is item `7.` under `### 5-5.`, and `9-A` is heading `A.` under `## 9.`.
-/// Each page is judged on its own, so one page's list cannot lend another page its items.
-/// `§9-<digits>` is the session log in `HISTORY.md` and belongs to the guard above. Headings
-/// are unquoted lines only: the ▶ block's quoted `> ## ▶` sits inside `## 9.` and must not end it.
+/// Why: 150 prose citations fail silently when stranded. A label resolves to a numbered heading
+/// or an item of one (`4-2`, `5-5.7`, `9-A`), each page judged on its own. (#310, #318)
 #[test]
 fn every_status_citation_resolves() {
     let pages = status_pages();

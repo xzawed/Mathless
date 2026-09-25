@@ -4,17 +4,8 @@ use super::*;
 
 /// **A shipped SPEC does not still ask for the confirmation it already got.**
 ///
-/// Six SPECs carried a §4 heading reading *미확정, 사용자 확인 필요* while their own line 3
-/// said 확정 · 구현 완료. That is not a cosmetic mismatch: `CLAUDE.md` rule 8 makes "find the
-/// DP items awaiting user confirmation" a procedure, and an agent following it reads these
-/// headings and goes asking for a confirmation that was given — in one case over three weeks
-/// earlier, for a feature that has been in the compiler since.
-///
-/// Wholly derivable from inside each file: the status line says whether the slice shipped, and
-/// the DP heading says whether its decisions are open. Those two cannot both be true.
-///
-/// The DP TABLES are left alone. They are the record of what was decided and why, and this
-/// guard says nothing about them — only about a heading that describes them as pending.
+/// Why: six SPECs said 확정 · 구현 완료 above a §4 heading asking for 사용자 확인, which sends an
+/// agent following rule 8 to ask again. The DP tables are records and are left alone. (#276)
 #[test]
 fn a_shipped_spec_does_not_still_request_confirmation() {
     let dir = repo_root().join("docs").join("slices");
@@ -64,29 +55,10 @@ fn a_shipped_spec_does_not_still_request_confirmation() {
     );
 }
 
-/// **`CLAUDE.md` does not name a closed slice.** It is the file every session loads.
+/// **`CLAUDE.md` does not name a closed slice.**
 ///
-/// `docs/slices/README.md` has corrected "a closed slice is still listed as a candidate"
-/// three times, and next to the third it writes the cause: closing a slice adds a row to the
-/// index — *`CLAUDE.md` puts that in the procedure* — and **nothing removes it from the
-/// candidate list**. The file it names by name was the fourth occurrence. Rule 3 listed
-/// `배열 반환` as a future candidate while the index row read ✅ 구현 완료 and the compiler had
-/// been emitting `RetAbi::ArrayOut` since #206; rule 2, one line above it, forbids reopening a
-/// closed slice.
-///
-/// The sibling guard below bounds its scan to a named section. **This one scans the whole
-/// file, and the reason is measured, not stylistic**: of the 29 closed index titles, exactly
-/// one appeared anywhere in `CLAUDE.md`, and it was the defect. With no legitimate mention to
-/// carve out there is no sentence boundary to parse — and a whole-file scan cannot quietly
-/// stop failing the way a literal section marker does when somebody renames a heading.
-///
-/// `docs/STATUS.md` and `docs/phase1/WBS.md` are deliberately NOT here. The same measurement
-/// found 10 and 7 titles in them, and every one is a closure record — a `✅ 닫힘` section
-/// heading or a completed WBS row. Pointing this guard at those files would make it a
-/// false-positive machine, which is how a guard gets deleted.
-///
-/// If a rule ever genuinely needs to name a closed slice, this test failing is the right
-/// outcome: it makes the author say so here, with a reason, instead of leaving a candidate.
+/// Why: it listed `배열 반환` as a candidate after it shipped — the fourth time a closed slice
+/// stayed a candidate, this time in the file every session loads. (#260)
 #[test]
 fn claude_md_does_not_name_a_closed_slice() {
     let claude = flatten_prose(&read("CLAUDE.md"));
@@ -102,33 +74,10 @@ fn claude_md_does_not_name_a_closed_slice() {
     }
 }
 
-/// **A SPEC the index calls closed says so in its own header.**
+/// **A SPEC the index calls closed says so in its own `상태:` header.**
 ///
-/// The index guard above opens `docs/slices/README.md` and `read_dir`s the SPEC names. It
-/// never opens a SPEC. So the row and the file it links could disagree for as long as nobody
-/// happened to read both, and they did: eleven SPECs the index marked ✅ 구현 완료 carried a
-/// header saying 구현 대기 / 구현 중 / 구현 착수, one said *"구현은 시작하지 않았다"* about a
-/// feature wired through every stage of the compiler, and three named no implementation state
-/// at all.
-///
-/// `docs/slices/README.md` disclaims that each SPEC is "a design record at the time of
-/// writing", and for the BODY that is right — a §5 that says "BLOCKED" is a fact about that
-/// day and rewriting it would be rewriting history. **The `상태:` header is not body.** It is
-/// the first thing in the file, it has no date attached to the implementation clause, and it
-/// reads as the current state. Grok was asked whether the disclaimer covers it and answered
-/// NOT-COVERED, for the reason the disclaimer itself gives: it immunises then-facts and sends
-/// live status to `docs/STATUS.md`, never recasting the header as historical.
-///
-/// **Allowlist, not denylist**, and the difference is which way it breaks. A denylist of
-/// 구현 대기 / 구현 중 / 구현 착수 would pass the three headers that name no state at all, and
-/// would pass the next spelling somebody invents. Requiring the done-token means a SPEC that
-/// invents a phrasing goes red and someone has to look. That is the direction this repository
-/// has already chosen for every other guard it kept.
-///
-/// Bounded to the first 30 lines because that is where every header is today (30 files put it
-/// on line 3; `SPEC-iface-hash.md` on line 24), and because the bound is what makes a DELETED
-/// header fail. Searching the whole file would let a stray later 상태: line answer for a
-/// header that is gone.
+/// Why: eleven SPECs the index marked ✅ had headers saying 구현 대기 or 구현 중. The body is a
+/// dated record; the header reads as the current state. (#261)
 #[test]
 fn a_closed_spec_says_so_in_its_own_header() {
     const DONE: &str = "구현 완료";
@@ -197,21 +146,10 @@ fn a_closed_spec_says_so_in_its_own_header() {
     );
 }
 
-/// **A slice cannot be both closed and a candidate**, in the file that says so about itself.
+/// **A slice cannot be both closed and a candidate in the slice index.**
 ///
-/// `docs/slices/README.md` carries two lists: an index of closed slices at the top and
-/// "next slices (no SPEC yet)" at the bottom. Closing a slice adds a row to the first —
-/// `CLAUDE.md` puts that in the procedure. **Nothing removes it from the second**, and that
-/// file has corrected the resulting lie three times: 문자열 연결 (2026-09-03), 배열 입력
-/// (2026-09-11), 배열 반환 (2026-09-15). The third one had been wrong for three days while the
-/// row twelve lines above it read ✅ 구현 완료.
-///
-/// It is the shape `STATUS.md` §7-1 records as this repository's most repeated failure — a
-/// document calling something open that the same document calls closed — and a human reading
-/// the candidate list to pick the next slice is exactly who it misleads.
-///
-/// Matching is on the index row's OWN title text, stripped of `**`. That is what a copy into
-/// the candidate list looks like, and it is what happened all three times.
+/// Why: closing a slice adds an index row, and nothing removed it from the candidate list —
+/// three times before this guard. (#250)
 #[test]
 fn no_closed_slice_is_still_listed_as_a_candidate() {
     let readme = read("docs/slices/README.md");
@@ -242,31 +180,10 @@ fn no_closed_slice_is_still_listed_as_a_candidate() {
     }
 }
 
-/// **No document says a question `docs/OPEN_QUESTIONS.md` has closed is still open.**
+/// **No document calls a question `OPEN_QUESTIONS.md` has closed still open.**
 ///
-/// Rule 8 in `CLAUDE.md` tells the next agent to find the open questions and get user
-/// confirmation before touching them. A document that calls a *closed* question open is
-/// therefore not a stale sentence but an instruction: it sends the next session to reopen a
-/// decision this repository already made with the user. That is the same failure `#276` fixed
-/// for SPEC headings, one layer up — there the file asked for confirmation it already had,
-/// here it names the question that confirmation closed.
-///
-/// **The set is derived, never listed.** `docs/OPEN_QUESTIONS.md` owns one entry per
-/// question — `- Q12.` in the deferred list, `### Q1.` in the closed section — and an entry
-/// is closed when its own entry line says 닫힘 / 닫혔다. Deriving it is not decoration: a
-/// hand-written list drifts the moment a question closes, which is the defect this guard is
-/// about. The first cut of this derivation scanned every line rather than the owning entry
-/// and marked Q6 and Q11 closed, because the summary line that names `Q6~Q11` as *remaining*
-/// also carries 닫혔다 about Q12–Q15. A guard that believes an open question is closed goes
-/// quiet exactly where it is needed.
-///
-/// **Present tense only.** The needles are the live spellings — 열려 있는 Qn, Qn는 열려 있다,
-/// Qn를 먼저 닫아야 한다. A decision table recording why a slice stopped at a boundary that
-/// existed *that day* is a record, and the repository keeps those; writing it in the past
-/// tense (당시 열려 있던) is what makes it a record rather than a claim, and the past tense
-/// evades these needles without an allowlist. An allowlist would have been the other option
-/// and a worse one: "the line also says 닫혔다 somewhere" passes a line that says both about
-/// two different questions.
+/// Why: rule 8 sends the next session to the open questions, so calling a closed one open
+/// reopens a decision made with the user. The closed set comes from the entries. (#280)
 #[test]
 fn no_document_says_a_closed_question_is_open() {
     let oq = read("docs/OPEN_QUESTIONS.md");
@@ -360,27 +277,10 @@ fn no_document_says_a_closed_question_is_open() {
     }
 }
 
-/// **`STATUS.md` §5-6 quotes an emitted shape; this fails when that shape moves.**
+/// **The §5-6 record quotes the exact shape `codegen.rs` emits for `i32 /` and `%`.**
 ///
-/// §5-6 recorded the defect: `i32 /` and `%` put their LEFT operand inside the `else` of the
-/// totality guard `#76` added, so a zero divisor skipped it and an out-of-range index came
-/// back as status 0. `SPEC-division-guard-operands` closed it by binding the dividend first
-/// and outside the `else`, and §5-6 now quotes the shape that replaced it.
-///
-/// **The first version of this guard did not do what its own docstring promised**, and the
-/// slice that changed the shape is what proved it. It pinned four fragments — `let __d =`,
-/// `if __d == 0 { 0i32 } else {`, `wrapping_div`, `wrapping_rem` — and the new emission
-/// contains all four, so the shape moved and the guard stayed green. The plant that had
-/// "proved" it worked inverted the condition, which is not the change that happened.
-///
-/// It now pins the WHOLE template, both halves of it, against the document that quotes it:
-/// the emitted text and §5-6's code block have to be the same string. That is the only form
-/// where "the shape moved" and "this test fails" are the same statement — a fragment list is
-/// a guess about which part will move.
-///
-/// Deliberately not a behavioural test: `division_guard.rs` and `division_guard_operands.rs`
-/// own the behaviour. This owns only the agreement between the source and the document that
-/// describes it.
+/// Why: the first version pinned four fragments, and the slice that changed the shape kept all
+/// four, so it stayed green. It pins the whole template now. (#281)
 #[test]
 fn the_recorded_division_debt_still_matches_what_codegen_emits() {
     // The emitter writes this as a `format!` template, so the source carries doubled braces.
@@ -439,28 +339,10 @@ fn the_recorded_division_debt_still_matches_what_codegen_emits() {
     );
 }
 
-/// **A SPEC may not call a `STATUS.md` §5 debt open after §5 marks it paid.**
+/// **A SPEC may not call a STATUS §5 debt open after the register marks it paid.**
 ///
-/// §5 is the debt register — "조용히 사라지면 안 되는 것" — and its numbered items carry ✅
-/// 갚음 once paid. Twelve slices cite §5-1 while explaining what they do and do not pay, which
-/// is exactly what the register is for. Four of them said the debt itself was still open:
-/// 열린 채다 / 그대로다 / 여전히 없다 / 관측 수단이 없다. #200 paid it on 2026-09-13.
-///
-/// **The distinction the needles draw is real and was measured.** *"이 슬라이스는 §5-1을 갚지
-/// 않는다"* is a statement about the slice and stays true forever; *"§5-1은 열린 채다"* is a
-/// statement about the debt and expires the day it is paid. Scanning for the citation alone
-/// found 29 lines, of which 25 were the first kind. The needles below select the second kind:
-/// measured 4 hits, 4 real, 0 false.
-///
-/// **Scope is `docs/slices/SPEC-*.md`, and the reason is the same one #261 used.** Entries in
-/// `STATUS.md` §9 and `HISTORY.md` are dated records of what was true that day, and three of
-/// them say §5-1 was open because it was. A SPEC's §5 debt list carries no date and reads as
-/// current. Including the records would have added 4 false positives for no true one.
-///
-/// A line that corrects itself in place — struck through, or carrying ✅ / 갚혔다 / 닫혔다 —
-/// is the repository's own correction form and passes. That is an allowlist and it is narrow
-/// on purpose: it is scoped to one line that already names one debt, so it cannot pass a line
-/// that says both things about two different debts.
+/// Why: four SPECs still called §5-1 open after #200 paid it. The needles pick claims about the
+/// debt, not about the slice (measured 4 of 4 real); SPECs only. (#282)
 #[test]
 fn no_spec_calls_a_paid_debt_open() {
     // STATUS holds the open debts and its closed registry the paid ones, under the same
@@ -578,13 +460,11 @@ fn no_spec_calls_a_paid_debt_open() {
     }
 }
 
-/// **`docs/STATUS.md` holds only what is open; its closed registry holds only what is closed.**
+/// **`STATUS.md` holds only what is open; its closed registry holds only what is closed.**
 ///
-/// Why: closed items stayed in STATUS as ✅ lines so their `§N` addresses kept resolving, which
-/// made STATUS grow with the project's age rather than its open work (14.6 KB of 40.5 KB on
-/// 2026-09-25). A closed item now moves to `docs/history/status-closed-NNN.md` under the same
-/// heading and number; `every_status_citation_resolves` reads both. Quoted lines are skipped —
-/// the ▶ block is a dated entry that rotates out on its own.
+/// Why: closed ✅ lines made STATUS grow with the project's age (14.6 of 40.5 KB). A closed
+/// item moves to `docs/history/status-closed-NNN.md` under the same number; quoted lines (the ▶
+/// block) are skipped. (#318)
 #[test]
 fn status_holds_no_closed_item() {
     let numbered = |t: &str| {

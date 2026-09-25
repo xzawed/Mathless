@@ -33,7 +33,7 @@ mod presence;
 mod stale;
 
 fn repo_root() -> PathBuf {
-    // tests/ -> hosts/rust-oracle -> hosts -> repo root
+    // CARGO_MANIFEST_DIR is hosts/rust-oracle; two levels up is the repository root.
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -173,12 +173,6 @@ fn u64_const(src: &str, name: &str) -> u64 {
         .unwrap_or_else(|_| panic!("{name} is not a decimal literal"))
 }
 
-/// C source with `/* … */` and `// …` removed, so a check can look at what the code does
-/// rather than at what its comments talk about.
-///
-/// Deliberately naive: it does not understand string literals, which is fine for the one
-/// file it is used on (no `//` or `/*` inside any string there) and would be over-building
-/// for anything this test needs.
 /// `"uint64_t ml_iface_hash_{dll_name}(void);"` → `"uint64_t ml_iface_hash_<module>(void);"`.
 ///
 /// The reserved declarations above are recovered from `header.rs`'s own string literals, and
@@ -205,6 +199,12 @@ fn placeholder_to_module(decl: &str) -> String {
     out
 }
 
+/// C source with `/* … */` and `// …` removed, so a check can look at what the code does
+/// rather than at what its comments talk about.
+///
+/// Deliberately naive: it does not understand string literals, which is fine for the one
+/// file it is used on (no `//` or `/*` inside any string there) and would be over-building
+/// for anything this test needs.
 fn strip_c_comments(src: &str) -> String {
     let bytes = src.as_bytes();
     let mut out = String::with_capacity(src.len());

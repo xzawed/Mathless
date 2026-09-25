@@ -3,16 +3,10 @@
 
 use super::*;
 
-/// The one piece of prose that travels WITH the artifact.
+/// **The note in every generated header does not deny a verification that exists.**
 ///
-/// Every generated header carries a note saying what has and has not been verified. For a
-/// whole slice after link-time binding was verified with a measured run, that note still
-/// told each user "Not verified: … link-time binding via an import library". A stale
-/// document is bad; a stale sentence compiled into the product's own output is worse,
-/// because it reaches people who never open this repository.
-///
-/// Conditional on the evidence existing, the same shape as the ABI-refusal guard: if the
-/// link host is deleted, this stops demanding the claim.
+/// Why: after link-time binding was measured, each header still said it was unverified — a
+/// stale sentence compiled into the product reaches people who never open this repository. (#128)
 #[test]
 fn the_generated_header_does_not_deny_a_verification_that_exists() {
     let link_host = repo_root().join("hosts").join("c-host-link").join("host.c");
@@ -43,14 +37,10 @@ fn the_generated_header_does_not_deny_a_verification_that_exists() {
     );
 }
 
-/// The error constant carries its module, and the emitter cannot quietly drop it again.
+/// **Error constants carry their module: `ML_<MODULE>_ERR_<NAME>`.**
 ///
-/// `SPEC-error-prefix` §3-F. The unprefixed `ML_ERR_<NAME>` survived four slices while the
-/// fingerprint constant beside it was given a prefix *because this debt was recorded* — the
-/// rule was decided and simply not applied here. This is the assertion that keeps it applied.
-///
-/// It reads the emitter, not the output: a golden can be re-blessed, and a re-bless that
-/// silently accepted a bare `ML_ERR_` is exactly the failure mode this file exists for.
+/// Why: the bare `ML_ERR_<NAME>` survived four slices after the rule was decided. This reads
+/// the emitter, so a re-blessed golden cannot quietly accept it again. (#129)
 #[test]
 fn the_emitter_prefixes_error_constants_with_the_module() {
     // Run the emitter and read WHAT IT WROTE. The first version of this test matched source
@@ -100,26 +90,10 @@ fn the_emitter_prefixes_error_constants_with_the_module() {
     );
 }
 
-/// `runtime/ml_abi.h` declares the reserved half of the ABI by hand, and nothing compiles
-/// it, so nothing noticed when it fell behind: every module has exported `ml_iface_hash`
-/// since #105 and the header that exists to list the reserved symbols did not mention it.
+/// **`runtime/ml_abi.h` declares every reserved symbol the emitter writes, and no `mlx_*`.**
 ///
-/// This derives the list from the emitter instead of trusting the file. Any reserved `ml_*`
-/// declaration `header.rs` writes into a generated header must also be here — with or
-/// without parameters — and the truncation status must carry the same value in both places.
-///
-/// It also forbids a module-specific `mlx_*` declaration. The file used to declare
-/// `mlx_discount` from one example — the kind of detail that goes stale in a file nobody
-/// compiles, and the reason D4 was open at all.
-///
-/// **One of the two is a PATTERN, not a declaration.** Since `SPEC-qualified-iface-hash` the
-/// fingerprint export is `ml_iface_hash_<module>`, so the emitter's literal carries a format
-/// placeholder and `runtime/ml_abi.h` cannot declare the symbol at all — the name is not
-/// fixed. It documents the shape instead, and [`placeholder_to_module`] is the single
-/// translation between the two spellings. That is a real narrowing of what this can prove:
-/// for that symbol it now checks that the file DESCRIBES the export, not that it declares
-/// it. Both were only ever textual — nothing compiles `ml_abi.h` — so what is lost is the
-/// declaration's shape, and what is kept is the name and the signature.
+/// Why: nothing compiles that file, so it missed `ml_iface_hash` for a slice. The list is
+/// derived from `header.rs`; `ml_iface_hash_<module>` is matched as a pattern. (#122)
 #[test]
 fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits() {
     let header_rs = read("compiler/src/header.rs");
@@ -237,14 +211,10 @@ fn the_hand_written_abi_header_declares_every_reserved_symbol_the_compiler_emits
     );
 }
 
-/// Acceptance D is the only thing in this repository that compiles a generated `.h` as C.
-/// An example whose header is not included there has a surface no C compiler has ever
-/// read: the Rust oracle checks the module's behaviour, not whether the header it ships
-/// beside it is valid C11 under `/W4 /WX`.
+/// **Every example's generated header is compiled by the C host.**
 ///
-/// This was measured as a real hole — 14 of 18 — and the worst of the four outside it was
-/// `shapes`, the file written to collect "export shapes where a mis-written C ABI adapter
-/// would compile and return a plausible wrong value" (`STATUS.md` N1).
+/// Why: acceptance D is the only C compile of a generated `.h`, and 4 of 18 examples sat
+/// outside it — among them `shapes`, written to catch mis-written C ABI adapters. (#119)
 #[test]
 fn every_example_header_is_compiled_by_the_c_host() {
     // Comments stripped: a commented-out `#include "shapes.h"` would satisfy the check below
@@ -287,12 +257,10 @@ fn every_example_header_is_compiled_by_the_c_host() {
     );
 }
 
-/// `host.c` is compiled by MSVC with `/W4 /WX`, and a non-ASCII byte in it is warning
-/// C4819 ("cannot be represented in the current code page") which `/WX` turns into an
-/// error. That gate is real but it costs a full acceptance-D build and only runs where
-/// MSVC exists; this costs nothing and runs on the ubuntu job too.
+/// **`host.c` is ASCII.**
 ///
-/// Written after exactly that: an em dash in a comment failed the C build.
+/// Why: a non-ASCII byte is warning C4819, which `/W4 /WX` makes an error; an em dash in a
+/// comment once failed the C build. This check is free and runs on ubuntu too. (#118)
 #[test]
 fn the_c_sources_are_ascii_only() {
     // DISCOVERED, not listed. The earlier version named the two hosts by hand, so a third C
@@ -329,12 +297,10 @@ fn the_c_sources_are_ascii_only() {
     }
 }
 
-/// The link host's whole claim is that it never looks a symbol up by name.
+/// **The link host never looks a symbol up by name.**
 ///
-/// `SPEC-linkable-bindings` §3-B says the host binds through the import library "without
-/// ever calling GetProcAddress". A test that only checks the program's OUTPUT cannot tell
-/// the difference — a host that quietly fell back to dynamic loading would print the same
-/// `LINK_GATE_OK`. So the claim is pinned where it can be checked: in the source.
+/// Why: its output cannot tell a host that fell back to `GetProcAddress` from one that did not,
+/// so the claim is pinned in the source. (#126)
 #[test]
 fn the_link_host_never_resolves_a_symbol_by_name() {
     // CODE, not prose. The first version of this test failed on the file's own comment
@@ -370,25 +336,10 @@ fn the_link_host_never_resolves_a_symbol_by_name() {
     }
 }
 
-/// The hand-written C and C++ sources must be pure ASCII, because MSVC reads them in the
-/// machine's ANSI code page and `/W4 /WX` turns "not representable there" into an error.
+/// **Every hand-written C and C++ source is pure ASCII.**
 ///
-/// Found by writing an em-dash into a `host.c` comment. On this development machine (code
-/// page 949) the acceptance-D gate failed immediately:
-///
-/// ```text
-/// host.c(1): warning C4819: <character not representable in code page 949>
-/// host.c(1): error C2220: warning treated as error
-/// ```
-///
-/// The reason this is a test and not just "the build caught it" is that the build would NOT
-/// have caught it everywhere. An em-dash *is* representable in CP1252, so on a runner with
-/// that code page the same file compiles clean — the failure is a property of the reader, not
-/// of the file, which is exactly the shape that reaches one developer and not the next. It is
-/// the same argument the generated headers already make for identifiers (`reserved.rs`), and
-/// the hand-written hosts had no equivalent.
-///
-/// Text only, so the ubuntu insurance job runs it too — which is the point: it needs no MSVC.
+/// Why: MSVC reads them in the machine's code page, and an em dash fails under CP949 but passes
+/// under CP1252 — the build alone would not catch it everywhere. (#163)
 #[test]
 fn the_hand_written_c_sources_are_pure_ascii() {
     let root = repo_root();
@@ -432,22 +383,10 @@ fn the_hand_written_c_sources_are_pure_ascii() {
     );
 }
 
-/// **The reference dynamic host must be able to gate every module name the compiler accepts.**
+/// **The reference C host can gate every module name the compiler accepts.**
 ///
-/// Two numbers in two languages that have to agree: `ML_MAX_MODULE_NAME` in
-/// `compiler/src/abi.rs`, and the `#define` of the same name in `hosts/c-host/host.c` that
-/// sizes the buffer `gate()` builds `ml_iface_hash_<module>` into. C cannot read the Rust
-/// constant, so the host carries a copy — and a copy that nothing checks is how the two drift.
-///
-/// They HAD drifted, in the only direction that matters: the host's buffer was an
-/// independently chosen `80`, which gated 65 characters and refused at 66, while the compiler
-/// had no bound at all and `mlc build` produced a 70-character module at exit 0. The
-/// compiler shipped modules its own reference host could not gate
-/// (`SPEC-module-name-length` §0.1).
-///
-/// This reads both sources rather than running anything, so unlike the acceptance-D gates it
-/// needs no MSVC and runs on **both** CI jobs — which is the point, because the Windows job
-/// is the only one that would otherwise notice, and only if a long name were in the corpus.
+/// Why: `ML_MAX_MODULE_NAME` lives in `abi.rs` with a copy in `host.c`; they had drifted, and
+/// the compiler shipped names its own reference host could not gate. (#217)
 #[test]
 fn the_c_host_can_gate_every_module_name_the_compiler_accepts() {
     let abi = read("compiler/src/abi.rs");
@@ -495,20 +434,8 @@ fn the_c_host_can_gate_every_module_name_the_compiler_accepts() {
 
 /// **No test creates a temp directory by hand — `common::TempOut` is the only way.**
 ///
-/// This has recurred twice. `STATUS.md` §5-5.7 measured the first version (clear at the
-/// START, never at the end: 1,720 trees / 976 MB on one development machine), and #219
-/// answered it with `TempOut`, whose Drop also runs when a test panics and whose removal
-/// retries past the Windows DLL-lock race. Then a NEW file copied the older helper it had
-/// replaced, and eight trees were left behind in a single afternoon (§9-44.3).
-///
-/// Twice means the helper existing is not enough, because nothing made a new file use it.
-/// This is what makes it stick. Measured before it was written: every leftover tree in the
-/// working directory — `mlc_w6` ×7, `mlc_gco_*` ×6, `mlc_arr_*`, `mlc_calls`, `mlc_str_*`,
-/// `mlc_amb` — belonged to a file still building its path by hand, and none to a converted one.
-///
-/// The needle is `create_dir_all`, not `temp_dir()`: a test may legitimately NAME a temp path
-/// it never creates (`diagnostics.rs` builds one only to watch the compiler refuse before
-/// anything is written). Creating is what leaves something behind.
+/// Why: hand-made trees leaked twice (1,720 trees once; eight in an afternoon after a new file
+/// copied the old helper). `TempOut` (#219) removes its tree even when a test panics. (#236)
 #[test]
 fn no_test_creates_a_temp_directory_by_hand() {
     // The needles are ASSEMBLED, not written. Spelled literally they appear in this file — in
@@ -616,23 +543,8 @@ fn no_test_creates_a_temp_directory_by_hand() {
 
 /// **A test that builds a module carries a Windows gate.**
 ///
-/// `codegen::build_cdylib` looks for `target/release/<name>.dll`. On Linux cargo writes
-/// `lib<name>.so`, so the build succeeds and the artifact lookup fails — the unstarted D22
-/// gap, documented on `compiler/tests/generated_crate_output.rs`, whose own success-path test
-/// is `#[cfg(windows)]` for exactly this reason. **Every test that calls `emit_artifacts` or
-/// `build_cdylib` and expects an artifact is Windows-only whether or not it says so.**
-///
-/// Thirty-seven test files call one of those two entry points and thirty-six carried a gate.
-/// The one that did not was written the day this guard was: a test *about* temp trees, whose
-/// only case that creates one is a successful build. The ubuntu job caught it in 24 seconds,
-/// which is what that job is for — but a red CI on a PR is still a claim made and retracted,
-/// and this is a `grep` that costs nothing.
-///
-/// **It is a floor, not a proof, and the difference is worth stating.** It requires the file
-/// to contain a windows gate *somewhere*; it cannot tell that the gate is on the call. Two
-/// files (`diagnostics.rs`, `emit_robustness.rs`) gate per-test rather than file-wide and are
-/// green on ubuntu, so demanding `#![cfg(windows)]` at the top would be wrong. What this
-/// catches is the case that actually happened: no gate at all.
+/// Why: on Linux the build writes `lib<name>.so` and the artifact lookup fails. One of 37 such
+/// files lacked the gate and the ubuntu job caught it; this is the free check. (#294)
 #[test]
 fn every_module_building_test_is_windows_gated() {
     let mut checked = 0usize;

@@ -330,32 +330,37 @@ fn every_pointer_to_the_current_state_names_status() {
     );
 }
 
-/// **Every `STATUS §<n>` cited anywhere resolves to a heading or a numbered item in `STATUS.md`.**
+/// **Every `STATUS §<n>` cited anywhere resolves to a heading or a numbered item in `STATUS.md`
+/// or in its closed registry.**
 ///
 /// The same relation `every_cited_history_entry_has_a_heading` keeps for `§9-N`, and for the
 /// same reason: a prose reference does not fail at compile time, so a stranded one is silent.
 /// Measured before the 2026-09-25 slimming: 150 citations of this form outside the session
 /// log, 0 dangling — and three plants went red (a renumbered heading, a numbered item that
-/// lost its `N. `, and a `§5-7` that must not borrow item `7.` from `### 5-5.`). Moving a
-/// section out of `STATUS.md` is safe only because its heading stays behind as a one-line
-/// stub; this is what notices when one does not.
+/// lost its `N. `, and a `§5-7` that must not borrow item `7.` from `### 5-5.`). A closed item
+/// moves to `docs/history/status-closed-NNN.md` with its heading and number (`status_pages`),
+/// so its address resolves there; this is what notices when an address is lost instead.
 ///
-/// A label resolves if `STATUS.md` has a heading numbered with it (`## 1.`, `### 3a-9.`,
+/// A label resolves if a page has a heading numbered with it (`## 1.`, `### 3a-9.`,
 /// `### 5-5.`), or if it names an item under such a heading — `4-2` is item `2.` under
 /// `## 4.`, `5-5.7` is item `7.` under `### 5-5.`, and `9-A` is heading `A.` under `## 9.`.
+/// Each page is judged on its own, so one page's list cannot lend another page its items.
 /// `§9-<digits>` is the session log in `HISTORY.md` and belongs to the guard above. Headings
 /// are unquoted lines only: the ▶ block's quoted `> ## ▶` sits inside `## 9.` and must not end it.
 #[test]
 fn every_status_citation_resolves() {
-    let status = read("docs/STATUS.md").replace('\r', "");
-    let lines: Vec<&str> = status.lines().collect();
+    let pages = status_pages();
+    let page_lines: Vec<Vec<&str>> = pages
+        .iter()
+        .map(|(_, text)| text.lines().collect())
+        .collect();
 
     // (level, text after the hashes) for an unquoted heading line.
     let heading = |line: &str| -> Option<(usize, String)> {
         let level = line.chars().take_while(|&c| c == '#').count();
         (level >= 2).then(|| (level, line[level..].trim_start().to_string()))
     };
-    let resolves = |label: &str| -> bool {
+    let resolves_in = |lines: &[&str], label: &str| -> bool {
         // `{label}. ` with the space: without it `5-5.` would also claim a `5-5.7…` heading
         // (Grok). Every numbered heading in STATUS.md is written `N. title`.
         if lines
@@ -390,6 +395,7 @@ fn every_status_citation_resolves() {
             .any(|l| heading(l).is_some_and(|(_, text)| text.starts_with(&format!("{item}. "))));
         own_item || sub_heading
     };
+    let resolves = |label: &str| page_lines.iter().any(|lines| resolves_in(lines, label));
 
     let mut cited: Vec<(String, String)> = Vec::new();
     for (path, text) in every_file_ending_in(&[".md", ".rs", ".c", ".h", ".dpr", ".mls", ".yml"]) {
@@ -444,10 +450,10 @@ fn every_status_citation_resolves() {
     for (path, label) in &cited {
         assert!(
             resolves(label),
-            "{path} cites STATUS §{label}, but docs/STATUS.md has no heading or numbered item \
-             for it. If that section moved to docs/history/, leave its heading in STATUS.md as \
-             a one-line stub that links the new file — the citation is the address, and it is \
-             spread across the tree"
+            "{path} cites STATUS §{label}, but neither docs/STATUS.md nor its closed registry \
+             (docs/history/status-closed-NNN.md) has a heading or numbered item for it. A \
+             closed item moves to the registry under the same heading and number — the \
+             citation is the address, and it is spread across the tree"
         );
     }
 }

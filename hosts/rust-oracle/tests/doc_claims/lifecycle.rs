@@ -418,19 +418,24 @@ fn the_recorded_division_debt_still_matches_what_codegen_emits() {
         .replacen("{}", "<lhs>", 1)
         .replacen("{}", "<rhs>", 1)
         .replacen("{}", "wrapping_div", 1);
-    let status = read("docs/STATUS.md");
+    // §5-6 is paid, so its record lives in the closed registry now; read it wherever it is.
+    let record: String = status_pages()
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        status.contains("§5-6") || status.contains("5-6."),
-        "docs/STATUS.md no longer carries §5-6. The record of what this shape is for does not \
-         go away when the debt is paid — §5's whole point is that a paid debt is marked, not \
-         deleted"
+        record.contains("5-6."),
+        "neither docs/STATUS.md nor its closed registry carries §5-6. The record of what this \
+         shape is for does not go away when the debt is paid — it moves to the registry"
     );
     assert!(
-        status.contains(&shape),
-        "docs/STATUS.md §5-6 does not quote the shape codegen.rs emits.\n  emitted: {shape}\n\
-         Update the code block there in the same commit that changes the emitter — that is \
-         what this guard is for, and the version of it that pinned fragments instead of the \
-         whole template missed exactly this change."
+        record.contains(&shape),
+        "the §5-6 record (docs/STATUS.md or docs/history/status-closed-NNN.md) does not quote \
+         the shape codegen.rs emits.\n  emitted: {shape}\nUpdate the code block there in the \
+         same commit that changes the emitter — that is what this guard is for, and the \
+         version of it that pinned fragments instead of the whole template missed exactly this \
+         change."
     );
 }
 
@@ -458,7 +463,9 @@ fn the_recorded_division_debt_still_matches_what_codegen_emits() {
 /// that says both things about two different debts.
 #[test]
 fn no_spec_calls_a_paid_debt_open() {
-    let status = read("docs/STATUS.md");
+    // STATUS holds the open debts and its closed registry the paid ones, under the same
+    // headings, so every page is read (`status_pages`).
+    let pages = status_pages();
     // Both halves of the register: §5's own numbered list, cited as `§5-N`, and the
     // sub-register §5-5 ("미추적 부채"), cited as `§5-5.N`. The needles find nothing in the
     // second half today; it is read anyway because which half a debt lands in is not
@@ -467,28 +474,30 @@ fn no_spec_calls_a_paid_debt_open() {
     let mut unpaid: Vec<String> = Vec::new();
     for (open_at, prefix) in [("## 5. ", "5-"), ("### 5-5. ", "5-5.")] {
         let before = paid.len() + unpaid.len();
-        let mut inside = false;
-        for line in status.lines() {
-            if line.starts_with(open_at) {
-                inside = true;
-                continue;
-            }
-            if inside && (line.starts_with("## ") || line.starts_with("### ")) {
-                break;
-            }
-            if !inside {
-                continue;
-            }
-            let t = line.trim_start();
-            let digits: String = t.chars().take_while(char::is_ascii_digit).collect();
-            if digits.is_empty() || !t[digits.len()..].starts_with(". ") {
-                continue;
-            }
-            let key = format!("{prefix}{digits}");
-            if t.contains('✅') {
-                paid.push(key);
-            } else {
-                unpaid.push(key);
+        for (_, status) in &pages {
+            let mut inside = false;
+            for line in status.lines() {
+                if line.starts_with(open_at) {
+                    inside = true;
+                    continue;
+                }
+                if inside && (line.starts_with("## ") || line.starts_with("### ")) {
+                    break;
+                }
+                if !inside {
+                    continue;
+                }
+                let t = line.trim_start();
+                let digits: String = t.chars().take_while(char::is_ascii_digit).collect();
+                if digits.is_empty() || !t[digits.len()..].starts_with(". ") {
+                    continue;
+                }
+                let key = format!("{prefix}{digits}");
+                if t.contains('✅') {
+                    paid.push(key);
+                } else {
+                    unpaid.push(key);
+                }
             }
         }
 
@@ -498,16 +507,17 @@ fn no_spec_calls_a_paid_debt_open() {
         // totals non-zero, so the guard went on scanning for half the debts and passed.
         assert!(
             paid.len() + unpaid.len() > before,
-            "docs/STATUS.md has no numbered items under a heading starting `{open_at}` — the \
-             debt register moved or was renamed, and this guard is now reading nothing there"
+            "neither docs/STATUS.md nor its closed registry has numbered items under a heading \
+             starting `{open_at}` — the debt register moved or was renamed, and this guard is \
+             now reading nothing there"
         );
     }
 
     // And both verdicts exist somewhere, so a register that lost its ✅ marks is visible too.
     assert!(
         !paid.is_empty() && !unpaid.is_empty(),
-        "parsed {} paid and {} unpaid debts from docs/STATUS.md; both must be non-empty or the \
-         register no longer distinguishes them",
+        "parsed {} paid and {} unpaid debts from docs/STATUS.md and its closed registry; both \
+         must be non-empty or the register no longer distinguishes them",
         paid.len(),
         unpaid.len()
     );
@@ -566,4 +576,47 @@ fn no_spec_calls_a_paid_debt_open() {
             }
         }
     }
+}
+
+/// **`docs/STATUS.md` holds only what is open; its closed registry holds only what is closed.**
+///
+/// Why: closed items stayed in STATUS as ✅ lines so their `§N` addresses kept resolving, which
+/// made STATUS grow with the project's age rather than its open work (14.6 KB of 40.5 KB on
+/// 2026-09-25). A closed item now moves to `docs/history/status-closed-NNN.md` under the same
+/// heading and number; `every_status_citation_resolves` reads both. Quoted lines are skipped —
+/// the ▶ block is a dated entry that rotates out on its own.
+#[test]
+fn status_holds_no_closed_item() {
+    let numbered = |t: &str| {
+        t.split_once(". ")
+            .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    };
+    let row = |t: &str| t.starts_with("| ") && !t.starts_with("| # ") && !t.starts_with("|--");
+    let mut wrong = Vec::new();
+    for (i, (path, text)) in status_pages().iter().enumerate() {
+        for (no, line) in text.lines().enumerate() {
+            if line.starts_with('>') {
+                continue;
+            }
+            let t = line.trim_start();
+            let item = numbered(t) || row(t);
+            let closed = line.contains('✅');
+            if i == 0 && closed && (item || t.starts_with('#') || t.starts_with("- ")) {
+                wrong.push(format!(
+                    "{path}:{} is closed (✅) but still in STATUS. Move it byte-identical to \
+                     docs/history/status-closed-NNN.md under the same heading — its §N address \
+                     keeps resolving there",
+                    no + 1
+                ));
+            }
+            if i > 0 && item && !closed {
+                wrong.push(format!(
+                    "{path}:{} is not marked ✅, but it is in the closed registry. Open work \
+                     belongs in docs/STATUS.md",
+                    no + 1
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

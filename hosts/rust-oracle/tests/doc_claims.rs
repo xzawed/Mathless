@@ -427,6 +427,50 @@ fn history_index_pages() -> Vec<(String, String, &'static str)> {
     pages
 }
 
+/// **`docs/STATUS.md` and its closed registry**, as `(path, text without '\r')`: STATUS first,
+/// then `docs/history/status-closed-NNN.md` from 001 up. A closed item moves from STATUS to the
+/// registry with its heading and number unchanged, so a `STATUS §N` address resolves on any
+/// page, and a guard that reads a STATUS register reads every page.
+fn status_pages() -> Vec<(String, String)> {
+    let mut closed: Vec<(u32, String, String)> = Vec::new();
+    for (path, text) in every_markdown_file() {
+        let Some(stem) = path
+            .strip_prefix("docs/history/status-closed-")
+            .and_then(|rest| rest.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        assert!(
+            stem.len() == 3 && stem.bytes().all(|b| b.is_ascii_digit()),
+            "{path}: a page of the closed STATUS registry is named status-closed-NNN.md"
+        );
+        closed.push((
+            stem.parse().expect("three digits"),
+            path,
+            text.replace('\r', ""),
+        ));
+    }
+    closed.sort_by_key(|page| page.0);
+    assert!(
+        !closed.is_empty(),
+        "docs/history/status-closed-001.md is missing — closed STATUS items and their §N \
+         addresses live there"
+    );
+    for (i, (n, path, _)) in closed.iter().enumerate() {
+        assert_eq!(
+            *n,
+            i as u32 + 1,
+            "{path}: closed registry pages are numbered 001, 002, … without gaps"
+        );
+    }
+    let mut pages = vec![(
+        "docs/STATUS.md".to_string(),
+        read("docs/STATUS.md").replace('\r', ""),
+    )];
+    pages.extend(closed.into_iter().map(|(_, path, text)| (path, text)));
+    pages
+}
+
 /// The walk itself, so that two scopes cannot drift into two different walks.
 ///
 /// A second copy of this loop is the same defect shape as a second copy of the slice-index

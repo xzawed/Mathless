@@ -135,17 +135,19 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
          queue that follows the entries — it is a list, not a record."
     );
 
-    // The standing queue stays in this file. Moving it was the mistake the docstring records,
-    // and it is silent: the rows read the same in either file, so only their absence here shows.
-    // Which rows are still open is the rows' own ✅ marks, not a list here — this message named
-    // R1 and R3 as open after both had closed (R1 on 2026-09-23, R3 on 2026-09-24).
+    // The standing queue does not leave with the dated entries. Moving it was the mistake the
+    // docstring records, and it is silent: the rows read the same in either file, so only their
+    // absence shows. An open row stays in STATUS; a closed one moves to the closed registry
+    // under the same number (`status_holds_no_closed_item` keeps the two apart), so a row is
+    // looked for on every page — never in the session log or a start-block record.
+    let pages = status_pages();
     for row in ["**X1**", "**X2**", "**X3**", "**R1**", "**R3**"] {
         assert!(
-            status.contains(row),
-            "docs/STATUS.md no longer carries the standing queue row {row}. The queue is a \
-             list a session reads for what to do next, not a dated record, so its rows belong \
-             here and not in docs/HISTORY.md — open or closed. If one has closed, mark it ✅ \
-             here rather than moving it: other documents cite the rows by number."
+            pages.iter().any(|(_, text)| text.contains(row)),
+            "the standing queue row {row} is in neither docs/STATUS.md nor its closed registry. \
+             The queue is a list a session reads for what to do next, not a dated record: an \
+             open row stays in STATUS, a closed one moves to docs/history/status-closed-NNN.md \
+             under the same number — other documents cite the rows by number."
         );
     }
 }

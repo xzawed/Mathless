@@ -199,6 +199,10 @@ fn no_document_says_a_closed_question_is_open() {
     }
 
     for (path, text) in every_markdown_file() {
+        // A record says what was open on its day; only live prose sends a session anywhere (⑤).
+        if is_record(&path) {
+            continue;
+        }
         for (no, line) in text.lines().enumerate() {
             let flat = flatten_prose(line);
             for n in &closed {

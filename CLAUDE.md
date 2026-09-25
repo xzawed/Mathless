@@ -19,6 +19,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 빠져 있었고, 하필 그것이 지도의 첫 행이자 *"새 세션은 이 문서를 먼저 읽는다"* 고 자칭하는 문서였다
 (2026-09-23 감사).
 
+**단 `docs/HISTORY.md`와 `docs/history/`는 보관 문서다 — 통째로 읽지 않고, 인용된 `§9-N`이나 절만
+찾아 읽는다.** `HISTORY.md`는 Read 한 번에 들어가지 않는다(256 KB 상한을 넘어 읽기 자체가 거부된다,
+2026-09-25 실측).
+
 ## 큰 그림 (여러 문서를 종합한 아키텍처)
 
 핵심 정체성은 한 문장이다: **컴파일 타임 변환 + 네이티브 출력 + C ABI 호스트 연동으로, 호스트 재빌드 없이 타입 있는 로직을 보호된 네이티브 모듈로 붙인다.**
@@ -122,6 +126,7 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 - 설계 변경은 해당 `docs/*.md`를 **먼저** 수정한다.
 - **소스 편집에 스크립트를 쓰지 않는다.** 이스케이프가 줄 연속 `\`를 먹으면 진단에 공백 뭉침이 되돌아오고 파일에 NUL 바이트가 들어간다 — 반복해서 일어났고, 그 실패를 재려고 쓴 스캐너까지 같은 이유로 헛돌았다. 불가피하면 백슬래시를 `chr(92)`로 구성한다. **여러 치환을 한 배치로 묶지 않는다** — 중간 실패가 앞선 성공까지 버린다(STATUS §7-3).
 - **docs만 바뀐 PR도 관련 가드는 돌린다**(`cargo test -p ml_oracle --test doc_claims`). 전체 스위트를 건너뛰는 것은 괜찮지만, 초 단위 확인을 분 단위 CI 왕복으로 미루지 않는다(STATUS §7-3).
+- **`docs/STATUS.md`는 Read 한 번에 들어가야 한다**(`doc_claims.rs`의 `status_fits_in_one_read`). 넘치면 지우지 말고, 닫힌 항목을 한 줄 + 본문 링크로 접고 서사는 `docs/history/status-<절>.md`로 바이트 그대로 옮긴다. 옮긴 표제는 한 줄 스텁으로 남긴다 — `STATUS §N` 인용이 주소다(`every_status_citation_resolves`).
 - 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트하며, **`hosts/c-host-link/`가 두 번째 소비 경로(헤더 + `.lib` 링크)를 닫는다**(2026-09-03). **`hosts/delphi-host/`는 2026-09-07에 처음 컴파일·실행됐고, 2026-09-09에 로컬 게이트가 됐다**(`MATHLESS_GATE_DELPHI` — `dcc64`가 거부하면 `bds.exe -b`로 IDE 빌드를 부른다). Free Pascal은 **CI 게이트**다(`MATHLESS_GATE_FPC`·`MATHLESS_GATE_FPC_HOST`) — 다만 `-Mdelphi`는 방언 에뮬레이션이라 **Delphi 게이트를 대신하지 못한다**. **CI에 도는 Delphi 게이트는 없다.**
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.

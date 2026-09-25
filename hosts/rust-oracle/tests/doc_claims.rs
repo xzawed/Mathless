@@ -3917,9 +3917,16 @@ fn the_history_archive_is_indexed_and_numbered() {
     let mut unique = stubs.clone();
     unique.sort_unstable();
     unique.dedup();
-    assert_eq!(unique.len(), stubs.len(), "HISTORY.md stubs some `§9-N` more than once");
+    assert_eq!(
+        unique.len(),
+        stubs.len(),
+        "HISTORY.md stubs some `§9-N` more than once"
+    );
 
-    let mut entries: Vec<u32> = files.iter().filter_map(|(path, _)| entry_number(path)).collect();
+    let mut entries: Vec<u32> = files
+        .iter()
+        .filter_map(|(path, _)| entry_number(path))
+        .collect();
     entries.sort_unstable();
     assert!(
         entries.len() >= 62,
@@ -3957,7 +3964,9 @@ fn the_history_archive_is_indexed_and_numbered() {
         );
     }
     for (path, body) in &files {
-        if path.starts_with("docs/history/start-block-") && path != "docs/history/start-block-index.md" {
+        if path.starts_with("docs/history/start-block-")
+            && path != "docs/history/start-block-index.md"
+        {
             assert!(
                 body.replace('\r', "").starts_with("> ### "),
                 "{path} does not begin with a quoted `> ### <date>` heading — a ▶ record moves \

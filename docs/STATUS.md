@@ -4,11 +4,12 @@
 > 측정값은 그 시점 `main` 기준이며, `git log`·`docs/slices/README.md`·각 SPEC이 정본이다.
 >
 > 이 문서는 **현재와 다음**만 담는다. 닫힌 항목은 한 줄로 남고, 그 서사와 날짜 붙은 기록은
-> `docs/history/status-<절>.md`(2026-09-25에 이 문서에서 옮긴 원문)와 [`HISTORY.md`](HISTORY.md)(세션
-> 기록 §9-N)에 있다. **Read 한 번에 들어가야 한다** — `doc_claims.rs`의 `status_fits_in_one_read`가
-> 크기를 잰다. 넘치면 지우지 말고, 닫힌 항목을 한 줄로 접어 서사를 옮긴다.
+> `docs/history/status-<절>.md`(2026-09-25에 이 문서에서 옮긴 원문)와 세션 기록 §9-N(색인은
+> [`HISTORY.md`](HISTORY.md), 원문은 `docs/history/9-N.md`)에 있다. **Read 한 번에 들어가야 한다** —
+> `doc_claims.rs`의 `status_fits_in_one_read`가 크기를 잰다. 넘치면 지우지 말고, 닫힌 항목을 한 줄로 접어
+> 서사를 옮긴다.
 >
-> **가장 최근에 잰 값은 `HISTORY.md`의 맨 위 항목에 있다.** 이 문서와 다르면 그쪽이 최신이다 —
+> **가장 최근에 잰 값은 `HISTORY.md` 맨 위 스텁이 가리키는 기록에 있다.** 이 문서와 다르면 그쪽이 최신이다 —
 > §9-N은 날짜 붙은 기록이라 나중에 고쳐 쓰지 않는다. 이 머리말의 이전 판은
 > [`history/status-1.md`](history/status-1.md).
 
@@ -308,7 +309,8 @@
 
 ## 8. 이력
 
-- **세션 기록(§9-N):** [`docs/HISTORY.md`](HISTORY.md) — 최신이 맨 위. 2026-09-22까지 이 파일 §9 안에 있었다.
+- **세션 기록(§9-N):** 색인은 [`docs/HISTORY.md`](HISTORY.md)(한 줄 스텁, 최신이 맨 위), 원문은
+  `docs/history/9-N.md`(2026-09-25 분할). 2026-09-22까지 이 파일 §9 안에 있었다.
 - **슬라이스 색인:** `docs/slices/README.md` — 각 슬라이스의 상태·내용·SPEC/구현 PR 번호.
 - **phase 계획:** `docs/phase1/SPEC.md` + `WBS.md`(W0~W17).
 - **2026-08-29 ~ 09-05 세션 요약(PR #34~#144):** [`history/status-8.md`](history/status-8.md).
@@ -347,10 +349,9 @@
 > **▶ 다음 세션 — 여기서 시작한다 (2026-09-25).** 로드맵 검토의 결론(§9-64.9)은 그대로이고, 그 후속 앞에
 > HISTORY 분할이 온다. 순서대로:
 >
-> 0. **HISTORY 분할(PR 2) — 설계를 사용자에게 먼저 보인다.** `HISTORY.md`(374 KB)는 여전히 Read가 거부한다.
->    방향은 정했다(Grok E): 항목당 파일 `docs/history/9-N.md` + `HISTORY.md` 색인. 함께 고칠 것 —
->    `every_cited_history_entry_has_a_heading`(HISTORY.md만 읽고 중복 번호를 따로 센다) · HISTORY 면제 5곳(정확한
->    경로 일치) · "▶ 블록 기록" 절(65 KB — 날짜 항목으로 나눈다) · 옮기면 상대 링크가 한 단계 어긋난다(§9-65.5).
+> 0. ✅ **HISTORY 분할 — 끝났다(2026-09-25, 사용자 승인 설계).** `HISTORY.md`는 한 줄 스텁 표제의 색인
+>    (약 14 KB, Read 한 번)이고, 원문은 `docs/history/9-N.md` 65개와 ▶ 기록 `start-block-NNN.md` 46개다.
+>    새 기록은 **새 파일** + 스텁 한 줄이다. 경위는 §9-65.6.
 > 1. **문서 정합 둘 — 결정 불필요, 바로 한다.** ① `SECURITY.md`의 *"⏳ 미구현"* 한 줄이 P1의 **개발/배포
 >    빌드 분리(D13)** 와 P2의 **암호화 로딩**을 빠뜨린다 — 다시 세지 말고 P1·P2 절을 가리키게 한다.
 >    ② `ROADMAP.md` Phase 4의 **ABI 버전 정책**과 **C++ 헤더 컴파일**은 이미 구현됐다(`HOST_ABI.md`
@@ -369,14 +370,15 @@
 > ⚠ **이 머신의 전체 게이트는 6회 중 2회 실패한다**(§9-63.5) — 실패를 보면 먼저 원인을 읽는다.
 > 강한 신호는 CI 두 잡이다.
 >
-> 📌 **본문은 `HISTORY.md` §9-65다.** 그 앞의 2026-09-24 항목(잔여 작업 전수 · 로드맵 검토의 인계)은
-> `HISTORY.md`의 "▶ 블록 기록" 맨 위로 옮겼다(바이트 동일).
+> 📌 **본문은 §9-65다**(`docs/history/9-65.md`). 그 앞의 2026-09-24 항목(잔여 작업 전수 · 로드맵 검토의
+> 인계)은 바이트 그대로 옮겼다 — 지금은 `docs/history/start-block-046.md`다.
 >
 >
-> ### 그 앞의 항목들 — **본문은 [`HISTORY.md`](HISTORY.md)의 "▶ 블록 기록" 절로 옮긴다 (2026-09-23부터)**
+> ### 그 앞의 항목들 — **본문은 `docs/history/start-block-NNN.md`로 옮긴다 (2026-09-23부터)**
 >
-> 세션마다 가장 오래된 항목을 그 절로 **바이트 그대로** 옮기고, 색인
-> [`history/start-block-index.md`](history/start-block-index.md)에 한 줄을 더한다(날짜 · 무엇을 했나 · §9-N).
+> 세션마다 가장 오래된 항목을 **다음 번호의 새 파일** `start-block-NNN.md`로 **바이트 그대로** 옮기고,
+> 색인 [`history/start-block-index.md`](history/start-block-index.md)에 한 줄을 더한다(날짜 · 무엇을 했나 ·
+> §9-N). 이미 있는 기록 파일은 다시 편집하지 않는다(2026-09-25까지는 `HISTORY.md`의 한 절이었다).
 > 그 아래의 착수 대기 표(N·D·X·R·A)는 날짜 기록이 아니라 **상시 목록**이라 옮기지 않는다 — 열린 행은
 > ✅가 없는 행이다. 이 색인이 생긴 경위(날짜 항목 45개 · 759줄)는 [`history/status-9.md`](history/status-9.md).
 >
@@ -447,7 +449,8 @@
 
 ## 9-N 세션 기록 — [`HISTORY.md`](HISTORY.md)로 옮겼다 (2026-09-22)
 
-날짜 붙은 세션 기록(`### 9-1.`부터)은 [`docs/HISTORY.md`](HISTORY.md)에 있다 — 최신이 맨 위이고, 날짜
-붙은 최신 측정값은 그 맨 위 항목이다. **§9-N을 인용하는 문장은 그대로 유효하다**: 표제가 바이트 단위로
-보존됐고 `doc_claims.rs`의 `every_cited_history_entry_has_a_heading`이 강제한다. 옮긴 경위는
-[`history/status-8.md`](history/status-8.md).
+날짜 붙은 세션 기록은 [`docs/HISTORY.md`](HISTORY.md)가 색인이고(한 줄 스텁, 최신이 맨 위) 원문은
+`docs/history/9-N.md`다(2026-09-25 분할) — 날짜 붙은 최신 측정값은 맨 위 스텁이 가리키는 기록이다.
+**§9-N을 인용하는 문장은 그대로 유효하다**: 인용은 스텁 표제로 떨어지고 `doc_claims.rs`의
+`every_cited_history_entry_has_a_heading`이, 스텁과 파일의 짝은 `the_history_archive_is_indexed_and_numbered`가
+강제한다. 옮긴 경위는 [`history/status-8.md`](history/status-8.md).

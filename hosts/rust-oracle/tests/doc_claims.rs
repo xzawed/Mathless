@@ -857,7 +857,7 @@ fn no_document_states_a_rust_version_other_than_the_pin() {
 
     let mut seen = 0usize;
     for (path, text) in every_markdown_file() {
-        if path == "docs/HISTORY.md" {
+        if is_dated_record(&path) {
             continue;
         }
         let bytes: Vec<char> = text.chars().collect();
@@ -982,7 +982,7 @@ fn a_rejected_slice_is_not_described_as_merely_pending() {
     );
 
     for (path, text) in every_markdown_file() {
-        if path == "docs/HISTORY.md" || path.starts_with("docs/slices/") {
+        if is_dated_record(&path) || path.starts_with("docs/slices/") {
             continue;
         }
         let flat = flatten_prose(&text);
@@ -1027,7 +1027,7 @@ fn no_document_calls_interface_metadata_unimplemented() {
     );
 
     for (path, text) in every_markdown_file() {
-        if path == "docs/HISTORY.md" {
+        if is_dated_record(&path) {
             continue;
         }
         let flat = flatten_prose(&text);
@@ -1077,7 +1077,7 @@ fn no_document_says_c_is_the_only_gated_host() {
     );
 
     for (path, text) in every_markdown_file() {
-        if path == "docs/HISTORY.md" {
+        if is_dated_record(&path) {
             continue;
         }
         let flat: String = flatten_prose(&text);
@@ -2356,6 +2356,20 @@ fn every_markdown_file() -> Vec<(String, String)> {
     every_file_ending_in(&[".md"])
 }
 
+/// **Dated records, which present-tense guards skip.** `docs/HISTORY.md` is the index of the
+/// session log, and `docs/history/` holds the entries (`9-N.md`), the ▶ block records
+/// (`start-block-NNN.md`) and the STATUS sections moved out on 2026-09-25. Each says what was
+/// true on its day; rewriting a record to satisfy today's check is the wrong fix.
+///
+/// One helper rather than six copies of the condition: when the log was split out of
+/// `HISTORY.md`, the five guards that exempted that one path by equality began reading the
+/// entries under their new names. Measured: `no_document_says_c_is_the_only_gated_host` went red
+/// on `history/9-21.md` and `no_document_publishes_a_baseline_that_requires_only_some_gates`
+/// on `history/9-26.md` — both written before the Pascal gates existed.
+fn is_dated_record(path: &str) -> bool {
+    path == "docs/HISTORY.md" || path.starts_with("docs/history/")
+}
+
 /// The walk itself, so that two scopes cannot drift into two different walks.
 ///
 /// A second copy of this loop is the same defect shape as a second copy of the slice-index
@@ -2426,10 +2440,16 @@ fn every_cited_history_entry_has_a_heading() {
             headings.push(n);
         }
     }
+    // Distinct numbers: a duplicated heading must not stand in for a lost one (Grok,
+    // 2026-09-25 — the floor below counted repeats). Since the split the headings are one-line
+    // stubs that link `docs/history/9-N.md`; `the_history_archive_is_indexed_and_numbered`
+    // checks that every stub has its file.
+    headings.sort_unstable();
+    headings.dedup();
     assert!(
         headings.len() >= 62,
-        "docs/HISTORY.md carries {} `### 9-N.` headings, fewer than the 62 that existed in \
-         docs/STATUS.md before the move. Entries were lost, not moved",
+        "docs/HISTORY.md carries {} distinct `### 9-N.` headings, fewer than the 62 that existed \
+         in docs/STATUS.md before the move. Entries were lost, not moved",
         headings.len()
     );
 
@@ -2562,12 +2582,11 @@ fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
         if !text.contains("LICENSE-OUTPUT-EXCEPTION") {
             continue;
         }
-        // `docs/history/` holds sections moved out of STATUS.md byte-identical on 2026-09-25 —
-        // dated records, not summaries of today's grant. Measured when they moved: one hit,
-        // `status-4.md`'s §4-3, written 2026-09-02, the day before `.lib` existed. It was true
-        // that day, and rewriting a record to satisfy a present-tense check is the wrong fix.
-        // STATUS.md itself still cites the licence and still lists the full set, so it stays in.
-        if path.starts_with("docs/history/") {
+        // Dated records are not summaries of today's grant. Measured when the STATUS sections
+        // moved to `docs/history/`: one hit, `status-4.md`'s §4-3, written 2026-09-02, the day
+        // before `.lib` existed. It was true that day. STATUS.md itself still cites the licence
+        // and still lists the full set, so it stays in.
+        if is_dated_record(&path) {
             continue;
         }
         for ext in &covered {
@@ -3279,7 +3298,7 @@ fn no_document_publishes_a_baseline_that_requires_only_some_gates() {
     );
 
     for (path, text) in every_markdown_file() {
-        if path == "docs/HISTORY.md" {
+        if is_dated_record(&path) {
             continue;
         }
         for (no, line) in text.lines().enumerate() {
@@ -3442,11 +3461,13 @@ fn every_pointer_to_the_current_state_names_status() {
 /// here. After the move the block sat at 93, so the room left is real rather than nominal.
 ///
 /// **What to do when it goes red** is in the message and matters more than the limit: move
-/// the oldest DATED ENTRIES to `HISTORY.md` verbatim and add a dated row to the index,
-/// `docs/history/start-block-index.md`. `#265` and the 2026-09-23 move both did that and
-/// verified the moved text byte-for-byte against `git show` afterwards. The index itself
-/// lived inside the block until 2026-09-25, when `status_fits_in_one_read` moved it out; the
-/// block keeps its `그 앞의 항목들` heading as the pointer to it.
+/// the oldest DATED ENTRY verbatim into a new `docs/history/start-block-NNN.md` (the next
+/// number) and add a dated row to the index, `docs/history/start-block-index.md`. `#265` and
+/// the 2026-09-23 move did the same into `HISTORY.md` and verified the moved text
+/// byte-for-byte against `git show` afterwards; on 2026-09-25 `HISTORY.md` became an index and
+/// the records became one file each. The index itself lived inside the block until 2026-09-25,
+/// when `status_fits_in_one_read` moved it out; the block keeps its `그 앞의 항목들` heading as
+/// the pointer to it.
 ///
 /// Two wrong answers, one of which was made and caught. Trimming by deleting is the first.
 /// The second is moving more than the dated entries: the first cut of the 2026-09-23 move
@@ -3500,9 +3521,9 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
         "the ▶ block's live entries run {len} lines, over the {BUDGET}-line budget (the dated \
          index below them is not counted — it grows one line per session and is bounded). The \
          heading says this is where a session starts, and CLAUDE.md sends every session to it; \
-         at {len} lines of narrative it is a log instead. Move the oldest DATED ENTRIES to \
-         docs/HISTORY.md VERBATIM and add a dated row to docs/history/start-block-index.md, \
-         then verify byte-for-byte against `git show`. If there is only ONE entry, the entry itself is too \
+         at {len} lines of narrative it is a log instead. Move the oldest DATED ENTRY \
+         VERBATIM into a new docs/history/start-block-NNN.md (the next number) and add a dated \
+         row to docs/history/start-block-index.md, then verify byte-for-byte against `git show`. If there is only ONE entry, the entry itself is too \
          long: its retrospective belongs in that session's §9-N, and durable rules belong in \
          §7 — leave a pointer, not a summary. Do not trim by deleting, and do not move the \
          standing N·D·X·R·A \
@@ -3816,5 +3837,163 @@ fn every_status_citation_resolves() {
              a one-line stub that links the new file — the citation is the address, and it is \
              spread across the tree"
         );
+    }
+}
+
+/// **`HISTORY.md` is the index of the session log, and an index has to open in one read.**
+///
+/// Measured 2026-09-25: the Read tool refused the file outright — 378 KB against its 256 KB cap
+/// — and `CLAUDE.md`'s reading order put it second, right after `STATUS.md`. The split turned
+/// it into one-line `### 9-N.` stubs, each linking `docs/history/9-N.md`, so that the `§9-N`
+/// citations spread across the tree still land on a heading here. Same budget and same `\r`
+/// rule as `status_fits_in_one_read`.
+#[test]
+fn the_history_index_fits_in_one_read() {
+    const BUDGET: usize = 45_000;
+    let len = read("docs/HISTORY.md").replace('\r', "").len();
+    assert!(
+        len <= BUDGET,
+        "docs/HISTORY.md is {len} bytes (LF), over the {BUDGET}-byte budget — it is the index of \
+         the session log, and past the Read tool's cap a session sees only its first page. A \
+         session's record goes to a NEW file, docs/history/9-N.md, and HISTORY.md gains one stub \
+         line `### 9-N. <title> → [본문](history/9-N.md)` at the top — never the body."
+    );
+}
+
+/// **Every stub in `HISTORY.md` has its file, every file has its stub, and the ▶ records are
+/// numbered without gaps.**
+///
+/// The split's two promises, checked from both ends. A stub whose file is missing strands the
+/// `§9-N` citations that land on it; a file without a stub is an entry the index hides. The
+/// file's first line must be the same `### 9-N.` heading, so a file renamed or overwritten with
+/// another entry does not pass as the right one.
+///
+/// ▶ block records are `start-block-NNN.md`, numbered from 001 (the oldest) and never edited
+/// once written: a session moves its oldest ▶ entry into the next number. Contiguous numbering
+/// is what makes "the next number" unambiguous.
+#[test]
+fn the_history_archive_is_indexed_and_numbered() {
+    let history = read("docs/HISTORY.md").replace('\r', "");
+    let files: Vec<(String, String)> = every_markdown_file()
+        .into_iter()
+        .filter(|(path, _)| path.starts_with("docs/history/"))
+        .collect();
+
+    // `docs/history/9-<digits>.md` → the number in its name.
+    let entry_number = |path: &str| -> Option<u32> {
+        path.strip_prefix("docs/history/9-")?
+            .strip_suffix(".md")?
+            .parse()
+            .ok()
+    };
+
+    let mut stubs: Vec<u32> = Vec::new();
+    for line in history.lines() {
+        let Some(rest) = line.strip_prefix("### 9-") else {
+            continue;
+        };
+        let Some((num, _)) = rest.split_once(". ") else {
+            continue;
+        };
+        let Ok(n) = num.parse::<u32>() else {
+            continue;
+        };
+        let target = format!("docs/history/9-{n}.md");
+        assert!(
+            line.contains(&format!("](history/9-{n}.md)")),
+            "HISTORY.md's `### 9-{n}.` heading does not link history/9-{n}.md. Since the split \
+             each heading here is a one-line stub pointing at its entry's own file"
+        );
+        let Some((_, body)) = files.iter().find(|(path, _)| *path == target) else {
+            panic!("HISTORY.md stubs §9-{n}, but {target} does not exist");
+        };
+        assert!(
+            body.replace('\r', "").starts_with(&format!("### 9-{n}. ")),
+            "{target} does not begin with its own `### 9-{n}.` heading — the file holds another \
+             entry, or the entry lost its heading"
+        );
+        stubs.push(n);
+    }
+    // Newest first, as the preface says: 가장 큰 번호부터 9-1로 내려간다. The log broke that once
+    // before the split — §9-53 sat between §9-60 and §9-59 — and nothing noticed until the
+    // split's review read the stubs in a row (Grok, 2026-09-25).
+    for pair in stubs.windows(2) {
+        assert!(
+            pair[0] > pair[1],
+            "HISTORY.md lists §9-{} above §9-{}: the stubs run newest first, largest number at \
+             the top, as its preface says",
+            pair[0],
+            pair[1]
+        );
+    }
+    let mut unique = stubs.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        stubs.len(),
+        "HISTORY.md stubs some `§9-N` more than once"
+    );
+
+    let mut entries: Vec<u32> = files
+        .iter()
+        .filter_map(|(path, _)| entry_number(path))
+        .collect();
+    entries.sort_unstable();
+    assert!(
+        entries.len() >= 62,
+        "docs/history/ holds {} `9-N.md` entries, fewer than the 62 the log had when it first \
+         moved out of STATUS.md",
+        entries.len()
+    );
+    for n in &entries {
+        assert!(
+            stubs.contains(n),
+            "docs/history/9-{n}.md has no stub in HISTORY.md, so the index hides it"
+        );
+    }
+
+    // Three digits, always: `.parse()` alone would take `start-block-47.md` as 47, and the next
+    // number would sort out of place in every listing (Grok).
+    let mut blocks: Vec<u32> = Vec::new();
+    for (path, _) in &files {
+        let Some(stem) = path
+            .strip_prefix("docs/history/start-block-")
+            .and_then(|rest| rest.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        if stem == "index" {
+            continue;
+        }
+        assert!(
+            stem.len() == 3 && stem.bytes().all(|b| b.is_ascii_digit()),
+            "{path}: a ▶ record is named start-block-NNN.md with exactly three digits"
+        );
+        blocks.push(stem.parse().expect("three ascii digits"));
+    }
+    blocks.sort_unstable();
+    assert!(
+        !blocks.is_empty(),
+        "docs/history/ holds no start-block-NNN.md records"
+    );
+    for (i, n) in blocks.iter().enumerate() {
+        assert_eq!(
+            *n,
+            i as u32 + 1,
+            "start-block records must be numbered 001, 002, … without gaps or repeats; found \
+             {blocks:?}"
+        );
+    }
+    for (path, body) in &files {
+        if path.starts_with("docs/history/start-block-")
+            && path != "docs/history/start-block-index.md"
+        {
+            assert!(
+                body.replace('\r', "").starts_with("> ### "),
+                "{path} does not begin with a quoted `> ### <date>` heading — a ▶ record moves \
+                 byte-identical, quote marks included"
+            );
+        }
     }
 }

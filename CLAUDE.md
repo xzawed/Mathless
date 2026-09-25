@@ -19,9 +19,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 빠져 있었고, 하필 그것이 지도의 첫 행이자 *"새 세션은 이 문서를 먼저 읽는다"* 고 자칭하는 문서였다
 (2026-09-23 감사).
 
-**단 `docs/HISTORY.md`와 `docs/history/`는 보관 문서다 — 통째로 읽지 않고, 인용된 `§9-N`이나 절만
-찾아 읽는다.** `HISTORY.md`는 Read 한 번에 들어가지 않는다(256 KB 상한을 넘어 읽기 자체가 거부된다,
-2026-09-25 실측).
+**단 `docs/HISTORY.md`는 세션 기록의 색인이고 원문은 `docs/history/`에 있다 — 통째로 훑지 말고, 인용된
+`§9-N`이나 절만 찾아 읽는다.**
 
 ## 큰 그림 (여러 문서를 종합한 아키텍처)
 

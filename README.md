@@ -177,7 +177,7 @@ itself is never rebuilt.
 | Document | What it covers |
 |----------|----------------|
 | [docs/STATUS.md](docs/STATUS.md) | Measured state of `main`, open decisions, and the next slice |
-| [docs/HISTORY.md](docs/HISTORY.md) | The dated session log (`§9-N`), newest first — what STATUS used to carry. An archive: look up the entry a document cites; do not read it whole. The STATUS sections moved out on 2026-09-25 are in `docs/history/` |
+| [docs/HISTORY.md](docs/HISTORY.md) | The index of the dated session log (`§9-N`), newest first — one stub per entry, whose text is in `docs/history/9-N.md`. An archive: look up the entry a document cites, not the whole log. `docs/history/` also holds the ▶ block records and the STATUS sections moved out on 2026-09-25 |
 | [docs/VISION.md](docs/VISION.md) | Why Mathless exists, and what success looks like |
 | [docs/LANGUAGE.md](docs/LANGUAGE.md) | Surface syntax vs the internal model |
 | [docs/HOST_ABI.md](docs/HOST_ABI.md) | The C ABI, host integration, and the liveness contract |

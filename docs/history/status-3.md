@@ -2,7 +2,7 @@
 
 > [`STATUS.md`](../STATUS.md) §3을 표제만 남기고 접으면서, **옮기기 전의 원문(163~433행)을 바이트
 > 그대로** 여기 둔다. 고쳐 쓰지 않는다 — 본문 속 "이 문서"·"이 절"·줄 번호는 옮기기 전의 `STATUS.md`를,
-> 상대 링크는 `docs/`를 기준으로 가리키고, 수치는 그날의 것이다. 현재 상태는 `STATUS.md`가 정본이다.
+> 상대 링크는 이 파일 위치를 기준으로 가리키고(2026-09-25에 필요한 곳에만 `../`를 붙였다 — 원문과 다른 바이트는 그것뿐이다), 수치는 그날의 것이다. 현재 상태는 `STATUS.md`가 정본이다.
 
 ---
 
@@ -18,7 +18,7 @@
 
 ### 3a-9. ✅ 닫힘 — 문자열 연결과 `i32 as string` (2026-09-02, SPEC #107 / 구현 #108)
 
-**모듈이 처음으로 바이트를 만든다.** [`SPEC-string-concat.md`](slices/SPEC-string-concat.md).
+**모듈이 처음으로 바이트를 만든다.** [`SPEC-string-concat.md`](../slices/SPEC-string-concat.md).
 DP-K1~K9 사용자 확인(권고안 그대로).
 
 **다음 세션이 알아야 할 것:**
@@ -45,7 +45,7 @@ DP-K1~K9 사용자 확인(권고안 그대로).
 ### 3a-8. ✅ 닫힘 — 로드 시점 인터페이스 지문 `ml_iface_hash` (2026-09-02, SPEC #103 / 구현 #105)
 
 호스트가 **자기가 빌드된 인터페이스와 다른 모듈을 거부한다.**
-[`SPEC-iface-hash.md`](slices/SPEC-iface-hash.md). DP-H1~H10 사용자 확인(권고안 그대로).
+[`SPEC-iface-hash.md`](../slices/SPEC-iface-hash.md). DP-H1~H10 사용자 확인(권고안 그대로).
 
 **다음 세션이 알아야 할 것:**
 
@@ -83,7 +83,7 @@ DP-K1~K9 사용자 확인(권고안 그대로).
 ### 3a-7. ✅ 닫힘 — "한 이름, 한 본문" export 래퍼 (2026-09-02, SPEC #100 / 구현 #101)
 
 모든 함수를 `ml_fn_<name>` 본문 + export에 얇은 C ABI 어댑터로 쪼갰다.
-[`SPEC-export-wrappers.md`](slices/SPEC-export-wrappers.md). DP-W1~W5 사용자 확인.
+[`SPEC-export-wrappers.md`](../slices/SPEC-export-wrappers.md). DP-W1~W5 사용자 확인.
 
 **다음 세션이 알아야 할 것:**
 
@@ -103,7 +103,7 @@ DP-K1~K9 사용자 확인(권고안 그대로).
 
 ### 3a-6. ✅ 닫힘 — 실패 가능 함수 호출 `try` (2026-09-01, SPEC #96 / 구현 #97~#99)
 
-모든 `-> T!` 함수가 **잎**이던 제한을 풀었다. [`SPEC-fallible-calls.md`](slices/SPEC-fallible-calls.md).
+모든 `-> T!` 함수가 **잎**이던 제한을 풀었다. [`SPEC-fallible-calls.md`](../slices/SPEC-fallible-calls.md).
 DP-F1~F10 전부 확인·구현 완료. **DP-F9(중복 `error` 값 거부)와 DP-F10(헤더 에러 출처 주석)은
 WF8에서 닫혔다**(#99).
 
@@ -122,7 +122,7 @@ WF8에서 닫혔다**(#99).
 
 ### 3a-5. ✅ 닫힘 — 문자열 **반환** (2026-09-01, SPEC #91 / 구현 #92)
 
-Q12 caller-allocates 프로토콜의 **첫 사용자**. [`SPEC-string-return.md`](slices/SPEC-string-return.md).
+Q12 caller-allocates 프로토콜의 **첫 사용자**. [`SPEC-string-return.md`](../slices/SPEC-string-return.md).
 DP-T0~T8 전부 사용자 확인. `-> string!` → `int32_t mlx_f(…, char* ml_buf, int32_t ml_cap, int32_t* ml_needed)`.
 
 **다음 세션이 알아야 할 것:**
@@ -147,7 +147,7 @@ DP-T0~T8 전부 사용자 확인. `-> string!` → `int32_t mlx_f(…, char* ml_
 
 ### 3a-4. ✅ 닫힘 — 문자열 **입력** 파라미터 (2026-08-31, SPEC #88 / 구현 #89)
 
-`string` 파라미터 + `==`/`!=`. [`SPEC-string-input.md`](slices/SPEC-string-input.md).
+`string` 파라미터 + `==`/`!=`. [`SPEC-string-input.md`](../slices/SPEC-string-input.md).
 DP-S1 = NUL 종료 `const char*`, DP-S2 = 불투명 바이트(둘 다 사용자 승인 = 권고안 그대로).
 
 **§7을 또 돌려서 고른 것이 아니다** — Q12가 닫히며 열린 세 슬라이스 중 하나였고, 문자열이 필요한
@@ -173,7 +173,7 @@ DP-S1 = NUL 종료 `const char*`, DP-S2 = 불투명 바이트(둘 다 사용자 
 
 ### 3a-3. ✅ 닫힘 — 반올림 내장 함수 (2026-08-31, SPEC #82 / 구현 #83)
 
-`floor`·`ceil`·`round`·`trunc`. [`SPEC-rounding.md`](slices/SPEC-rounding.md).
+`floor`·`ceil`·`round`·`trunc`. [`SPEC-rounding.md`](../slices/SPEC-rounding.md).
 
 **§7을 세 라운드 더 돌린 결과다**(급여·주문·상환). 스칼라 로직은 **전부 컴파일됐고**, 벽은 둘이었다:
 **배열**(두 번)과 **반올림**. 배열이 더 크지만 힙과 **Q12가 선행**하므로, 그동안 막을 수 있는 오답을
@@ -189,7 +189,7 @@ DP-S1 = NUL 종료 `const char*`, DP-S2 = 불투명 바이트(둘 다 사용자 
 
 ### 3a-2. ✅ 닫힘 — 명시적 `out` 파라미터 (2026-08-31, SPEC #79 / 구현 #80)
 
-값을 두 개 돌려줄 수단이 생겼다. [`SPEC-out-params.md`](slices/SPEC-out-params.md).
+값을 두 개 돌려줄 수단이 생겼다. [`SPEC-out-params.md`](../slices/SPEC-out-params.md).
 
 **§7의 방법이 §3b의 목록과 다른 답을 냈다 — 그게 이 항목의 요점이다.** 다음 슬라이스를 고르려고
 업무 규칙 넷을 오늘의 언어로 써 봤더니 `else`·`break`·복합 대입은 **하나도 아프지 않았다**:
@@ -204,7 +204,7 @@ DP-S1 = NUL 종료 `const char*`, DP-S2 = 불투명 바이트(둘 다 사용자 
 
 `/`와 `%`가 들어왔고 **둘 다 전역(total)** 이다(DP-D1 = (b), 사용자 승인).
 `x / 0` = `x % 0` = `0`, `i32::MIN / -1`은 wrap. 자세한 것은
-[`SPEC-i32-division.md`](slices/SPEC-i32-division.md).
+[`SPEC-i32-division.md`](../slices/SPEC-i32-division.md).
 
 **다음 세션이 알아야 할 것 두 가지:**
 

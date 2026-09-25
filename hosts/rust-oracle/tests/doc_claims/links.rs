@@ -100,8 +100,8 @@ fn the_glossary_defines_the_vocabulary_the_docs_use() {
 
 /// **Every `§9-N` cited anywhere resolves to a heading in the HISTORY index.**
 ///
-/// Why: 46 files cite `§9-N` 150 times, six of them product source comments, and a moved,
-/// renumbered or dropped entry would strand them silently. (#265)
+/// Why: 46 files cite `§9-N` 150 times, six of them product source comments, and a dropped,
+/// renumbered or mangled entry would strand them silently. (#265)
 #[test]
 fn every_cited_history_entry_has_a_heading() {
     // Headings live on the index pages: `HISTORY.md` and, once it has been rolled,

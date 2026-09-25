@@ -435,7 +435,7 @@ fn the_c_host_can_gate_every_module_name_the_compiler_accepts() {
 /// **No test creates a temp directory by hand — `common::TempOut` is the only way.**
 ///
 /// Why: hand-made trees leaked twice (1,720 trees once; eight in an afternoon after a new file
-/// copied the old helper). `TempOut` removes its tree even when a test panics. (#236)
+/// copied the old helper). `TempOut` (#219) removes its tree even when a test panics. (#236)
 #[test]
 fn no_test_creates_a_temp_directory_by_hand() {
     // The needles are ASSEMBLED, not written. Spelled literally they appear in this file — in

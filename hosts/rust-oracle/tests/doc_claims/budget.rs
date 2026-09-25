@@ -662,11 +662,12 @@ fn live_documents_do_not_accumulate_correction_notes() {
         }
     }
     for (p, _) in CEILINGS {
-        assert!(
-            docs.iter().any(|(path, _)| path == p),
-            "{p} has a ceiling here but no longer exists — a renamed document carries its \
-             ceiling to the new name"
-        );
+        if !docs.iter().any(|(path, _)| path == p) {
+            wrong.push(format!(
+                "{p} has a ceiling here but no longer exists — a renamed document carries its \
+                 ceiling to the new name"
+            ));
+        }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

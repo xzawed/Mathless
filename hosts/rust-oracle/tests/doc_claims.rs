@@ -3633,8 +3633,10 @@ fn status_fits_in_one_read() {
     let len = read("docs/STATUS.md").replace('\r', "").len();
     assert!(
         len <= BUDGET,
-        "docs/STATUS.md is {len} bytes (LF), over the {BUDGET}-byte budget — past it, the Read \
-         tool returns the file in pages and a session sees only the first. Do not trim by \
+        "docs/STATUS.md is {len} bytes (LF), over the {BUDGET}-byte budget. The budget sits \
+         below the Read tool's 25,000-token cap (about 51.5 KB for this file) so the ratio of \
+         prose to code can move; past that cap the tool returns the file in pages and a \
+         session sees only the first. Do not trim by \
          deleting: collapse CLOSED items to one line that links their narrative, and move the \
          narrative byte-identical to docs/history/status-<section>.md. A dated record moves \
          whole and leaves its heading as a one-line stub, so `STATUS §<n>` citations resolve. \
@@ -3676,8 +3678,10 @@ fn every_history_file_fits_in_one_read() {
     let mut linked = 0;
     for (at, _) in status.match_indices("](history/") {
         let rest = &status[at + 2..];
+        // A link may carry a fragment (`#…`) or a title (`"…"` after a space); the path ends
+        // at whichever comes first. Grok's review found the title case reading as a missing file.
         let end = rest
-            .find([')', '#'])
+            .find([')', '#', ' '])
             .expect("a markdown link into history/ that never closes");
         let target = format!("docs/{}", &rest[..end]);
         linked += 1;

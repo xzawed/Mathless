@@ -2370,6 +2370,51 @@ fn is_dated_record(path: &str) -> bool {
     path == "docs/HISTORY.md" || path.starts_with("docs/history/")
 }
 
+/// **The pages of the session-log index**, newest stubs first: `docs/HISTORY.md`, then any
+/// rolled pages `docs/history/index-NNN.md` from the newest roll down to 001. Each item is
+/// `(path, text without '\r', the prefix a stub on that page uses to link `9-N.md`)`.
+///
+/// Rolling is the procedure for when `HISTORY.md` itself outgrows one read: its OLDEST stubs
+/// move, unchanged except the link prefix, into the next `index-NNN.md`, and `HISTORY.md` keeps
+/// a link to that page. Nothing has been rolled yet (2026-09-25, 13.5 KB of 45 KB) — this is
+/// here so that the day the budget fires, the guards already know where the headings went and
+/// `§9-N` citations keep landing on one.
+fn history_index_pages() -> Vec<(String, String, &'static str)> {
+    let mut rolled: Vec<(u32, String, String)> = Vec::new();
+    for (path, text) in every_markdown_file() {
+        let Some(stem) = path
+            .strip_prefix("docs/history/index-")
+            .and_then(|rest| rest.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        assert!(
+            stem.len() == 3 && stem.bytes().all(|b| b.is_ascii_digit()),
+            "{path}: a rolled page of the HISTORY index is named index-NNN.md with three digits"
+        );
+        rolled.push((
+            stem.parse().expect("three digits"),
+            path,
+            text.replace('\r', ""),
+        ));
+    }
+    rolled.sort_by_key(|page| std::cmp::Reverse(page.0));
+    for (i, (n, path, _)) in rolled.iter().rev().enumerate() {
+        assert_eq!(
+            *n,
+            i as u32 + 1,
+            "{path}: rolled index pages are numbered 001, 002, … without gaps"
+        );
+    }
+    let mut pages = vec![(
+        "docs/HISTORY.md".to_string(),
+        read("docs/HISTORY.md").replace('\r', ""),
+        "history/",
+    )];
+    pages.extend(rolled.into_iter().map(|(_, path, text)| (path, text, "")));
+    pages
+}
+
 /// The walk itself, so that two scopes cannot drift into two different walks.
 ///
 /// A second copy of this loop is the same defect shape as a second copy of the slice-index
@@ -2426,26 +2471,35 @@ fn every_file_ending_in(suffixes: &[&str]) -> Vec<(String, String)> {
 /// rather than that the repository was already broken.
 #[test]
 fn every_cited_history_entry_has_a_heading() {
-    let history = read("docs/HISTORY.md");
-
+    // Headings live on the index pages: `HISTORY.md` and, once it has been rolled,
+    // `docs/history/index-NNN.md`. Since the split they are one-line stubs that link
+    // `docs/history/9-N.md`; `the_history_archive_is_indexed_and_numbered` checks each has its file.
     let mut headings: Vec<u32> = Vec::new();
-    for line in history.lines() {
-        let Some(rest) = line.strip_prefix("### 9-") else {
-            continue;
-        };
-        let Some((num, _)) = rest.split_once('.') else {
-            continue;
-        };
-        if let Ok(n) = num.parse::<u32>() {
-            headings.push(n);
+    for (_, text, _) in history_index_pages() {
+        for line in text.lines() {
+            let Some(rest) = line.strip_prefix("### 9-") else {
+                continue;
+            };
+            let Some((num, _)) = rest.split_once('.') else {
+                continue;
+            };
+            if let Ok(n) = num.parse::<u32>() {
+                headings.push(n);
+            }
         }
     }
-    // Distinct numbers: a duplicated heading must not stand in for a lost one (Grok,
-    // 2026-09-25 — the floor below counted repeats). Since the split the headings are one-line
-    // stubs that link `docs/history/9-N.md`; `the_history_archive_is_indexed_and_numbered`
-    // checks that every stub has its file.
+    // Each number once across every page: a duplicate must not stand in for a lost entry
+    // (Grok, 2026-09-25 — the floor below once counted repeats), and a number on two pages is a
+    // citation that could bind to either (Grok, on the rollover design).
+    let total = headings.len();
     headings.sort_unstable();
     headings.dedup();
+    assert_eq!(
+        headings.len(),
+        total,
+        "a `### 9-N.` heading appears twice across HISTORY.md and its rolled pages — each \
+         number must have exactly one heading, or a `§9-N` citation can land on the wrong one"
+    );
     assert!(
         headings.len() >= 62,
         "docs/HISTORY.md carries {} distinct `### 9-N.` headings, fewer than the 62 that existed \
@@ -3479,7 +3533,7 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
     // The budget is on the NARRATIVE, not the whole block, and the difference was measured
     // rather than assumed. After the 2026-09-23 move the block was 198 lines: 48 of live
     // entry and 150 of index. The index grows by ONE ROW PER SESSION and each row is one
-    // line — bounded by construction, and it is the navigation the block needs. The entries
+    // line — bounded by construction, and it was the navigation the block needed. The entries
     // are what grew to 759 lines. Budgeting the block punished the part that cannot run away
     // and left two lines of headroom for the part that can; the first version did exactly
     // that, and it fired on the commit that closed the slice.
@@ -3856,7 +3910,11 @@ fn the_history_index_fits_in_one_read() {
         "docs/HISTORY.md is {len} bytes (LF), over the {BUDGET}-byte budget — it is the index of \
          the session log, and past the Read tool's cap a session sees only its first page. A \
          session's record goes to a NEW file, docs/history/9-N.md, and HISTORY.md gains one stub \
-         line `### 9-N. <title> → [본문](history/9-N.md)` at the top — never the body."
+         line `### 9-N. <title> → [본문](history/9-N.md)` at the top — never the body. When the \
+         stubs alone outgrow the budget, ROLL: move the oldest stubs, unchanged except that \
+         their link loses `history/`, into the next docs/history/index-NNN.md, and leave \
+         HISTORY.md a link to that page. The citation and stub guards read the rolled pages \
+         too, so `§9-N` keeps landing on exactly one heading."
     );
 }
 
@@ -3873,7 +3931,8 @@ fn the_history_index_fits_in_one_read() {
 /// is what makes "the next number" unambiguous.
 #[test]
 fn the_history_archive_is_indexed_and_numbered() {
-    let history = read("docs/HISTORY.md").replace('\r', "");
+    let pages = history_index_pages();
+    let history = pages[0].1.clone();
     let files: Vec<(String, String)> = every_markdown_file()
         .into_iter()
         .filter(|(path, _)| path.starts_with("docs/history/"))
@@ -3888,40 +3947,70 @@ fn the_history_archive_is_indexed_and_numbered() {
     };
 
     let mut stubs: Vec<u32> = Vec::new();
-    for line in history.lines() {
-        let Some(rest) = line.strip_prefix("### 9-") else {
-            continue;
-        };
-        let Some((num, _)) = rest.split_once(". ") else {
-            continue;
-        };
-        let Ok(n) = num.parse::<u32>() else {
-            continue;
-        };
-        let target = format!("docs/history/9-{n}.md");
-        assert!(
-            line.contains(&format!("](history/9-{n}.md)")),
-            "HISTORY.md's `### 9-{n}.` heading does not link history/9-{n}.md. Since the split \
-             each heading here is a one-line stub pointing at its entry's own file"
-        );
-        let Some((_, body)) = files.iter().find(|(path, _)| *path == target) else {
-            panic!("HISTORY.md stubs §9-{n}, but {target} does not exist");
-        };
-        assert!(
-            body.replace('\r', "").starts_with(&format!("### 9-{n}. ")),
-            "{target} does not begin with its own `### 9-{n}.` heading — the file holds another \
-             entry, or the entry lost its heading"
-        );
-        stubs.push(n);
+    for (page, text, prefix) in &pages {
+        if page != "docs/HISTORY.md" {
+            let name = page
+                .strip_prefix("docs/history/")
+                .expect("a rolled page lives under docs/history/");
+            assert!(
+                history.contains(&format!("](history/{name})")),
+                "{page} holds rolled stubs, but HISTORY.md does not link it — the entries on it \
+                 are unreachable from the index a session opens"
+            );
+        }
+        // Stubs only: from a page's first stub to its last, every line is a stub. Body text
+        // between them is how the index would turn back into the log it replaced.
+        let lines: Vec<&str> = text.lines().collect();
+        let is_stub = |l: &&str| l.starts_with("### 9-");
+        if let (Some(first), Some(last)) = (
+            lines.iter().position(is_stub),
+            lines.iter().rposition(is_stub),
+        ) {
+            for (i, line) in lines[first..=last].iter().enumerate() {
+                assert!(
+                    is_stub(line),
+                    "{page}:{} sits between the stubs but is not one: {line:?}. The index holds \
+                     one line per entry — the entry's text belongs in its own docs/history/9-N.md",
+                    first + i + 1
+                );
+            }
+        }
+        for line in &lines {
+            let Some(rest) = line.strip_prefix("### 9-") else {
+                continue;
+            };
+            let Some((num, _)) = rest.split_once(". ") else {
+                continue;
+            };
+            let Ok(n) = num.parse::<u32>() else {
+                continue;
+            };
+            let target = format!("docs/history/9-{n}.md");
+            assert!(
+                line.contains(&format!("]({prefix}9-{n}.md)")),
+                "{page}'s `### 9-{n}.` heading does not link {prefix}9-{n}.md. Each heading on an \
+                 index page is a one-line stub pointing at its entry's own file"
+            );
+            let Some((_, body)) = files.iter().find(|(path, _)| *path == target) else {
+                panic!("{page} stubs §9-{n}, but {target} does not exist");
+            };
+            assert!(
+                body.replace('\r', "").starts_with(&format!("### 9-{n}. ")),
+                "{target} does not begin with its own `### 9-{n}.` heading — the file holds \
+                 another entry, or the entry lost its heading"
+            );
+            stubs.push(n);
+        }
     }
-    // Newest first, as the preface says: 가장 큰 번호부터 9-1로 내려간다. The log broke that once
-    // before the split — §9-53 sat between §9-60 and §9-59 — and nothing noticed until the
-    // split's review read the stubs in a row (Grok, 2026-09-25).
+    // Newest first, as the preface says: 가장 큰 번호부터 9-1로 내려간다 — across the pages too,
+    // since a roll moves the OLDEST stubs. The log broke that once before the split — §9-53 sat
+    // between §9-60 and §9-59 — and nothing noticed until the split's review read the stubs in a
+    // row (Grok, 2026-09-25).
     for pair in stubs.windows(2) {
         assert!(
             pair[0] > pair[1],
-            "HISTORY.md lists §9-{} above §9-{}: the stubs run newest first, largest number at \
-             the top, as its preface says",
+            "the HISTORY index lists §9-{} above §9-{}: the stubs run newest first, largest \
+             number at the top, as its preface says",
             pair[0],
             pair[1]
         );
@@ -3932,7 +4021,7 @@ fn the_history_archive_is_indexed_and_numbered() {
     assert_eq!(
         unique.len(),
         stubs.len(),
-        "HISTORY.md stubs some `§9-N` more than once"
+        "the HISTORY index stubs some `§9-N` more than once"
     );
 
     let mut entries: Vec<u32> = files
@@ -3996,4 +4085,109 @@ fn the_history_archive_is_indexed_and_numbered() {
             );
         }
     }
+}
+
+/// **The documents a new session reads first each fit in one read, and together stay under
+/// 100 KB.**
+///
+/// Per-file caps did not bound the start of a session. Measured 2026-09-25, after STATUS and
+/// HISTORY had both been cut to one read: the four documents in `STATUS.md` §9 step 1 weighed
+/// 110.7 KB together, and one of them — `docs/slices/README.md`, 36.5 KB and growing about
+/// 1.2 KB a day — had no guard at all. Grok's review named the gap: a guard per file is not a
+/// guard on the whole.
+///
+/// The set is DERIVED from the step-1 line — `STATUS.md` plus every backticked `.md` on it — so
+/// adding a document to the reading order puts it under the budget; a list written here would
+/// be the defect that left the slice index out. 45 KB each keeps a file inside one read (the
+/// tool pages at 25,000 tokens, about 51.5 KB for this prose); 100 KB for the four together is
+/// the user's decision, about a quarter of a 200k-token window. `CLAUDE.md` is loaded into every
+/// session regardless, and the user's global rule caps it at 200 lines.
+#[test]
+fn the_session_start_documents_fit_in_one_read() {
+    const EACH: usize = 45_000;
+    const TOTAL: usize = 100_000;
+    const CLAUDE_LINES: usize = 200;
+
+    let status = read("docs/STATUS.md").replace('\r', "");
+    // Inside §9 only: the first `1. 이 문서` anywhere in the file would do today, but a line of
+    // that shape written earlier would silently become the reading order (Grok).
+    let order = status
+        .lines()
+        .skip_while(|l| !l.starts_with("## 9. "))
+        .find(|l| l.starts_with("1. 이 문서"))
+        .expect(
+            "docs/STATUS.md §9 step 1 — the reading order this guard derives its set from — is \
+             gone or reworded. Put the order back, or teach this guard where it went",
+        );
+    let mut docs = vec!["docs/STATUS.md".to_string()];
+    for span in order.split('`').skip(1).step_by(2) {
+        if span.ends_with(".md") {
+            docs.push(span.to_string());
+        }
+    }
+    assert!(
+        docs.len() >= 4,
+        "derived only {docs:?} from STATUS §9 step 1 — the line changed shape, so this guard is \
+         checking fewer documents than a session actually reads"
+    );
+
+    let mut total = 0usize;
+    for doc in &docs {
+        let len = read(doc).replace('\r', "").len();
+        assert!(
+            len <= EACH,
+            "{doc} is {len} bytes (LF), over {EACH}: a session is told to read it first, and \
+             past one read it sees only the first page. Collapse closed items to one line and \
+             move their narrative, byte-identical, under docs/history/"
+        );
+        total += len;
+    }
+    assert!(
+        total <= TOTAL,
+        "the documents in STATUS §9 step 1 ({docs:?}) weigh {total} bytes (LF) together, over \
+         {TOTAL}. Every session pays this before doing anything; shrink the largest, or take a \
+         document out of the reading order if a session does not need it up front"
+    );
+
+    let claude = read("CLAUDE.md").lines().count();
+    assert!(
+        claude <= CLAUDE_LINES,
+        "CLAUDE.md is {claude} lines, over the {CLAUDE_LINES} the user's global rules allow for a \
+         file loaded every session — move detail to the document it describes and leave a \
+         one-line pointer"
+    );
+}
+
+/// **Every row of the slice index is one line — at most 400 bytes.**
+///
+/// `docs/slices/README.md` is read at the start of every session, and it grew the way
+/// `STATUS.md` had: closed rows kept their narrative. Measured 2026-09-25 — the twelve oldest
+/// rows were 133–361 bytes, the twenty newest 502–2,422, and the file had gone from 4.4 KB to
+/// 36.5 KB in 27 days. The file cap catches that only after a month of it; a row cap stops it
+/// in the first PR that writes a paragraph into a cell. The narrative belongs in the slice's
+/// `§9-N` record; the rows collapsed that day are in `docs/history/slices-index.md`.
+#[test]
+fn every_slice_index_row_is_one_line() {
+    const ROW: usize = 400;
+    let index = read("docs/slices/README.md").replace('\r', "");
+    let mut rows = 0usize;
+    for (no, line) in index.lines().enumerate() {
+        if !(line.starts_with("| [") && line.contains("](SPEC-")) {
+            continue;
+        }
+        rows += 1;
+        assert!(
+            line.len() <= ROW,
+            "docs/slices/README.md:{} is {} bytes, over {ROW}: a row says what the slice added in \
+             one line and links its SPEC and PRs. The story of how it got there belongs in the \
+             slice's §9-N record",
+            no + 1,
+            line.len()
+        );
+    }
+    assert!(
+        rows >= 25,
+        "found only {rows} index rows — the table's shape changed, so this guard would pass by \
+         reading nothing"
+    );
 }

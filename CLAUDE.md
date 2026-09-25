@@ -14,8 +14,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 문서를 읽는 순서
 
-`README.md`의 **"Documentation" 표가 문서 지도의 정본이다.** 새 세션은 이 파일 다음에 그 표의
-순서대로 읽는다. **여기에 체인을 복제하지 않는다** — 복제해 둔 체인에서 실제로 `docs/STATUS.md`가
+새 세션은 `docs/STATUS.md` §9 1단계의 순서대로 읽는다 — 합계 상한이 걸린 문서들이다. `README.md`의
+"Documentation" 표는 문서 지도의 정본이고, 나머지 문서는 작업이 필요로 할 때 거기서 찾아 연다.
+**여기에 체인을 복제하지 않는다** — 복제해 둔 체인에서 실제로 `docs/STATUS.md`가
 빠져 있었고, 하필 그것이 지도의 첫 행이자 *"새 세션은 이 문서를 먼저 읽는다"* 고 자칭하는 문서였다
 (2026-09-23 감사).
 

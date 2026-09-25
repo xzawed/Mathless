@@ -549,34 +549,34 @@ fn the_guard_suite_fits_in_one_read_per_file() {
     let root = read(root_path).replace('\r', "");
     let root_lines: Vec<&str> = root.lines().collect();
     let mut files = vec![(root_path.to_string(), root.clone())];
-    if let Ok(entries) = std::fs::read_dir(repo_root().join("hosts/rust-oracle/tests/doc_claims")) {
-        for entry in entries {
-            let path = entry.expect("a directory entry").path();
-            let name = path
-                .file_name()
-                .expect("a file name")
-                .to_string_lossy()
-                .into_owned();
-            let stem = name.strip_suffix(".rs").unwrap_or_else(|| {
-                panic!(
-                    "tests/doc_claims/{name}: only this suite's modules live here, as <theme>.rs"
-                )
-            });
-            // A crate root resolves `mod x;` next to itself, so a theme is compiled only by
-            // `#[path = "doc_claims/x.rs"]` directly above `mod x;`.
-            let attr = format!("#[path = \"doc_claims/{name}\"]");
-            let decl = format!("mod {stem};");
-            assert!(
-                path.is_file() && root_lines.windows(2).any(|w| w[0] == attr && w[1] == decl),
-                "tests/doc_claims/{name} is not declared in {root_path} as `{attr}` followed by \
-                 `{decl}`, so it compiles nothing and every guard in it is silently gone"
-            );
-            let text = std::fs::read_to_string(&path).expect("read a suite module");
-            files.push((
-                format!("hosts/rust-oracle/tests/doc_claims/{name}"),
-                text.replace('\r', ""),
-            ));
-        }
+    // `expect`, not `if let Ok`: this guard lives in that directory, and a walk that skips a
+    // missing one would pass by checking nothing (Grok, twice).
+    let entries = std::fs::read_dir(repo_root().join("hosts/rust-oracle/tests/doc_claims"))
+        .expect("hosts/rust-oracle/tests/doc_claims/ holds this suite's theme files");
+    for entry in entries {
+        let path = entry.expect("a directory entry").path();
+        let name = path
+            .file_name()
+            .expect("a file name")
+            .to_string_lossy()
+            .into_owned();
+        let stem = name.strip_suffix(".rs").unwrap_or_else(|| {
+            panic!("tests/doc_claims/{name}: only this suite's modules live here, as <theme>.rs")
+        });
+        // A crate root resolves `mod x;` next to itself, so a theme is compiled only by
+        // `#[path = "doc_claims/x.rs"]` directly above `mod x;`.
+        let attr = format!("#[path = \"doc_claims/{name}\"]");
+        let decl = format!("mod {stem};");
+        assert!(
+            path.is_file() && root_lines.windows(2).any(|w| w[0] == attr && w[1] == decl),
+            "tests/doc_claims/{name} is not declared in {root_path} as `{attr}` followed by \
+             `{decl}`, so it compiles nothing and every guard in it is silently gone"
+        );
+        let text = std::fs::read_to_string(&path).expect("read a suite module");
+        files.push((
+            format!("hosts/rust-oracle/tests/doc_claims/{name}"),
+            text.replace('\r', ""),
+        ));
     }
     for (path, text) in &files {
         assert!(

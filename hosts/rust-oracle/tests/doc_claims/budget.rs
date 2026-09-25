@@ -3,18 +3,10 @@
 
 use super::*;
 
-/// The slice index has to be a table, and it has to list every SPEC.
+/// **The slice index is one table, and it links every SPEC.**
 ///
-/// `CLAUDE.md` calls `docs/slices/README.md` the canonical list of closed slices. It was not
-/// one table: five stray blank lines split it, and Markdown needs a header row per block, so
-/// nine of the twenty-one rows — the whole recent half, from 문자열 입력 onward — rendered on
-/// GitHub as literal `| pipe | text |` paragraphs. The canonical index was unreadable at
-/// exactly the point a reader looks for the newest work.
-///
-/// Two invariants, because the fragmentation is invisible in a diff and the drift is invisible
-/// in the rendering:
-///   - no blank line may sit BETWEEN two table rows (that is what splits a table);
-///   - every `SPEC-*.md` must be linked from the index.
+/// Why: stray blank lines split it and nine rows rendered as literal pipes; a SPEC missing from
+/// the index is a slice nobody can find. (#151)
 #[test]
 fn the_slice_index_is_one_table_and_lists_every_spec() {
     let index = read("docs/slices/README.md");
@@ -52,33 +44,10 @@ fn the_slice_index_is_one_table_and_lists_every_spec() {
     }
 }
 
-/// **The "여기서 시작한다" block has to be somewhere you can start.**
+/// **The "여기서 시작한다" block has to be somewhere a session can start.**
 ///
-/// The heading is a claim: this is where a session picks up work, and `CLAUDE.md` sends every
-/// new session to it by name. It had grown to **759 lines across 45 dated entries**, 40 of
-/// them summaries of a `§9-N` whose body is in `HISTORY.md` — the same narrative written
-/// twice, in the file whose third line says a session reads it first. A block that long is a
-/// log, and a log falsifies the heading above it.
-///
-/// So this is not a style rule about length; it is the heading's own claim, checked. The
-/// budget is 200 lines because that is the number the global instructions use for a document
-/// loaded every session, and because it is the only number in play that was not invented
-/// here. After the move the block sat at 93, so the room left is real rather than nominal.
-///
-/// **What to do when it goes red** is in the message and matters more than the limit: move
-/// the oldest DATED ENTRY verbatim into a new `docs/history/start-block-NNN.md` (the next
-/// number) and add a dated row to the index, `docs/history/start-block-index.md`. `#265` and
-/// the 2026-09-23 move did the same into `HISTORY.md` and verified the moved text
-/// byte-for-byte against `git show` afterwards; on 2026-09-25 `HISTORY.md` became an index and
-/// the records became one file each. The index itself lived inside the block until 2026-09-25,
-/// when `status_fits_in_one_read` moved it out; the block keeps its `그 앞의 항목들` heading as
-/// the pointer to it.
-///
-/// Two wrong answers, one of which was made and caught. Trimming by deleting is the first.
-/// The second is moving more than the dated entries: the first cut of the 2026-09-23 move
-/// swallowed the standing N·D·X·R·A queue that follows them, and `X1`–`X3`, `R1` and `R3` are
-/// not closed — live work went into the history file. Grok's review caught it. The queue is
-/// not a dated record and does not move.
+/// Why: it had grown to 759 lines of dated entries — a log under a heading that says start
+/// here. Live entries get 120 lines; the oldest moves to `start-block-NNN.md`. (#289)
 #[test]
 fn the_start_here_block_is_a_starting_point_not_a_log() {
     // The budget is on the NARRATIVE, not the whole block, and the difference was measured
@@ -152,25 +121,10 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
     }
 }
 
-/// **`STATUS.md` is the file every session reads first, so it has to fit in one read.**
+/// **`STATUS.md` fits in one Read: 45,000 bytes, `\r` not counted.**
 ///
-/// Measured 2026-09-25 with the agent's own Read tool: it returned *"lines 1-443 of 1944
-/// total (93243 tokens, cap 25000)"* for this file, and the ▶ block a session is sent to sat
-/// on the fourth page, at line 1713. The first page was 61% closed slice records under a
-/// heading that says it is not the place to start. Nothing bounded the file — the ▶ block's
-/// budget covers its live entry and nothing around it — so it grew back after each move
-/// (+87 lines in the two days after the 2026-09-23 one).
-///
-/// The budget is in bytes because bytes are what a test can count; tokens are what the tool
-/// counts. The file measured 2.06 LF bytes per token, so the 25,000-token cap is about 51.5 KB,
-/// and 45,000 leaves room for that ratio to move with the mix of prose and code. `\r` is not
-/// counted: Windows checks the file out with CRLF and ubuntu with LF, and a budget that
-/// differs by platform is two budgets.
-///
-/// **When it goes red, move — do not delete.** A closed item keeps one line here and its
-/// narrative moves byte-identical to `docs/history/status-<section>.md`; a dated record moves
-/// whole and leaves its heading behind as a one-line stub, because other files cite
-/// `STATUS §<n>` (`every_status_citation_resolves`).
+/// Why: the Read tool showed a quarter of it per call and the ▶ block sat on the fourth page.
+/// At 2.06 bytes per token the 25,000-token cap is about 51.5 KB. (#310)
 #[test]
 fn status_fits_in_one_read() {
     const BUDGET: usize = 45_000;
@@ -180,23 +134,17 @@ fn status_fits_in_one_read() {
         "docs/STATUS.md is {len} bytes (LF), over the {BUDGET}-byte budget. The budget sits \
          below the Read tool's 25,000-token cap (about 51.5 KB for this file) so the ratio of \
          prose to code can move; past that cap the tool returns the file in pages and a \
-         session sees only the first. Do not trim by \
-         deleting: collapse CLOSED items to one line that links their narrative, and move the \
-         narrative byte-identical to docs/history/status-<section>.md. A dated record moves \
-         whole and leaves its heading as a one-line stub, so `STATUS §<n>` citations resolve. \
+         session sees only the first. Do not trim by deleting: move CLOSED items \
+         byte-identical to docs/history/status-closed-NNN.md under the same heading and \
+         number, where `STATUS §<n>` citations still resolve (status_holds_no_closed_item). \
          Open items and current facts stay in full."
     );
 }
 
-/// **Every file under `docs/history/` fits in one read too, and `STATUS.md` points at real ones.**
+/// **Every file under `docs/history/` fits in one Read (40,000 bytes), and every link STATUS
+/// makes into it lands on a file that exists.**
 ///
-/// The archive exists so that `STATUS.md` can stay small, and trading one file no session can
-/// open whole for another would be no trade — that is what `docs/HISTORY.md` became on the
-/// day it was created (264 KB against the Read tool's 256 KB cap). 40,000 bytes keeps a file
-/// inside one read with room left; a section that outgrows it splits into two files.
-///
-/// The link half is the floor. An archive nothing points at is invisible, and a pointer to a
-/// file that is not there is the silent loss the move exists to rule out.
+/// Why: an archive no session can open whole trades one problem for another. (#310)
 #[test]
 fn every_history_file_fits_in_one_read() {
     const BUDGET: usize = 40_000;
@@ -241,13 +189,10 @@ fn every_history_file_fits_in_one_read() {
     );
 }
 
-/// **`HISTORY.md` is the index of the session log, and an index has to open in one read.**
+/// **`HISTORY.md`, the index of the session log, fits in one Read.**
 ///
-/// Measured 2026-09-25: the Read tool refused the file outright — 378 KB against its 256 KB cap
-/// — and `CLAUDE.md`'s reading order put it second, right after `STATUS.md`. The split turned
-/// it into one-line `### 9-N.` stubs, each linking `docs/history/9-N.md`, so that the `§9-N`
-/// citations spread across the tree still land on a heading here. Same budget and same `\r`
-/// rule as `status_fits_in_one_read`.
+/// Why: at 378 KB the Read tool refused it outright. It holds one-line `### 9-N.` stubs so the
+/// `§9-N` citations land on a heading; same budget and `\r` rule as STATUS. (#312)
 #[test]
 fn the_history_index_fits_in_one_read() {
     const BUDGET: usize = 45_000;
@@ -265,17 +210,11 @@ fn the_history_index_fits_in_one_read() {
     );
 }
 
-/// **Every stub in `HISTORY.md` has its file, every file has its stub, and the ▶ records are
+/// **Every stub in the HISTORY index has its file and every file its stub; ▶ records are
 /// numbered without gaps.**
 ///
-/// The split's two promises, checked from both ends. A stub whose file is missing strands the
-/// `§9-N` citations that land on it; a file without a stub is an entry the index hides. The
-/// file's first line must be the same `### 9-N.` heading, so a file renamed or overwritten with
-/// another entry does not pass as the right one.
-///
-/// ▶ block records are `start-block-NNN.md`, numbered from 001 (the oldest) and never edited
-/// once written: a session moves its oldest ▶ entry into the next number. Contiguous numbering
-/// is what makes "the next number" unambiguous.
+/// Why: a missing file strands the citations on its stub, a stub-less file is an entry the
+/// index hides, and gapless numbers make "the next number" unambiguous. (#312)
 #[test]
 fn the_history_archive_is_indexed_and_numbered() {
     let pages = history_index_pages();
@@ -434,21 +373,10 @@ fn the_history_archive_is_indexed_and_numbered() {
     }
 }
 
-/// **The documents a new session reads first each fit in one read, and together stay under
-/// 100 KB.**
+/// **The documents a session reads first each fit in one Read and together stay under 100 KB.**
 ///
-/// Per-file caps did not bound the start of a session. Measured 2026-09-25, after STATUS and
-/// HISTORY had both been cut to one read: the four documents in `STATUS.md` §9 step 1 weighed
-/// 110.7 KB together, and one of them — `docs/slices/README.md`, 36.5 KB and growing about
-/// 1.2 KB a day — had no guard at all. Grok's review named the gap: a guard per file is not a
-/// guard on the whole.
-///
-/// The set is DERIVED from the step-1 line — `STATUS.md` plus every backticked `.md` on it — so
-/// adding a document to the reading order puts it under the budget; a list written here would
-/// be the defect that left the slice index out. 45 KB each keeps a file inside one read (the
-/// tool pages at 25,000 tokens, about 51.5 KB for this prose); 100 KB for the four together is
-/// the user's decision, about a quarter of a 200k-token window. `CLAUDE.md` is loaded into every
-/// session regardless, and the user's global rule caps it at 200 lines.
+/// Why: per-file caps left the four at 110.7 KB together. The set is derived from STATUS §9
+/// step 1, the total is the user's decision, and `CLAUDE.md` stays under 200 lines. (#313)
 #[test]
 fn the_session_start_documents_fit_in_one_read() {
     const EACH: usize = 45_000;
@@ -507,12 +435,8 @@ fn the_session_start_documents_fit_in_one_read() {
 
 /// **Every row of the slice index is one line — at most 400 bytes.**
 ///
-/// `docs/slices/README.md` is read at the start of every session, and it grew the way
-/// `STATUS.md` had: closed rows kept their narrative. Measured 2026-09-25 — the twelve oldest
-/// rows were 133–361 bytes, the twenty newest 502–2,422, and the file had gone from 4.4 KB to
-/// 36.5 KB in 27 days. The file cap catches that only after a month of it; a row cap stops it
-/// in the first PR that writes a paragraph into a cell. The narrative belongs in the slice's
-/// `§9-N` record; the rows collapsed that day are in `docs/history/slices-index.md`.
+/// Why: closed rows kept their narrative and the index grew from 4.4 to 36.5 KB in 27 days; a
+/// row cap stops it at the first paragraph written into a cell. (#313)
 #[test]
 fn every_slice_index_row_is_one_line() {
     const ROW: usize = 400;
@@ -541,9 +465,8 @@ fn every_slice_index_row_is_one_line() {
 
 /// **Every file of this suite opens in one Read, and every file under `doc_claims/` compiles.**
 ///
-/// Why: the suite was one 205 KB file (2026-09-25), so no session could read the guards it was
-/// editing next to. A file under `tests/doc_claims/` that the root does not declare compiles
-/// nothing — its guards would vanish without a red.
+/// Why: the suite was one 205 KB file, and a file under `tests/doc_claims/` that the root does
+/// not declare compiles nothing — its guards would vanish without a red. (#314)
 #[test]
 fn the_guard_suite_fits_in_one_read_per_file() {
     const BUDGET: usize = 45_000;
@@ -593,11 +516,9 @@ fn the_guard_suite_fits_in_one_read_per_file() {
 
 /// **A live document's count of correction notes only goes down.**
 ///
-/// Why: the usual repair appended *when and how a sentence was wrong* next to the corrected
-/// sentence, so live documents grew a second, dated history. The rule is to rewrite the sentence
-/// in place and put the story in the session record (`CLAUDE.md`, 산출물 규칙). A note is 정정,
-/// a dated 감사 (`2026-09-22 감사`), `used to say` or `was wrong`. Dated records and SPECs are
-/// not read; a document not listed below starts at zero.
+/// Why: repairs appended when and how a sentence was wrong, so live documents grew a second,
+/// dated history. A note is 정정, a dated 감사, `used to say` or `was wrong`; records and SPECs
+/// are not read, and a document not listed starts at zero. (#317)
 #[test]
 fn live_documents_do_not_accumulate_correction_notes() {
     // Measured 2026-09-25, after CLAUDE.md dropped its five. Removing a note means lowering the
@@ -671,4 +592,61 @@ fn live_documents_do_not_accumulate_correction_notes() {
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// **Every guard's docstring is at most six lines: what it keeps true, why, and the PR.**
+///
+/// Why: the story beside each guard was the template the next one copied — 31 of 53 narrated
+/// their incident, at a median of 16 lines. The story lives in the PR and the session record.
+#[test]
+fn every_guard_docstring_is_short() {
+    const LINES: usize = 6;
+    let mut files = vec!["hosts/rust-oracle/tests/doc_claims.rs".to_string()];
+    let dir = repo_root().join("hosts/rust-oracle/tests/doc_claims");
+    for entry in std::fs::read_dir(&dir).expect("hosts/rust-oracle/tests/doc_claims/") {
+        let name = entry
+            .expect("a directory entry")
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        files.push(format!("hosts/rust-oracle/tests/doc_claims/{name}"));
+    }
+    let mut guards = 0usize;
+    let mut long = Vec::new();
+    for path in &files {
+        let text = read(path).replace('\r', "");
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let attrs = lines[..i].iter().rev().take_while(|l| l.starts_with("#["));
+            let is_test = line.starts_with("fn ") && attrs.clone().any(|l| *l == "#[test]");
+            let is_row = line.starts_with("const ") && line.contains(": Stale = ");
+            if !(is_test || is_row) {
+                continue;
+            }
+            guards += 1;
+            let doc = lines[..i]
+                .iter()
+                .rev()
+                .skip_while(|l| l.starts_with("#["))
+                .take_while(|l| l.starts_with("///"))
+                .count();
+            if doc > LINES {
+                long.push(format!(
+                    "{path}:{} has {doc} doc lines, over {LINES}",
+                    i + 1
+                ));
+            }
+        }
+    }
+    assert!(
+        guards >= 50,
+        "found only {guards} guards in the suite — this walk is reading less than it holds"
+    );
+    assert!(
+        long.is_empty(),
+        "{}\nKeep a guard's docstring to what it keeps true, why in a line or two, and the PR: the \
+         story belongs in the PR and the session record, where it does not become the next \
+         guard's template",
+        long.join("\n")
+    );
 }

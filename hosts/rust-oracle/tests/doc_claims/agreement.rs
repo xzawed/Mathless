@@ -2,24 +2,10 @@
 
 use super::*;
 
-/// **A message a host README quotes is a message that host can print.**
+/// **A message a host README quotes is one that host, or its test harness, can print.**
 ///
-/// `hosts/c-host-link/README.md` quoted the refusal as `refuse: interface …`. The host prints
-/// `refuse discount: interface …` — the module name is in there, and it is in there for a
-/// reason: that host links TWO modules and the whole point of #215 was that it can now name
-/// which one drifted. The README was quoting the message from before that slice.
-///
-/// A phantom transcript is worse than a stale sentence. A reader who greps the source for the
-/// line they were shown finds nothing and concludes the check is not there.
-///
-/// Scope and needle are both measured. Spans are taken from backticks and filtered to the ones
-/// that look like program output — `refuse…`, `GATE_…`, `ok …` — and checked against the
-/// host's own source AND its harness, because the gate banners are printed by the test, not by
-/// the host. Checking the host source alone reported six false misses; adding the harness left
-/// exactly one, and that one was the defect.
-///
-/// The probe stops at the first `…`, so a README may elide the varying half of a format
-/// string without defeating the check.
+/// Why: `c-host-link/README.md` quoted a refusal from before #215, and a reader who greps for
+/// a phantom transcript concludes the check is not there. (#274)
 #[test]
 fn every_message_a_host_readme_quotes_exists_in_that_host() {
     let harness_dir = repo_root().join("hosts").join("rust-oracle").join("tests");
@@ -90,26 +76,10 @@ fn every_message_a_host_readme_quotes_exists_in_that_host() {
     }
 }
 
-/// **"Run what that job runs" runs what that job runs.**
+/// **"Run what that job runs" sets every gate `ci.yml` requires.**
 ///
-/// `CONTRIBUTING.md` tells a contributor to reproduce CI locally and then gives a command that
-/// sets ONE gate. CI requires three. On a machine without Free Pascal the other two **skip**,
-/// the suite prints green and exits 0, the contributor pushes, and CI goes red — after review
-/// time has already been spent.
-///
-/// The block itself is the only thing that made this invisible: a skipped gate is loud on
-/// stdout and silent in the exit code, which is the exact failure mode the paragraph
-/// underneath that block warns about for pipes. It warned about the wrapper and not about
-/// itself.
-///
-/// Derived from `ci.yml`, so it cannot drift the way a hand-copied list does: every
-/// `MATHLESS_GATE_*: require` there must appear in the code fence under the "run what that job
-/// runs" heading. Adding a fourth required gate to CI without telling contributors turns this
-/// red.
-///
-/// `MATHLESS_GATE_DELPHI` is deliberately NOT implied by this: it is not `require` in ci.yml,
-/// because the runner has no Delphi. The guard asks only for parity with what CI actually
-/// enforces.
+/// Why: the CONTRIBUTING block set one gate of three, so the others skipped, the suite exited 0
+/// and CI went red after review. Derived from `ci.yml`, not a hand-copied list. (#277)
 #[test]
 fn the_local_command_block_runs_every_gate_ci_requires() {
     let ci = read(".github/workflows/ci.yml");
@@ -158,19 +128,8 @@ fn the_local_command_block_runs_every_gate_ci_requires() {
 
 /// **No document states a Rust version that is not the pinned one.**
 ///
-/// The global rule puts dependency versions in the build file and nowhere else. This
-/// repository copies the pin into five documents instead — `CONTRIBUTING.md`, both READMEs,
-/// `docs/STATUS.md`, `docs/phase1/WBS.md` — and nothing compared any of them to
-/// `rust-toolchain.toml`. All five are right today, which is the whole problem: raising the
-/// pin makes five documents false at once and a person is the only thing that would notice.
-///
-/// Same shape as the abi-constant guard: the source states the value, the documents may
-/// repeat it, and repeating it wrongly fails. That is the form the global rule allows — "put
-/// the number in a machine-checkable form or do not put it in a document".
-///
-/// Matches any `1.<minor>.<patch>` so a document cannot escape by being stale in a way the
-/// needle does not expect; versions that are not Rust releases live in other shapes here
-/// (`ml-iface/1`, SDK `10.0.20348`) and do not match.
+/// Why: five documents copy the `rust-toolchain.toml` pin, and raising it would make all five
+/// false at once with nothing to notice. A stated version must be the pin. (#277)
 #[test]
 fn no_document_states_a_rust_version_other_than_the_pin() {
     let toml = read("rust-toolchain.toml");
@@ -233,20 +192,8 @@ fn no_document_states_a_rust_version_other_than_the_pin() {
 
 /// **No document states a value for an `abi.rs` constant that `abi.rs` does not state.**
 ///
-/// This file's own header says the repository watched a measured number drift three times
-/// and that until it existed nothing checked the numbers. It still did not check THESE
-/// numbers, and the hole was measured rather than argued: lowering `ML_MAX_MODULE_NAME`
-/// from 64 to 48 left the whole workspace — 516 tests, four gates required — green, while
-/// three documents went on saying 64 in the present tense, one of them in the very table
-/// cell that reads "**문서에 숫자를 적지 않는다**".
-///
-/// The rule the global instructions give is "put the number in a machine-checkable form or
-/// do not put it in a document". This is that form: the document may carry the number, and
-/// the source decides whether it is still true.
-///
-/// **A line that also states the true value passes.** A decision table that shows a rejected
-/// alternative beside the chosen one (`SPEC-string-return` §T6 weighs `-122` against `-1`)
-/// is not drift — it is the record of a choice, and erasing it would cost more than it saves.
+/// Why: lowering `ML_MAX_MODULE_NAME` from 64 to 48 left every test green while three documents
+/// kept saying 64. A line that also states the true value passes. (#226)
 #[test]
 fn no_document_states_a_stale_value_for_an_abi_constant() {
     let constants = abi_constants();
@@ -287,31 +234,10 @@ fn no_document_states_a_stale_value_for_an_abi_constant() {
     );
 }
 
-/// **A document that enumerates the export set as complete must name all of it.**
+/// **A document that enumerates the export set as complete names all of it.**
 ///
-/// The set moved 2 → 3 on 2026-09-02 when the fingerprint slice added a second reserved
-/// symbol. Two guards already check that number — this file checks the two READMEs, and
-/// `protection.rs` checks `SECURITY.md` and `STATUS.md` because reading it needs a built
-/// module. Both carry a hand-written list of documents, and twelve lines in ten other files
-/// still say the export table is `mlx_<fn>` + `ml_module_abi_version` and nothing else.
-///
-/// That is the failure the README guard already wrote down about itself: *"a guard's SCOPE is
-/// a claim too"*, after `STATUS.md` sat outside it saying 로드하는 모듈 15개 while `host.c`
-/// loaded 18 — the two documents inside the scope were corrected by the guard and the one
-/// outside simply kept lying. So this one has no list: it walks every markdown file.
-///
-/// **Detector, then requirement.** A line is enumerating the export table when it names both
-/// fixed halves — the reserved `ml_module_abi_version` and D18's user prefix `mlx_` — and
-/// claims the enumeration is complete (정확히 / 만 / 둘뿐 / 2개). Only then must it also name
-/// the third. Both halves of the detector are asserted to be in what `protection.rs` pins, so
-/// a rename moves the detector instead of silently emptying it.
-///
-/// **The completeness marker is what makes this safe on frozen records.** A slice's §3 wrote
-/// its acceptance criterion as an exact set on the day it shipped, and the correction is one
-/// clause naming what joined — after which the line names all three and passes. Lines that
-/// merely mention the two names without claiming the set is complete are untouched: measured,
-/// that is `DECISIONS.md` D18 (which says how the ABI version is exposed, not what else is)
-/// and `SPEC-calls.md:78`.
+/// Why: after the set moved 2 → 3 (#105), twelve lines in ten files still listed `mlx_*` and
+/// `ml_module_abi_version` alone. This walks every Markdown file instead of a list. (#283)
 #[test]
 fn no_document_enumerates_the_export_set_without_the_fingerprint() {
     let protection = read("hosts/rust-oracle/tests/protection.rs");
@@ -381,24 +307,10 @@ fn no_document_enumerates_the_export_set_without_the_fingerprint() {
     }
 }
 
-/// **A documented baseline that requires one gate must require all of them.**
+/// **A documented baseline that requires one gate requires all of them.**
 ///
-/// `#277` fixed this in `CONTRIBUTING.md` and put the guard there by name. Two lines outside
-/// that name still published `MATHLESS_GATE_D=require cargo test --workspace --locked` as the
-/// baseline — including step 2 of `STATUS.md` §9, which is the first command a new session
-/// runs. A skipped gate is not a passed gate: the suite is green with `MATHLESS_GATE_FPC` and
-/// `MATHLESS_GATE_FPC_HOST` unset, so a session following that step verifies the C host and
-/// nothing on the Pascal side.
-///
-/// Same lesson as the export guard above, one file over: a guard that names the document it
-/// checks has made a claim about scope, and the copies outside it keep their own counsel.
-///
-/// **The detector is what keeps this quiet on prose and records.** A line only has to name
-/// every gate once it requires at least one — a line that mentions the command without
-/// setting a gate is prose, and `CONTRIBUTING.md`'s blocks put the variables on their own
-/// lines, which `#277`'s guard reads as a block and this one leaves alone. `docs/HISTORY.md`
-/// is exempt for #261's reason: its entries are dated records of runs that really did set one
-/// gate, and rewriting them would be rewriting what happened.
+/// Why: two lines outside the guarded file — one of them the first command a new session runs —
+/// published a one-gate baseline, and a skipped gate is not a passed gate. (#284)
 #[test]
 fn no_document_publishes_a_baseline_that_requires_only_some_gates() {
     let ci = read(".github/workflows/ci.yml");

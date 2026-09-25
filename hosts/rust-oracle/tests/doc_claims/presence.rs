@@ -3,11 +3,10 @@
 use super::*;
 
 /// **Wherever a live document states how many modules the reference C host gates, it is the
-/// count in `host.c`.** No document has to state it: `host.c` is the home.
+/// count in `host.c`** — the home; no document has to state it.
 ///
-/// Why: the number lagged twice on record (13 against 14 after #108, 15 against 18 on
-/// 2026-09-11), and the only repair three required copies allowed was editing all three. SPECs
-/// and dated records are records of their moment and are not read.
+/// Why: the number lagged twice on record (13 against 14, then 15 against 18). SPECs and dated
+/// records are not read. (#118, #316)
 #[test]
 fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
     // Comments stripped first: a `load(dir, "…")` written inside a comment would inflate the
@@ -36,25 +35,10 @@ fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
     }
 }
 
-/// **The READMEs name every built-in the compiler has, and every gate CI requires.**
+/// **The READMEs name every built-in the compiler has and every gate CI requires.**
 ///
-/// Both counts were wrong in the same direction: the public first screen claimed LESS than the
-/// product does. `README.md` said *"There are four built-ins — floor, ceil, round, trunc"* while
-/// `typeck.rs` also declares `len`, `byte_len`, `byte_slice` and `fixed`; it said *"Three host
-/// paths, all measured"* and named the Rust oracle and the two C hosts, while `ci.yml` has
-/// required an Object Pascal host that loads x64 modules and calls them since 2026-09-09.
-///
-/// Understating is not the harmless direction. A reader deciding whether this can reach their
-/// host counts the hosts, and half of D14's flagship arm was missing from the count.
-///
-/// **Both halves are derived from the source, not from a list here.** The built-ins come from
-/// `Rounder::ALL` plus the `*_BUILTIN` constants in `typeck.rs`; the gates come from the
-/// `MATHLESS_GATE_*: require` lines in `ci.yml`. Adding either without telling users turns
-/// this red, which is the case that actually happened four times.
-///
-/// Names, not counts. A count is one number to update and nothing to check it against — the
-/// §1 LOC block is what that looks like after three months. A name is checkable against the
-/// thing that defines it.
+/// Why: the public first screen said four built-ins of eight and three host paths of four. Both
+/// sets come from source, and names match as whole identifiers. (#267, #316)
 #[test]
 fn the_readmes_name_every_builtin_and_every_required_gate() {
     let typeck = read("compiler/src/typeck.rs");
@@ -137,15 +121,10 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     }
 }
 
-/// The artifact set, checked against the emitter rather than against a remembered list.
+/// **Every home of the artifact set names every artifact `emit.rs` packages.**
 ///
-/// `SPEC-linkable-bindings` §3-F. The set went from three files to four in that slice, and
-/// the number appears in prose in three documents — the exact shape that drifted for the
-/// export count and the gated-module count before it. So the extensions are read out of
-/// `emit_artifacts`'s `names` array, and every document that describes the set has to name
-/// each one.
-///
-/// A fifth artifact fails this test until the documents mention it.
+/// Why: the set went from three files to four, and the output-licence grant and D23 must not
+/// under-list what they grant. (#124, #316)
 #[test]
 fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
     let emit_rs = read("compiler/src/emit.rs");
@@ -249,15 +228,10 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
     }
 }
 
-/// The README's `mlc build` transcript, against what the CLI actually prints.
+/// **The `.pas` line of the README transcripts carries the note `mlc` prints on that line.**
 ///
-/// The block is an illustration, not a capture, and the filenames matched — but the note on
-/// the `.pas` line did not travel with it, and that note is the one that says the Delphi
-/// binding is unverified. A README that lists the unit with no qualifier reads as "this
-/// works"; `mlc` itself is careful to say otherwise on that exact line (STATUS §9-A A11).
-///
-/// Pinned to the `.pas` LINE, not the block: appended to any other line the note would still
-/// be "in" the block while saying nothing about the unit.
+/// Why: the note says the Delphi binding is unverified; without it the transcript reads as
+/// "this works". (#137)
 #[test]
 fn the_readme_transcripts_carry_the_draft_note_the_cli_prints() {
     // Read out of the `println!` that prints the DELPHI UNIT, not out of the file at large.
@@ -299,11 +273,8 @@ fn the_readme_transcripts_carry_the_draft_note_the_cli_prints() {
 /// **`docs/SECURITY.md` publishes both measured module sizes; a document that states one
 /// states both.**
 ///
-/// Why: the same commit and the same pinned rustc gave 9,728 B on the development machine and
-/// 9,216 B on `windows-latest` (the pin covers rustc, not MSVC `link.exe`), so one value alone
-/// is a this-machine number presented as a project fact. SECURITY is the home; the other four
-/// documents used to be required to carry the pair and now point there. SPECs and dated
-/// records are not read.
+/// Why: one commit gave 9,728 B here and 9,216 B on `windows-latest`, so one value alone is a
+/// this-machine number. SPECs and dated records are not read. (#121, #316)
 #[test]
 fn the_published_module_size_carries_both_measurements() {
     let protection = read("hosts/rust-oracle/tests/protection.rs");
@@ -345,20 +316,10 @@ fn the_published_module_size_carries_both_measurements() {
     }
 }
 
-/// The one directory `mlc` can leave behind, and whether the READMEs admit it.
+/// **The READMEs name the staging directory a killed `mlc build` leaves behind.**
 ///
-/// `emit_artifacts` stages its four files inside `out_dir` so the set lands all-or-nothing,
-/// and removes the stage on success and on failure. A process that is KILLED never gets to,
-/// and STATUS §5-5.9 recorded that "nowhere says so" — recorded, but not measured, for four
-/// sessions.
-///
-/// It is measured now: killing `mlc build` as soon as the stage appears leaves
-/// `.mlc-stage-<pid>-<n>` in the output directory, and a later build into the same directory
-/// still succeeds and writes all four artifacts. So it is litter, not a broken state — which
-/// is worth saying out loud, because a user who finds it cannot tell those apart.
-///
-/// The prefix is read out of the emitter rather than typed here, so renaming the directory
-/// makes this fail instead of quietly leaving both READMEs describing a name nothing creates.
+/// Why: it is litter, not a broken build (measured), and a user who finds it cannot tell which
+/// unless a document says so. The prefix is read from the emitter. (#146)
 #[test]
 fn the_readmes_admit_the_staging_directory_a_killed_build_leaves() {
     let emit_rs = read("compiler/src/emit.rs");
@@ -386,24 +347,10 @@ fn the_readmes_admit_the_staging_directory_a_killed_build_leaves() {
     }
 }
 
-/// **A document that names the output-licence exception lists everything the exception
-/// covers.**
+/// **A document that names the output-licence exception lists everything it covers.**
 ///
-/// `every_artifact_the_emitter_writes_is_named_in_the_docs` already checks this, against a
-/// hand-written list of the set's homes — and its own comment says why that list matters: D23
-/// enumerated four artifacts while `LICENSE-OUTPUT-EXCEPTION` §1 listed five, "a grant that
-/// under-lists what it grants is the worst place for this drift", and it sat outside the
-/// guard until 2026-09-05.
-///
-/// The identical sentence sat ONE DOCUMENT OVER and was not in the list. `OPEN_QUESTIONS.md`
-/// summarised the same grant as `.dll`·`.h`·`.pas`·중간 Rust — four again, no `.lib` —
-/// because the summary was written on 2026-09-02 and `.lib` arrived on 09-03. Measured, not
-/// supposed: seven documents name the exception, six listed `.lib`, one did not.
-///
-/// So this guard takes the scope the OTHER one cannot: naming `LICENSE-OUTPUT-EXCEPTION` is
-/// a document volunteering that it describes the grant, which makes the set discoverable
-/// instead of remembered. The artifacts themselves come from the licence, not from here — it
-/// is the document that grants the rights, so it is the document that says what they cover.
+/// Why: `OPEN_QUESTIONS.md` summarised the grant without `.lib`, one document over from the
+/// guarded list; naming the licence volunteers the document for the check. (#227)
 #[test]
 fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
     // The `(`.ext`)` spellings inside the licence's own enumeration, in its order.

@@ -597,7 +597,7 @@ fn live_documents_do_not_accumulate_correction_notes() {
 /// **Every guard's docstring is at most six lines: what it keeps true, why, and the PR.**
 ///
 /// Why: the story beside each guard was the template the next one copied — 31 of 53 narrated
-/// their incident, at a median of 16 lines. The story lives in the PR and the session record.
+/// their incident, at a median of 16 lines. The story lives in the PR and the session. (#319)
 #[test]
 fn every_guard_docstring_is_short() {
     const LINES: usize = 6;
@@ -624,15 +624,27 @@ fn every_guard_docstring_is_short() {
                 continue;
             }
             guards += 1;
-            let doc = lines[..i]
+            let doc: Vec<&&str> = lines[..i]
                 .iter()
                 .rev()
                 .skip_while(|l| l.starts_with("#["))
                 .take_while(|l| l.starts_with("///"))
-                .count();
-            if doc > LINES {
+                .collect();
+            if doc.len() > LINES {
                 long.push(format!(
-                    "{path}:{} has {doc} doc lines, over {LINES}",
+                    "{path}:{} has {} doc lines, over {LINES}",
+                    i + 1,
+                    doc.len()
+                ));
+            }
+            // The PR is where the story went; a docstring without one has dropped it.
+            let cites_pr = doc.iter().any(|l| {
+                l.match_indices("(#")
+                    .any(|(at, _)| l[at + 2..].starts_with(|c: char| c.is_ascii_digit()))
+            });
+            if !cites_pr {
+                long.push(format!(
+                    "{path}:{} names no PR — end the docstring with (#N), the PR that holds its story",
                     i + 1
                 ));
             }

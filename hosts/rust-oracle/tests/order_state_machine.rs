@@ -68,14 +68,22 @@ fn every_transition_lands_where_the_table_says() {
     assert_eq!(next(f, CREATED, PAY), (0, PAID));
     assert_eq!(next(f, CREATED, CANCEL), (0, CANCELLED));
     assert_eq!(next(f, PAID, SHIP), (0, SHIPPED));
-    assert_eq!(next(f, PAID, CANCEL), (0, REFUNDED), "cancelling a paid order refunds it");
+    assert_eq!(
+        next(f, PAID, CANCEL),
+        (0, REFUNDED),
+        "cancelling a paid order refunds it"
+    );
     assert_eq!(next(f, SHIPPED, DELIVER), (0, DELIVERED));
     assert_eq!(next(f, DELIVERED, REFUND), (0, REFUNDED));
 
     // An event the state does not accept is the module's domain error, and the out value is
     // untouched — the host can tell "refused" from "moved to state -7".
     assert_eq!(next(f, SHIPPED, PAY), (E_BAD_TRANSITION, -7));
-    assert_eq!(next(f, CANCELLED, PAY), (E_BAD_TRANSITION, -7), "a terminal state takes nothing");
+    assert_eq!(
+        next(f, CANCELLED, PAY),
+        (E_BAD_TRANSITION, -7),
+        "a terminal state takes nothing"
+    );
     assert_eq!(next(f, REFUNDED, REFUND), (E_BAD_TRANSITION, -7));
 
     // A code outside the table is a different failure, checked before any edge.
@@ -92,12 +100,18 @@ fn replay_folds_a_sequence_and_stops_at_the_first_refusal() {
     let f: ReplayFn = sym(&m, b"mlx_replay\0");
 
     assert_eq!(replay(f, CREATED, &[PAY, SHIP, DELIVER]), (0, DELIVERED));
-    assert_eq!(replay(f, CREATED, &[PAY, SHIP, DELIVER, REFUND]), (0, REFUNDED));
+    assert_eq!(
+        replay(f, CREATED, &[PAY, SHIP, DELIVER, REFUND]),
+        (0, REFUNDED)
+    );
     assert_eq!(replay(f, CREATED, &[PAY, CANCEL]), (0, REFUNDED));
 
     // The third event is refused: the callee's status comes back unchanged through `try`, and
     // the out value is not the state reached after two events.
-    assert_eq!(replay(f, CREATED, &[PAY, SHIP, CANCEL]), (E_BAD_TRANSITION, -7));
+    assert_eq!(
+        replay(f, CREATED, &[PAY, SHIP, CANCEL]),
+        (E_BAD_TRANSITION, -7)
+    );
 
     // No events: the start state, but only a known one — without the check an empty replay
     // would hand back any number as if it were a state.
@@ -145,7 +159,10 @@ fn renumbering_a_state_keeps_the_header_and_the_fingerprint() {
         "fn paid() -> i32 { return 2 }",
         "fn paid() -> i32 { return 7 }",
     );
-    assert_ne!(renumbered, SRC, "the example no longer declares paid() as written here");
+    assert_ne!(
+        renumbered, SRC,
+        "the example no longer declares paid() as written here"
+    );
 
     let old = mlc::compile_to_ir(SRC).expect("compile order");
     let new = mlc::compile_to_ir(&renumbered).expect("compile renumbered order");

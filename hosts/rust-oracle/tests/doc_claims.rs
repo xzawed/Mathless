@@ -3914,6 +3914,18 @@ fn the_history_archive_is_indexed_and_numbered() {
         );
         stubs.push(n);
     }
+    // Newest first, as the preface says: 가장 큰 번호부터 9-1로 내려간다. The log broke that once
+    // before the split — §9-53 sat between §9-60 and §9-59 — and nothing noticed until the
+    // split's review read the stubs in a row (Grok, 2026-09-25).
+    for pair in stubs.windows(2) {
+        assert!(
+            pair[0] > pair[1],
+            "HISTORY.md lists §9-{} above §9-{}: the stubs run newest first, largest number at \
+             the top, as its preface says",
+            pair[0],
+            pair[1]
+        );
+    }
     let mut unique = stubs.clone();
     unique.sort_unstable();
     unique.dedup();

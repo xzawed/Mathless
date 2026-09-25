@@ -75,6 +75,7 @@
 #include "discount3.h"
 #include "shapes.h"
 #include "refund.h"
+#include "order.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);

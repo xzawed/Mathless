@@ -613,7 +613,6 @@ fn live_documents_do_not_accumulate_correction_notes() {
         ("docs/HOST_ABI.md", 5),
         ("docs/LANGUAGE.md", 4),
         ("docs/OPEN_QUESTIONS.md", 6),
-        ("docs/STATUS.md", 10),
         ("docs/VISION.md", 1),
         ("docs/phase1/SPEC.md", 1),
         ("docs/phase1/WBS.md", 2),

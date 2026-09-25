@@ -15,8 +15,8 @@
 > `doc_claims.rs`의 `every_cited_history_entry_has_a_heading`이 그 관계를 지킨다:
 > 트리 어디서든 인용된 `§9-N`에 여기 표제가 없으면 빨개진다.
 >
-> **번호는 최신이 큰 쪽이다** — 아래는 가장 큰 번호부터 `9-1`로 내려간다. 읽는 순서는 위에서 아래다.
-> *(2026-09-24: 여기 `9-62`가 시작 번호로 적혀 있었고 §9-63이 붙은 뒤 낡았다 — 번호를 적지 않는다.)*
+> **번호는 최신이 큰 쪽이다** — 아래는 큰 번호부터 작은 번호로 내려가고, 굴린 더 오래된 스텁은
+> `docs/history/index-NNN.md`에 있다. 읽는 순서는 위에서 아래다.
 
 >
 > **2026-09-25 — 이 파일은 색인이 됐다.** 378 KB였고 Read가 읽기 자체를 거부했다(256 KB 상한). 각 항목의
@@ -27,6 +27,11 @@
 > `### 9-N. <제목> → [본문](history/9-N.md)`을 더한다. **이미 있는 파일은 다시 편집하지 않는다** — 그날
 > 쓰고 있는 자기 기록만 예외다. `doc_claims.rs`의 `the_history_archive_is_indexed_and_numbered`가 스텁과
 > 파일을 양쪽에서 맞춰 본다.
+>
+> **그리고 빼기.** 더하는 것만으로 마치지 않는다: ① 이 세션에 닫힌 STATUS 항목을 같은 표제·번호로
+> `docs/history/status-closed-NNN.md`에 옮기고(`status_holds_no_closed_item`), ② 살아 있는 문서에 정정 노트를
+> 새로 달지 않았는지 보고 — 경위는 이 기록에 쓴다(`live_documents_do_not_accumulate_correction_notes`),
+> ③ 이 세션에 고친 사본이 있으면 원천을 가리키게 바꿨는지 본다.
 >
 > **이 색인 자체가 45 KB에 닿으면**(`the_history_index_fits_in_one_read`) 굴린다: 가장 오래된 스텁을 링크의
 > `history/`만 빼고 그대로 다음 번호의 `docs/history/index-NNN.md`로 옮기고, 여기에는 그 페이지로 가는 링크

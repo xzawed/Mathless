@@ -229,24 +229,34 @@ fn the_language_reference_does_not_deny_what_it_documents() {
 ///
 /// Why: five of these were functions of their own, and four copied one scan loop with one
 /// off-by-one (a needle that ends the text was never tried). A new stale claim is a row, every
-/// row runs, and every hit is reported — not only the first.
+/// row runs, and every failure is reported — not only the first.
 #[test]
 fn no_document_still_states_a_claim_the_code_has_left() {
     let docs = every_markdown_file();
-    let mut stale = Vec::new();
+    let mut failures = Vec::new();
     for (i, row) in STALE.iter().enumerate() {
         assert!(
             !row.needles.is_empty() && STALE[..i].iter().all(|r| r.id != row.id),
             "row {}: a row needs a needle and an id no other row has",
             row.id
         );
-        for (file, marker) in row.evidence {
-            assert!(
-                read(file).contains(marker),
-                "{}: {file} no longer contains {marker:?}, the fact that made this claim false. \
-                 If that fact is gone, the row is wrong and the documents may be right",
-                row.id
-            );
+        // A row whose evidence is gone is reported with the rest instead of panicking here,
+        // which would hide every hit already found (Grok).
+        let gone: Vec<String> = row
+            .evidence
+            .iter()
+            .filter(|(file, marker)| !read(file).contains(marker))
+            .map(|(file, marker)| {
+                format!(
+                    "{}: {file} no longer contains {marker:?}, the fact that made this claim \
+                     false. If that fact is gone, the row is wrong and the documents may be right",
+                    row.id
+                )
+            })
+            .collect();
+        if !gone.is_empty() {
+            failures.extend(gone);
+            continue;
         }
         for (path, text) in &docs {
             let in_scope = match row.scope {
@@ -268,7 +278,10 @@ fn no_document_still_states_a_claim_the_code_has_left() {
             for needle in row.needles {
                 let nd: Vec<char> = needle.chars().collect();
                 for start in starts(&hay, &nd) {
-                    if row.boundary && start > 0 && hay[start - 1].is_ascii_alphabetic() {
+                    let letter = |c: Option<&char>| c.is_some_and(char::is_ascii_alphabetic);
+                    let embedded = letter(start.checked_sub(1).and_then(|b| hay.get(b)))
+                        || letter(hay.get(start + nd.len()));
+                    if row.boundary && embedded {
                         continue;
                     }
                     let lo = start.saturating_sub(row.window.0);
@@ -283,7 +296,7 @@ fn no_document_still_states_a_claim_the_code_has_left() {
                     let is_stale = row.forbidden.is_empty()
                         || row.forbidden.iter().any(|f| window.contains(f));
                     if in_context && is_stale {
-                        stale.push(format!(
+                        failures.push(format!(
                             "{}: {path} says `{needle}`, but {}. Context: …{window}…",
                             row.id, row.truth
                         ));
@@ -293,10 +306,10 @@ fn no_document_still_states_a_claim_the_code_has_left() {
         }
     }
     assert!(
-        stale.is_empty(),
-        "{} stale claim(s):\n{}",
-        stale.len(),
-        stale.join("\n")
+        failures.is_empty(),
+        "{} failure(s) — a document still states a claim, or a row's evidence is gone:\n{}",
+        failures.len(),
+        failures.join("\n")
     );
 }
 
@@ -325,7 +338,8 @@ struct Stale {
     /// Match against `flatten_prose` (markup and line breaks gone) instead of the raw text.
     flatten: bool,
     needles: &'static [&'static str],
-    /// The char before a hit must not be an ASCII letter: `C뿐` sits inside `FPC뿐`.
+    /// Neither neighbour of a hit may be an ASCII letter: `C뿐` sits inside `FPC뿐`, and
+    /// `only C` inside `only CI` (Grok).
     boundary: bool,
     /// Chars kept before and after a hit.
     window: (usize, usize),

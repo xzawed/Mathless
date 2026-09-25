@@ -309,7 +309,7 @@ fn a_real_c_host_loads_and_calls_the_module() {
     // exists to collect the export shapes where a mis-written C ABI adapter would compile
     // and return a plausible wrong value, and its header was the one nobody compiled.
     //
-    // Emitted for the HEADER: `host.c` includes all four and `cl /W4 /WX` has to accept
+    // Emitted for the HEADER: `host.c` includes each of them and `cl /W4 /WX` has to accept
     // them. Behaviour stays where it already is, with the Rust oracle. `doc_claims.rs`
     // fails if a future example is added without landing here.
     for (src, name) in [

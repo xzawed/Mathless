@@ -2562,6 +2562,14 @@ fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
         if !text.contains("LICENSE-OUTPUT-EXCEPTION") {
             continue;
         }
+        // `docs/history/` holds sections moved out of STATUS.md byte-identical on 2026-09-25 —
+        // dated records, not summaries of today's grant. Measured when they moved: one hit,
+        // `status-4.md`'s §4-3, written 2026-09-02, the day before `.lib` existed. It was true
+        // that day, and rewriting a record to satisfy a present-tense check is the wrong fix.
+        // STATUS.md itself still cites the licence and still lists the full set, so it stays in.
+        if path.starts_with("docs/history/") {
+            continue;
+        }
         for ext in &covered {
             assert!(
                 text.contains(&format!("`{ext}`")),
@@ -3434,9 +3442,11 @@ fn every_pointer_to_the_current_state_names_status() {
 /// here. After the move the block sat at 93, so the room left is real rather than nominal.
 ///
 /// **What to do when it goes red** is in the message and matters more than the limit: move
-/// the oldest DATED ENTRIES to `HISTORY.md` verbatim and leave a dated row in the block's
-/// index. `#265` and the 2026-09-23 move both did that and verified the moved text
-/// byte-for-byte against `git show` afterwards.
+/// the oldest DATED ENTRIES to `HISTORY.md` verbatim and add a dated row to the index,
+/// `docs/history/start-block-index.md`. `#265` and the 2026-09-23 move both did that and
+/// verified the moved text byte-for-byte against `git show` afterwards. The index itself
+/// lived inside the block until 2026-09-25, when `status_fits_in_one_read` moved it out; the
+/// block keeps its `그 앞의 항목들` heading as the pointer to it.
 ///
 /// Two wrong answers, one of which was made and caught. Trimming by deleting is the first.
 /// The second is moving more than the dated entries: the first cut of the 2026-09-23 move
@@ -3452,6 +3462,10 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
     // are what grew to 759 lines. Budgeting the block punished the part that cannot run away
     // and left two lines of headroom for the part that can; the first version did exactly
     // that, and it fired on the commit that closed the slice.
+    //
+    // (2026-09-25: the index itself moved to docs/history/start-block-index.md when the whole
+    // file got a budget of its own. Budgeting the entries rather than the block still holds —
+    // the block now keeps only the `그 앞의 항목들` heading that points there.)
     const BUDGET: usize = 120;
     let status = read("docs/STATUS.md");
     let lines: Vec<&str> = status.lines().collect();
@@ -3473,10 +3487,11 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
         .position(|l| l.contains("그 앞의 항목들"))
         .map(|i| start + i)
         .expect(
-            "the ▶ block no longer has its `그 앞의 항목들` index heading. That heading is \
-             what separates the live entries from the dated index, and this guard budgets \
-             only the first — if the index is gone, the moved entries have nowhere to be \
-             found from and the budget below is measuring the wrong thing",
+            "the ▶ block no longer has its `그 앞의 항목들` heading. That heading is what \
+             separates the live entries from the pointer to the dated index \
+             (docs/history/start-block-index.md), and this guard budgets only the first — if \
+             the pointer is gone, the moved entries have nowhere to be found from and the \
+             budget below is measuring the wrong thing",
         );
 
     let len = index_at - start;
@@ -3486,8 +3501,8 @@ fn the_start_here_block_is_a_starting_point_not_a_log() {
          index below them is not counted — it grows one line per session and is bounded). The \
          heading says this is where a session starts, and CLAUDE.md sends every session to it; \
          at {len} lines of narrative it is a log instead. Move the oldest DATED ENTRIES to \
-         docs/HISTORY.md VERBATIM and leave a dated row in the index, then verify \
-         byte-for-byte against `git show`. If there is only ONE entry, the entry itself is too \
+         docs/HISTORY.md VERBATIM and add a dated row to docs/history/start-block-index.md, \
+         then verify byte-for-byte against `git show`. If there is only ONE entry, the entry itself is too \
          long: its retrospective belongs in that session's §9-N, and durable rules belong in \
          §7 — leave a pointer, not a summary. Do not trim by deleting, and do not move the \
          standing N·D·X·R·A \
@@ -3591,4 +3606,209 @@ fn every_module_building_test_is_windows_gated() {
          when this guard was written, so the walk or the entry-point names have moved and this \
          is passing by checking almost nothing"
     );
+}
+
+/// **`STATUS.md` is the file every session reads first, so it has to fit in one read.**
+///
+/// Measured 2026-09-25 with the agent's own Read tool: it returned *"lines 1-443 of 1944
+/// total (93243 tokens, cap 25000)"* for this file, and the ▶ block a session is sent to sat
+/// on the fourth page, at line 1713. The first page was 61% closed slice records under a
+/// heading that says it is not the place to start. Nothing bounded the file — the ▶ block's
+/// budget covers its live entry and nothing around it — so it grew back after each move
+/// (+87 lines in the two days after the 2026-09-23 one).
+///
+/// The budget is in bytes because bytes are what a test can count; tokens are what the tool
+/// counts. The file measured 2.06 LF bytes per token, so the 25,000-token cap is about 51.5 KB,
+/// and 45,000 leaves room for that ratio to move with the mix of prose and code. `\r` is not
+/// counted: Windows checks the file out with CRLF and ubuntu with LF, and a budget that
+/// differs by platform is two budgets.
+///
+/// **When it goes red, move — do not delete.** A closed item keeps one line here and its
+/// narrative moves byte-identical to `docs/history/status-<section>.md`; a dated record moves
+/// whole and leaves its heading behind as a one-line stub, because other files cite
+/// `STATUS §<n>` (`every_status_citation_resolves`).
+#[test]
+fn status_fits_in_one_read() {
+    const BUDGET: usize = 45_000;
+    let len = read("docs/STATUS.md").replace('\r', "").len();
+    assert!(
+        len <= BUDGET,
+        "docs/STATUS.md is {len} bytes (LF), over the {BUDGET}-byte budget — past it, the Read \
+         tool returns the file in pages and a session sees only the first. Do not trim by \
+         deleting: collapse CLOSED items to one line that links their narrative, and move the \
+         narrative byte-identical to docs/history/status-<section>.md. A dated record moves \
+         whole and leaves its heading as a one-line stub, so `STATUS §<n>` citations resolve. \
+         Open items and current facts stay in full."
+    );
+}
+
+/// **Every file under `docs/history/` fits in one read too, and `STATUS.md` points at real ones.**
+///
+/// The archive exists so that `STATUS.md` can stay small, and trading one file no session can
+/// open whole for another would be no trade — that is what `docs/HISTORY.md` became on the
+/// day it was created (264 KB against the Read tool's 256 KB cap). 40,000 bytes keeps a file
+/// inside one read with room left; a section that outgrows it splits into two files.
+///
+/// The link half is the floor. An archive nothing points at is invisible, and a pointer to a
+/// file that is not there is the silent loss the move exists to rule out.
+#[test]
+fn every_history_file_fits_in_one_read() {
+    const BUDGET: usize = 40_000;
+    let files: Vec<(String, String)> = every_markdown_file()
+        .into_iter()
+        .filter(|(path, _)| path.starts_with("docs/history/"))
+        .collect();
+    assert!(
+        !files.is_empty(),
+        "docs/history/ holds no markdown files, so nothing STATUS.md collapsed has anywhere to be"
+    );
+    for (path, text) in &files {
+        let len = text.replace('\r', "").len();
+        assert!(
+            len <= BUDGET,
+            "{path} is {len} bytes (LF), over the {BUDGET}-byte budget. Split it into two files \
+             and point STATUS.md at both — a history file that cannot be read in one call is \
+             the problem this directory was made to solve"
+        );
+    }
+
+    let status = read("docs/STATUS.md");
+    let mut linked = 0;
+    for (at, _) in status.match_indices("](history/") {
+        let rest = &status[at + 2..];
+        let end = rest
+            .find([')', '#'])
+            .expect("a markdown link into history/ that never closes");
+        let target = format!("docs/{}", &rest[..end]);
+        linked += 1;
+        assert!(
+            files.iter().any(|(path, _)| *path == target),
+            "docs/STATUS.md links to {target}, which does not exist"
+        );
+    }
+    assert!(
+        linked > 0,
+        "docs/STATUS.md links into docs/history/ nowhere, so the archive is unreachable from the \
+         file a session reads"
+    );
+}
+
+/// **Every `STATUS §<n>` cited anywhere resolves to a heading or a numbered item in `STATUS.md`.**
+///
+/// The same relation `every_cited_history_entry_has_a_heading` keeps for `§9-N`, and for the
+/// same reason: a prose reference does not fail at compile time, so a stranded one is silent.
+/// Measured before the 2026-09-25 slimming: 150 citations of this form outside the session
+/// log, 0 dangling — and three plants went red (a renumbered heading, a numbered item that
+/// lost its `N. `, and a `§5-7` that must not borrow item `7.` from `### 5-5.`). Moving a
+/// section out of `STATUS.md` is safe only because its heading stays behind as a one-line
+/// stub; this is what notices when one does not.
+///
+/// A label resolves if `STATUS.md` has a heading numbered with it (`## 1.`, `### 3a-9.`,
+/// `### 5-5.`), or if it names an item under such a heading — `4-2` is item `2.` under
+/// `## 4.`, `5-5.7` is item `7.` under `### 5-5.`, and `9-A` is heading `A.` under `## 9.`.
+/// `§9-<digits>` is the session log in `HISTORY.md` and belongs to the guard above. Headings
+/// are unquoted lines only: the ▶ block's quoted `> ## ▶` sits inside `## 9.` and must not end it.
+#[test]
+fn every_status_citation_resolves() {
+    let status = read("docs/STATUS.md").replace('\r', "");
+    let lines: Vec<&str> = status.lines().collect();
+
+    // (level, text after the hashes) for an unquoted heading line.
+    let heading = |line: &str| -> Option<(usize, String)> {
+        let level = line.chars().take_while(|&c| c == '#').count();
+        (level >= 2).then(|| (level, line[level..].trim_start().to_string()))
+    };
+    let resolves = |label: &str| -> bool {
+        if lines
+            .iter()
+            .filter_map(|l| heading(l))
+            .any(|(_, text)| text.starts_with(&format!("{label}.")))
+        {
+            return true;
+        }
+        let Some((section, item)) = label.rsplit_once('.').or_else(|| label.rsplit_once('-'))
+        else {
+            return false;
+        };
+        let Some((start, level)) = lines.iter().enumerate().find_map(|(i, l)| {
+            heading(l)
+                .filter(|(_, text)| text.starts_with(&format!("{section}.")))
+                .map(|(level, _)| (i, level))
+        }) else {
+            return false;
+        };
+        let body = &lines[start + 1..];
+        // A numbered item belongs to the section's OWN list, which ends at its first
+        // sub-heading. Scanning past it would let `5-7` resolve to item `7.` of `### 5-5.`.
+        let own_item = body
+            .iter()
+            .take_while(|l| heading(l).is_none())
+            .any(|l| l.starts_with(&format!("{item}. ")));
+        // A lettered sub-heading (`#### A.` for `9-A`) may sit anywhere inside the section.
+        let sub_heading = body
+            .iter()
+            .take_while(|l| heading(l).is_none_or(|(inner, _)| inner > level))
+            .any(|l| heading(l).is_some_and(|(_, text)| text.starts_with(&format!("{item}."))));
+        own_item || sub_heading
+    };
+
+    let mut cited: Vec<(String, String)> = Vec::new();
+    for (path, text) in every_file_ending_in(&[".md", ".rs", ".c", ".h", ".dpr", ".mls", ".yml"]) {
+        for (at, _) in text.match_indices("STATUS") {
+            let rest = &text[at + "STATUS".len()..];
+            let rest = rest.strip_prefix(".md").unwrap_or(rest);
+            let rest = rest.strip_prefix('`').unwrap_or(rest);
+            let rest = rest.strip_prefix(' ').unwrap_or(rest);
+            let Some(rest) = rest.strip_prefix('§') else {
+                continue;
+            };
+            // `<digits><optional letter>` then optionally `-<digits or capitals>` then
+            // optionally `.<digits>`: 1 · 3a · 3a-9 · 4-12 · 5-5.7 · 9-A.
+            let mut label: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            if label.is_empty() {
+                continue;
+            }
+            let mut tail = &rest[label.len()..];
+            if let Some(c) = tail.chars().next().filter(char::is_ascii_lowercase) {
+                label.push(c);
+                tail = &tail[1..];
+            }
+            if let Some(after) = tail.strip_prefix('-') {
+                let part: String = after
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
+                    .collect();
+                if !part.is_empty() {
+                    label = format!("{label}-{part}");
+                    tail = &after[part.len()..];
+                }
+            }
+            if let Some(after) = tail.strip_prefix('.') {
+                let part: String = after.chars().take_while(char::is_ascii_digit).collect();
+                if !part.is_empty() {
+                    label = format!("{label}.{part}");
+                }
+            }
+            if label.starts_with("9-") && label[2..].starts_with(|c: char| c.is_ascii_digit()) {
+                continue;
+            }
+            cited.push((path.clone(), label));
+        }
+    }
+    assert!(
+        cited.len() >= 100,
+        "found only {} `STATUS §<n>` citations outside the session log; 2026-09-25 measured \
+         150, so this scan is reading less than it did",
+        cited.len()
+    );
+
+    for (path, label) in &cited {
+        assert!(
+            resolves(label),
+            "{path} cites STATUS §{label}, but docs/STATUS.md has no heading or numbered item \
+             for it. If that section moved to docs/history/, leave its heading in STATUS.md as \
+             a one-line stub that links the new file — the citation is the address, and it is \
+             spread across the tree"
+        );
+    }
 }

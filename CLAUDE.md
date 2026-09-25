@@ -125,7 +125,7 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 - **틀린 문장은 제자리에서 고치고, 무엇이 언제 틀렸는지는 그 세션 기록(`docs/history/9-N.md`)에만 쓴다** — 살아 있는 문서에 정정 노트를 달지 않고, 이 파일의 규칙은 한 줄 + 근거 위치(PR·§·테스트 이름)로 쓴다(`live_documents_do_not_accumulate_correction_notes`).
 - **소스 편집에 스크립트를 쓰지 않는다** — 이스케이프가 줄 연속 `\`를 먹어 NUL 바이트와 공백 뭉침을 남긴다. 불가피하면 백슬래시를 `chr(92)`로 구성하고 여러 치환을 한 배치로 묶지 않는다(#210, STATUS §7-3).
 - **docs만 바뀐 PR도 관련 가드는 돌린다**(`cargo test -p ml_oracle --test doc_claims`). 전체 스위트를 건너뛰는 것은 괜찮지만, 초 단위 확인을 분 단위 CI 왕복으로 미루지 않는다(STATUS §7-3).
-- **`docs/STATUS.md`는 Read 한 번에 들어가야 한다**(`doc_claims.rs`의 `status_fits_in_one_read`). 넘치면 지우지 말고, 닫힌 항목을 한 줄 + 본문 링크로 접고 서사는 `docs/history/status-<절>.md`로 바이트 그대로 옮긴다. 옮긴 표제는 한 줄 스텁으로 남긴다 — `STATUS §N` 인용이 주소다(`every_status_citation_resolves`).
+- **`docs/STATUS.md`는 열린 것만 담고 Read 한 번에 들어가야 한다**(`status_fits_in_one_read`). 항목이 닫히면 그 줄을 `docs/history/status-closed-NNN.md`로 바이트 그대로 옮긴다 — `STATUS §N` 인용은 거기서도 풀린다(`status_holds_no_closed_item`, `every_status_citation_resolves`).
 - 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). 레이아웃은 위 "저장소 성격"이 정본이다. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지)이고, `host/c`는 **이름만 다르게** `hosts/c-host/`·`hosts/c-host-link/`로 실재한다. Free Pascal `-Mdelphi`는 방언 에뮬레이션이라 **Delphi 게이트를 대신하지 못한다** — 호스트별 게이트 현황의 정본은 `docs/STATUS.md`다.
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.

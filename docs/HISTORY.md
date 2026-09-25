@@ -27,6 +27,7 @@
 > `### 9-N. <제목> → [본문](history/9-N.md)`을 더한다. **이미 있는 파일은 다시 편집하지 않는다** — 그날
 > 쓰고 있는 자기 기록만 예외다. `doc_claims.rs`의 `the_history_archive_is_indexed_and_numbered`가 스텁과
 > 파일을 양쪽에서 맞춰 본다.
+
 ---
 
 ### 9-65. STATUS를 Read 한 번에 읽히게 했다 (2026-09-25, E2) — **크기가 결함 셋을 숨기고 있었다** → [본문](history/9-65.md)

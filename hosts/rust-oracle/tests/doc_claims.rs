@@ -4109,10 +4109,16 @@ fn the_session_start_documents_fit_in_one_read() {
     const CLAUDE_LINES: usize = 200;
 
     let status = read("docs/STATUS.md").replace('\r', "");
-    let order = status.lines().find(|l| l.starts_with("1. 이 문서")).expect(
-        "docs/STATUS.md §9 step 1 — the reading order this guard derives its set from — is \
+    // Inside §9 only: the first `1. 이 문서` anywhere in the file would do today, but a line of
+    // that shape written earlier would silently become the reading order (Grok).
+    let order = status
+        .lines()
+        .skip_while(|l| !l.starts_with("## 9. "))
+        .find(|l| l.starts_with("1. 이 문서"))
+        .expect(
+            "docs/STATUS.md §9 step 1 — the reading order this guard derives its set from — is \
              gone or reworded. Put the order back, or teach this guard where it went",
-    );
+        );
     let mut docs = vec!["docs/STATUS.md".to_string()];
     for span in order.split('`').skip(1).step_by(2) {
         if span.ends_with(".md") {

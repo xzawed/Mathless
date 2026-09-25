@@ -65,7 +65,7 @@
 #include "basket.h"
 #include "schedule.h"
 #include "allocate.h"
-/* Included for the header alone (N1): these four are exercised by the Rust oracle, but
+/* Included for the header alone (N1): these are exercised by the Rust oracle, but
  * until now no C compiler had read the headers that ship beside them. `shapes.h` is the
  * one that matters most -- shapes.mls collects the export shapes where a mis-written
  * adapter compiles and returns a plausible wrong value. doc_claims.rs fails if a new
@@ -75,6 +75,7 @@
 #include "discount3.h"
 #include "shapes.h"
 #include "refund.h"
+#include "order.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);

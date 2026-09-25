@@ -1,0 +1,77 @@
+// State machine example (ROADMAP Phase 3): an order's lifecycle as a pure transition function.
+//
+// The module owns the table, so adding a state or an edge changes one file, not two. The host
+// keeps the current state and asks the module where an event leads.
+//
+// There are no constant declarations yet, so each state and event is a zero-argument internal
+// `fn`. That keeps the numbers in one place inside the module - and it is also the limit of
+// this example: the numbers are function BODIES. The generated header carries no name for
+// them, and the interface fingerprint does not cover them, so renumbering a state keeps the
+// header and the fingerprint byte-identical while the module's answers move (measured in
+// hosts/rust-oracle/tests/order_state_machine.rs). The host has to treat 1..6 and 1..5 as part
+// of the contract by hand. The error codes, by contrast, are in both.
+
+error E_BAD_TRANSITION = 1
+error E_UNKNOWN_STATE = 2
+
+// States.
+fn created() -> i32 { return 1 }
+fn paid() -> i32 { return 2 }
+fn shipped() -> i32 { return 3 }
+fn delivered() -> i32 { return 4 }
+fn cancelled() -> i32 { return 5 }
+fn refunded() -> i32 { return 6 }
+
+// Events.
+fn pay() -> i32 { return 1 }
+fn ship() -> i32 { return 2 }
+fn deliver() -> i32 { return 3 }
+fn cancel() -> i32 { return 4 }
+fn refund() -> i32 { return 5 }
+
+fn known(state: i32) -> bool {
+  return state >= created() && state <= refunded()
+}
+
+// The table. There is no `else` or `match`, so each edge is an early return and anything that
+// falls through is refused. An unknown state is checked first so that it gets its own code:
+// "this order is in a state I do not know" is a different bug from "this event is not allowed".
+export fn next_state(state: i32, event: i32) -> i32! {
+  if !known(state) { fail E_UNKNOWN_STATE }
+  if state == created() && event == pay() { return paid() }
+  if state == created() && event == cancel() { return cancelled() }
+  if state == paid() && event == ship() { return shipped() }
+  if state == paid() && event == cancel() { return refunded() }
+  if state == shipped() && event == deliver() { return delivered() }
+  if state == delivered() && event == refund() { return refunded() }
+  fail E_BAD_TRANSITION
+}
+
+// A whole sequence, folded through the table. `try` hands a refusal back unchanged, so the host
+// sees the same code it would have seen calling next_state one event at a time. The start state
+// is checked even with no events - otherwise an empty sequence would return any number as if
+// it were a state.
+export fn replay(start: i32, events: [i32]) -> i32! {
+  if !known(start) { fail E_UNKNOWN_STATE }
+  let mut s = start
+  let mut i = 0
+  while i < len(events) {
+    s = try next_state(s, events[i])
+    i = i + 1
+  }
+  return s
+}
+
+export fn is_terminal(state: i32) -> bool {
+  return state == cancelled() || state == refunded()
+}
+
+export fn state_label(state: i32) -> string! {
+  if state == created() { return "주문됨" }
+  if state == paid() { return "결제됨" }
+  if state == shipped() { return "배송중" }
+  if state == delivered() { return "배송완료" }
+  if state == cancelled() { return "취소됨" }
+  if state == refunded() { return "환불됨" }
+  fail E_UNKNOWN_STATE
+}

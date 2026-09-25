@@ -1,5 +1,8 @@
 # SPEC — 고정 소수 포맷 `fixed(x, places)`
 
+> **기록 문서다.** 이 SPEC은 닫힌 슬라이스의 설계 기록이다 — 본문은 닫힌 날의 사실이고 다시 고치지 않는다.
+> 현재 상태는 [`docs/STATUS.md`](../STATUS.md)가 말한다.
+
 - **상태: 확정 · 구현 완료(2026-09-15).** DP-M1~M6 **전부 권고대로** 확정됐다(사용자 확인).
   수용 A~K 전부 실측했다 — 값은 오라클 `tests/fixed_decimals.rs`, 호스트 절반은
   `hosts/c-host/host.c`의 `money.dll` 구역이다.

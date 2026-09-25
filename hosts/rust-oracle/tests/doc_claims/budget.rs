@@ -558,7 +558,7 @@ fn live_documents_do_not_accumulate_correction_notes() {
     let docs = every_markdown_file();
     let mut wrong = Vec::new();
     for (path, text) in &docs {
-        if is_dated_record(path) || path.starts_with("docs/slices/SPEC-") {
+        if is_record(path) {
             continue;
         }
         let lower = text.to_lowercase();

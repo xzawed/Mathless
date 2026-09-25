@@ -1,5 +1,8 @@
 # Slice SPEC — Error path (D17: integer status + out-param)
 
+> **기록 문서다.** 이 SPEC은 닫힌 슬라이스의 설계 기록이다 — 본문은 닫힌 날의 사실이고 다시 고치지 않는다.
+> 현재 상태는 [`docs/STATUS.md`](../STATUS.md)가 말한다.
+
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29 기준.
 > §5의 DP-E1~E3는 **2026-08-28 사용자 승인으로 닫혔다**(DP-E1 = `fail`/`error` + **명시적 `-> T!` 표식**).
 > 구현: **WE1~WE5 = PR #15**(TDD). Q13 확정은 `OPEN_QUESTIONS.md`(PR #28)와 `DECISIONS.md` D17 상세

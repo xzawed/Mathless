@@ -382,6 +382,13 @@ fn is_dated_record(path: &str) -> bool {
     path == "docs/HISTORY.md" || path.starts_with("docs/history/")
 }
 
+/// **Records, which present-tense guards skip**: the dated records above and the slice SPECs.
+/// A SPEC is the design record of the day its slice closed and is not edited again (⑤, the
+/// record banner `a_closed_spec_says_so_in_its_own_header` requires).
+fn is_record(path: &str) -> bool {
+    is_dated_record(path) || path.starts_with("docs/slices/SPEC-")
+}
+
 /// **The pages of the session-log index**, newest stubs first: `docs/HISTORY.md`, then any
 /// rolled pages `docs/history/index-NNN.md` from the newest roll down to 001. Each item is
 /// `(path, text without '\r', the prefix a stub on that page uses to link `9-N.md`)`.

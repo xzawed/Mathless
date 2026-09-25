@@ -1,5 +1,8 @@
 # Slice SPEC — Mutable locals (`let mut`) + assignment
 
+> **기록 문서다.** 이 SPEC은 닫힌 슬라이스의 설계 기록이다 — 본문은 닫힌 날의 사실이고 다시 고치지 않는다.
+> 현재 상태는 [`docs/STATUS.md`](../STATUS.md)가 말한다.
+
 > **상태: 확정(accepted) · 구현 완료(shipped)** — 2026-08-29.
 > §4의 DP-M1~M4는 사용자 승인으로 권장안 그대로 닫혔다(`let mut` 키워드 / `let mut` 지역만 대입 대상 /
 > 대입은 문 / 복합 대입 제외). 구현: **WM1~WM5 = PR #39**(SPEC은 PR #32). `DECISIONS.md`는 바꾸지 않았다.

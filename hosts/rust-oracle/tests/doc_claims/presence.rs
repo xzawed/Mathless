@@ -22,7 +22,7 @@ fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
     // It cannot tell a claim from a quotation of an old one: when recounting a superseded
     // number, do not spell it with this prefix.
     for (path, text) in every_markdown_file() {
-        if is_dated_record(&path) || path.starts_with("docs/slices/SPEC-") {
+        if is_record(&path) {
             continue;
         }
         for n in numbers_between(&text, "로드하는 모듈 ", "개") {
@@ -381,7 +381,7 @@ fn every_document_that_cites_the_output_licence_lists_what_it_covers() {
         // moved to `docs/history/`: one hit, `status-4.md`'s §4-3, written 2026-09-02, the day
         // before `.lib` existed. It was true that day. STATUS.md itself still cites the licence
         // and still lists the full set, so it stays in.
-        if is_dated_record(&path) {
+        if is_record(&path) {
             continue;
         }
         for ext in &covered {

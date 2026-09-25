@@ -588,3 +588,86 @@ fn the_guard_suite_fits_in_one_read_per_file() {
         );
     }
 }
+
+/// **A live document's count of correction notes only goes down.**
+///
+/// Why: the usual repair appended *when and how a sentence was wrong* next to the corrected
+/// sentence, so live documents grew a second, dated history. The rule is to rewrite the sentence
+/// in place and put the story in the session record (`CLAUDE.md`, 산출물 규칙). A note is 정정,
+/// a dated 감사 (`2026-09-22 감사`), `used to say` or `was wrong`. Dated records and SPECs are
+/// not read; a document not listed below starts at zero.
+#[test]
+fn live_documents_do_not_accumulate_correction_notes() {
+    // Measured 2026-09-25, after CLAUDE.md dropped its five. Removing a note means lowering the
+    // number here in the same change; that is what keeps the count from growing back.
+    // CLAUDE.md's one is the rule that forbids the notes, which has to name them.
+    const CEILINGS: &[(&str, usize)] = &[
+        ("CLAUDE.md", 1),
+        ("CONTRIBUTING.md", 2),
+        ("README.md", 1),
+        ("docs/ARCHITECTURE.md", 2),
+        ("docs/DECISIONS.md", 4),
+        ("docs/GLOSSARY.md", 1),
+        ("docs/HOST_ABI.md", 5),
+        ("docs/LANGUAGE.md", 4),
+        ("docs/OPEN_QUESTIONS.md", 6),
+        ("docs/STATUS.md", 10),
+        ("docs/VISION.md", 1),
+        ("docs/phase1/SPEC.md", 1),
+        ("docs/phase1/WBS.md", 2),
+        ("docs/slices/README.md", 6),
+    ];
+
+    let dated_audits = |text: &str| {
+        text.match_indices(" 감사")
+            .filter(|(at, _)| {
+                let before = &text.as_bytes()[..*at];
+                before.len() >= 10 && {
+                    let d = &before[before.len() - 10..];
+                    d[4] == b'-'
+                        && d[7] == b'-'
+                        && d.iter()
+                            .enumerate()
+                            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+                }
+            })
+            .count()
+    };
+    let docs = every_markdown_file();
+    let mut wrong = Vec::new();
+    for (path, text) in &docs {
+        if is_dated_record(path) || path.starts_with("docs/slices/SPEC-") {
+            continue;
+        }
+        let lower = text.to_lowercase();
+        let notes = text.matches("정정").count()
+            + dated_audits(text)
+            + lower.matches("used to say").count()
+            + lower.matches("was wrong").count();
+        let ceiling = CEILINGS
+            .iter()
+            .find(|(p, _)| p == path)
+            .map_or(0, |(_, c)| *c);
+        if notes > ceiling {
+            wrong.push(format!(
+                "{path} has {notes} correction notes, over its ceiling {ceiling}: rewrite the \
+                 wrong sentence in place and put what was wrong, and when, in the session record \
+                 (docs/history/9-N.md)"
+            ));
+        } else if notes < ceiling {
+            wrong.push(format!(
+                "{path} has {notes} correction notes, under its ceiling {ceiling}: lower its \
+                 ceiling to {notes} here so it cannot grow back"
+            ));
+        }
+    }
+    for (p, _) in CEILINGS {
+        if !docs.iter().any(|(path, _)| path == p) {
+            wrong.push(format!(
+                "{p} has a ceiling here but no longer exists — a renamed document carries its \
+                 ceiling to the new name"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}

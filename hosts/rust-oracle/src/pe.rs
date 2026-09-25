@@ -206,7 +206,8 @@ pub struct Section {
 /// Read one section by name (`".text"`, `".pdata"`, …) from the PE file at `path`.
 ///
 /// This exists because file size is a useless regression signal for this compiler: several
-/// modules of visibly different content all come out at exactly 9,728 B, and an adapter that
+/// modules of visibly different content all come out the same size (9,728 B on the development
+/// machine; the size itself is machine-dependent — `docs/SECURITY.md`), and an adapter that
 /// wrote through an out-param on the failure path — a real contract violation — added 16
 /// bytes of code and moved the file size by zero. `.text` moves.
 ///

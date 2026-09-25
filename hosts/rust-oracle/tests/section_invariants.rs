@@ -3,7 +3,8 @@
 //!
 //! The SPEC's first draft leaned on `.dll` file size. That was disproved before the refactor
 //! started: `FileAlignment = 512` quantises it, so `discount` (one export, four lines) and
-//! `quote` (two exports, two internals, three `try` statements) are BOTH exactly 9,728 B —
+//! `quote` (two exports, two internals, three `try` statements) come out the SAME size (9,728 B
+//! on the development machine; the size itself is machine-dependent — `docs/SECURITY.md`) —
 //! and an adapter that wrote through an out-param on the failure path, a real DP-E3
 //! violation, added 16 bytes of code and moved the file size by ZERO.
 //!

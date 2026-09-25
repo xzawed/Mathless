@@ -390,7 +390,7 @@ fn the_readmes_admit_the_staging_directory_a_killed_build_leaves() {
 /// covers.**
 ///
 /// `every_artifact_the_emitter_writes_is_named_in_the_docs` already checks this, against a
-/// hand-written list of six files — and its own comment says why that list matters: D23
+/// hand-written list of the set's homes — and its own comment says why that list matters: D23
 /// enumerated four artifacts while `LICENSE-OUTPUT-EXCEPTION` §1 listed five, "a grant that
 /// under-lists what it grants is the worst place for this drift", and it sat outside the
 /// guard until 2026-09-05.

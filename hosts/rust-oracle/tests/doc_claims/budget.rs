@@ -582,7 +582,8 @@ fn the_guard_suite_fits_in_one_read_per_file() {
         assert!(
             text.len() <= BUDGET,
             "{path} is {} bytes, over {BUDGET}: it no longer opens in one Read. Move a theme's \
-             guards into tests/doc_claims/<theme>.rs and declare `mod <theme>;` in {root_path}",
+             guards into tests/doc_claims/<theme>.rs and declare it in {root_path} as \
+             `#[path = \"doc_claims/<theme>.rs\"]` followed by `mod <theme>;`",
             text.len()
         );
     }

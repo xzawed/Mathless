@@ -122,6 +122,16 @@ fn flatten_prose(src: &str) -> String {
     words.join(" ")
 }
 
+/// Every place `needle` starts in `hay`. `windows` tries each start, the last one included —
+/// the four scan loops this replaced ran `0..len - n` and never tried a needle that ends the
+/// text (Grok found it reviewing the guards; `stale.rs` has the plants).
+fn starts<'a>(hay: &'a [char], needle: &'a [char]) -> impl Iterator<Item = usize> + 'a {
+    hay.windows(needle.len())
+        .enumerate()
+        .filter(move |(_, w)| *w == needle)
+        .map(|(i, _)| i)
+}
+
 /// Thousands separators the way the documents write them: `9728` -> `"9,728"`.
 fn with_commas(n: u64) -> String {
     let digits = n.to_string();

@@ -225,6 +225,140 @@ fn the_language_reference_does_not_deny_what_it_documents() {
     }
 }
 
+/// **No document still states a claim the code has left** — one row per claim, below.
+///
+/// Why: five of these were functions of their own, and four copied one scan loop with one
+/// off-by-one (a needle that ends the text was never tried). A new stale claim is a row, every
+/// row runs, and every failure is reported — not only the first.
+#[test]
+fn no_document_still_states_a_claim_the_code_has_left() {
+    let docs = every_markdown_file();
+    let mut failures = Vec::new();
+    for (i, row) in STALE.iter().enumerate() {
+        assert!(
+            !row.needles.is_empty() && STALE[..i].iter().all(|r| r.id != row.id),
+            "row {}: a row needs a needle and an id no other row has",
+            row.id
+        );
+        // A row whose evidence is gone is reported with the rest instead of panicking here,
+        // which would hide every hit already found (Grok).
+        let gone: Vec<String> = row
+            .evidence
+            .iter()
+            .filter(|(file, marker)| !read(file).contains(marker))
+            .map(|(file, marker)| {
+                format!(
+                    "{}: {file} no longer contains {marker:?}, the fact that made this claim \
+                     false. If that fact is gone, the row is wrong and the documents may be right",
+                    row.id
+                )
+            })
+            .collect();
+        if !gone.is_empty() {
+            failures.extend(gone);
+            continue;
+        }
+        for (path, text) in &docs {
+            let in_scope = match row.scope {
+                Scope::AllMarkdown => true,
+                Scope::Live => !is_dated_record(path),
+                Scope::LiveExcept(prefixes) => {
+                    !is_dated_record(path) && !prefixes.iter().any(|p| path.starts_with(p))
+                }
+                Scope::OutsideDocs => !path.starts_with("docs/"),
+            };
+            if !in_scope {
+                continue;
+            }
+            let hay: Vec<char> = if row.flatten {
+                flatten_prose(text).chars().collect()
+            } else {
+                text.chars().collect()
+            };
+            for needle in row.needles {
+                let nd: Vec<char> = needle.chars().collect();
+                for start in starts(&hay, &nd) {
+                    let letter = |c: Option<&char>| c.is_some_and(char::is_ascii_alphabetic);
+                    let embedded = letter(start.checked_sub(1).and_then(|b| hay.get(b)))
+                        || letter(hay.get(start + nd.len()));
+                    if row.boundary && embedded {
+                        continue;
+                    }
+                    let lo = start.saturating_sub(row.window.0);
+                    let hi = (start + nd.len() + row.window.1).min(hay.len());
+                    let window: String = hay[lo..hi].iter().collect();
+                    let folded = window.to_lowercase();
+                    let in_context = row.context.is_empty()
+                        || row
+                            .context
+                            .iter()
+                            .any(|c| folded.contains(&c.to_lowercase()));
+                    let is_stale = row.forbidden.is_empty()
+                        || row.forbidden.iter().any(|f| window.contains(f));
+                    if in_context && is_stale {
+                        failures.push(format!(
+                            "{}: {path} says `{needle}`, but {}. Context: …{window}…",
+                            row.id, row.truth
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} failure(s) — a document still states a claim, or a row's evidence is gone:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// Where a row looks. Each row names its own: one shared exemption list would quietly narrow
+/// the row that deliberately reads the records too (Grok, reviewing this table's design).
+#[derive(Clone, Copy)]
+enum Scope {
+    /// Every `.md`, dated records included.
+    AllMarkdown,
+    /// Every `.md` except dated records (`is_dated_record`).
+    Live,
+    /// Every `.md` except dated records and anything under these prefixes.
+    LiveExcept(&'static [&'static str]),
+    /// Every `.md` outside `docs/` — product-facing prose only.
+    OutsideDocs,
+}
+
+/// One claim the code has left. `id` is the name the guard had as a function, so references
+/// to it still grep to its row.
+struct Stale {
+    id: &'static str,
+    /// `(file, marker)`: the facts that make the claim false. One missing means the ROW is
+    /// wrong, not the documents.
+    evidence: &'static [(&'static str, &'static str)],
+    scope: Scope,
+    /// Match against `flatten_prose` (markup and line breaks gone) instead of the raw text.
+    flatten: bool,
+    needles: &'static [&'static str],
+    /// Neither neighbour of a hit may be an ASCII letter: `C뿐` sits inside `FPC뿐`, and
+    /// `only C` inside `only CI` (Grok).
+    boundary: bool,
+    /// Chars kept before and after a hit.
+    window: (usize, usize),
+    /// A hit is stale only if one of these is in its window. Empty: the needle is the claim.
+    forbidden: &'static [&'static str],
+    /// If not empty, a hit counts only when one of these is also in the window, case-folded.
+    context: &'static [&'static str],
+    /// What is true instead.
+    truth: &'static str,
+}
+
+const STALE: &[&Stale] = &[
+    &A_REJECTED_SLICE_IS_NOT_DESCRIBED_AS_MERELY_PENDING,
+    &NO_DOCUMENT_CALLS_INTERFACE_METADATA_UNIMPLEMENTED,
+    &NO_DOCUMENT_SAYS_C_IS_THE_ONLY_GATED_HOST,
+    &NO_DOCUMENT_CALLS_ARRAY_RETURN_UNIMPLEMENTED,
+    &NO_LIVE_DOCUMENT_NAMES_THE_BARE_FINGERPRINT_EXPORT,
+];
+
 /// **A slice decided against is not "not done yet".**
 ///
 /// The index marks `SPEC-symbol-embedded-hash.md` ⛔ 하지 않는다 — DP-H3(b) was measured,
@@ -243,41 +377,24 @@ fn the_language_reference_does_not_deny_what_it_documents() {
 /// **Honest limit**: the needle is two phrasings, so a reworded "not done yet" escapes it. The
 /// alternative was a positive pin requiring every mention to carry the rejection, and that
 /// fires on `SPEC-error-prefix.md`, which legitimately recorded DP-H3(b) as open on 2026-09-03,
-/// two days before the decision. `docs/slices/` and `docs/HISTORY.md` are exempt for that
-/// reason: they are records of what was true when written.
-#[test]
-fn a_rejected_slice_is_not_described_as_merely_pending() {
-    let index = read("docs/slices/README.md");
-    assert!(
-        index.contains("⛔") && index.contains("SPEC-symbol-embedded-hash.md"),
-        "docs/slices/README.md no longer marks SPEC-symbol-embedded-hash.md ⛔. If the decision \
-         was reopened, this guard is wrong — but CLAUDE.md rule 3 names the conditions"
-    );
-
-    for (path, text) in every_markdown_file() {
-        if is_dated_record(&path) || path.starts_with("docs/slices/") {
-            continue;
-        }
-        let flat = flatten_prose(&text);
-        let chars: Vec<char> = flat.chars().collect();
-        let nd: Vec<char> = "DP-H3(b)".chars().collect();
-        for start in 0..chars.len().saturating_sub(nd.len()) {
-            if chars[start..start + nd.len()] != nd[..] {
-                continue;
-            }
-            let hi = (start + nd.len() + 90).min(chars.len());
-            let window: String = chars[start..hi].iter().collect();
-            for pending in ["아직 하지 않았", "아직 안 했"] {
-                assert!(
-                    !window.contains(pending),
-                    "{path} describes DP-H3(b) as pending, but docs/slices/README.md marks it \
-                     ⛔ 하지 않는다 (#141, 2026-09-05). \"Not done yet\" invites a session to do \
-                     it; \"decided against\" sends them to the reasons. Context: …{window}…"
-                );
-            }
-        }
-    }
-}
+/// two days before the decision. `docs/slices/` and the dated records (`is_dated_record`) are
+/// exempt for that reason: they are records of what was true when written.
+const A_REJECTED_SLICE_IS_NOT_DESCRIBED_AS_MERELY_PENDING: Stale = Stale {
+    id: "a_rejected_slice_is_not_described_as_merely_pending",
+    evidence: &[
+        ("docs/slices/README.md", "⛔"),
+        ("docs/slices/README.md", "SPEC-symbol-embedded-hash.md"),
+    ],
+    scope: Scope::LiveExcept(&["docs/slices/"]),
+    flatten: true,
+    needles: &["DP-H3(b)"],
+    boundary: false,
+    window: (0, 90),
+    forbidden: &["아직 하지 않았", "아직 안 했"],
+    context: &[],
+    truth: "docs/slices/README.md marks it ⛔ 하지 않는다 (#141, 2026-09-05). \"Not done yet\" \
+            invites a session to do it; \"decided against\" sends them to the reasons",
+};
 
 /// **No document calls interface metadata unimplemented while every module ships a fingerprint.**
 ///
@@ -290,37 +407,19 @@ fn a_rejected_slice_is_not_described_as_merely_pending() {
 /// Scoped to the phrase 인터페이스 메타, which occurs in exactly one place in the tree. That is
 /// the measurement this guard rests on rather than a judgement: there is no legitimate second
 /// user of the phrase to carve out, so a future one is worth a red.
-#[test]
-fn no_document_calls_interface_metadata_unimplemented() {
-    let iface = read("compiler/src/iface.rs");
-    assert!(
-        iface.contains("ml-iface/1"),
-        "compiler/src/iface.rs no longer builds the ml-iface/1 manifest. If the fingerprint \
-         was withdrawn, this guard is wrong and ARCHITECTURE.md would be right"
-    );
-
-    for (path, text) in every_markdown_file() {
-        if is_dated_record(&path) {
-            continue;
-        }
-        let flat = flatten_prose(&text);
-        let chars: Vec<char> = flat.chars().collect();
-        let nd: Vec<char> = "인터페이스 메타".chars().collect();
-        for start in 0..chars.len().saturating_sub(nd.len()) {
-            if chars[start..start + nd.len()] != nd[..] {
-                continue;
-            }
-            let hi = (start + nd.len() + 40).min(chars.len());
-            let window: String = chars[start..hi].iter().collect();
-            assert!(
-                !(window.contains("미구현") || window.contains('⏳')),
-                "{path} calls 인터페이스 메타 unimplemented, but compiler/src/iface.rs builds the \
-                 ml-iface/1 manifest, every module exports ml_iface_hash_<module>, and both \
-                 reference C hosts refuse a drifted one. Context: …{window}…"
-            );
-        }
-    }
-}
+const NO_DOCUMENT_CALLS_INTERFACE_METADATA_UNIMPLEMENTED: Stale = Stale {
+    id: "no_document_calls_interface_metadata_unimplemented",
+    evidence: &[("compiler/src/iface.rs", "ml-iface/1")],
+    scope: Scope::Live,
+    flatten: true,
+    needles: &["인터페이스 메타"],
+    boundary: false,
+    window: (0, 40),
+    forbidden: &["미구현", "⏳"],
+    context: &[],
+    truth: "compiler/src/iface.rs builds the ml-iface/1 manifest, every module exports \
+            ml_iface_hash_<module>, and both reference C hosts refuse a drifted one",
+};
 
 /// **No document says C is the only host with an automated gate.**
 ///
@@ -333,53 +432,31 @@ fn no_document_calls_interface_metadata_unimplemented() {
 /// `FPC뿐` — so the first draft of this guard flagged `CLAUDE.md` and `DECISIONS.md` for saying
 /// the CORRECT thing, *"CI 게이트는 C·FPC뿐"*. A guard that fires on the true sentence is one
 /// somebody deletes (§9-A A6 is the same shape from the other direction: a needle with no
-/// polarity passing the false sentence). Requiring the preceding character not to be an ASCII
-/// letter separates them, and that separation was measured on all 53 documents before this
-/// was written, not assumed.
+/// polarity passing the false sentence). Requiring that neither neighbour of the hit is an
+/// ASCII letter separates them, and that separation was measured on all 53 documents before
+/// this was written, not assumed. (The check was on the preceding character only until the
+/// true sentence *"The only CI gate …"* matched `only C`; Grok found it.)
 ///
-/// **One exemption, `docs/HISTORY.md`**, because it is the history file: its tables record
-/// which documents carried this claim and when. Exempting it is not a loophole for a live
-/// document, because a live document is not in it.
-#[test]
-fn no_document_says_c_is_the_only_gated_host() {
-    let ci = read(".github/workflows/ci.yml");
-    assert!(
-        ci.contains("MATHLESS_GATE_FPC_HOST: require"),
-        ".github/workflows/ci.yml no longer requires MATHLESS_GATE_FPC_HOST. If the Pascal \
-         host gate was withdrawn, this guard is wrong and the documents would be right"
-    );
-
-    for (path, text) in every_markdown_file() {
-        if is_dated_record(&path) {
-            continue;
-        }
-        let flat: String = flatten_prose(&text);
-        let chars: Vec<char> = flat.chars().collect();
-        for needle in ["C뿐", "C 쪽만", "only C"] {
-            let nd: Vec<char> = needle.chars().collect();
-            for start in 0..chars.len().saturating_sub(nd.len()) {
-                if chars[start..start + nd.len()] != nd[..] {
-                    continue;
-                }
-                // `FPC뿐` contains `C뿐`. Only a standalone C is a claim about the C host.
-                if start > 0 && chars[start - 1].is_ascii_alphabetic() {
-                    continue;
-                }
-                let lo = start.saturating_sub(70);
-                let hi = (start + nd.len() + 70).min(chars.len());
-                let window: String = chars[lo..hi].iter().collect();
-                if !(window.contains("게이트") || window.to_lowercase().contains("gate")) {
-                    continue;
-                }
-                panic!(
-                    "{path} says the gated host is `{needle}`, but ci.yml requires \
-                     MATHLESS_GATE_FPC_HOST — an Object Pascal host loads x64 modules and \
-                     calls them on every push. Context: …{window}…"
-                );
-            }
-        }
-    }
-}
+/// **One exemption, the dated records** (`is_dated_record`: `docs/HISTORY.md` and
+/// `docs/history/`), because they are the history: they record which documents carried this
+/// claim and when. Exempting them is not a loophole for a live document, because a live
+/// document is not in them.
+const NO_DOCUMENT_SAYS_C_IS_THE_ONLY_GATED_HOST: Stale = Stale {
+    id: "no_document_says_c_is_the_only_gated_host",
+    evidence: &[(
+        ".github/workflows/ci.yml",
+        "MATHLESS_GATE_FPC_HOST: require",
+    )],
+    scope: Scope::Live,
+    flatten: true,
+    needles: &["C뿐", "C 쪽만", "only C"],
+    boundary: true,
+    window: (70, 70),
+    forbidden: &[],
+    context: &["게이트", "gate"],
+    truth: "ci.yml requires MATHLESS_GATE_FPC_HOST — an Object Pascal host loads x64 modules \
+            and calls them on every push",
+};
 
 /// **No document calls array return unimplemented while codegen emits it.**
 ///
@@ -400,36 +477,19 @@ fn no_document_says_c_is_the_only_gated_host() {
 /// twice, both in `HOST_ABI.md`, and both were the defect. `docs/` is not carved out here the
 /// way it is for the bare fingerprint name, because there is nothing under `docs/` that
 /// legitimately says this — the SPECs and the history record the feature as SHIPPED.
-#[test]
-fn no_document_calls_array_return_unimplemented() {
-    let codegen = read("compiler/src/codegen.rs");
-    assert!(
-        codegen.contains("RetAbi::ArrayOut"),
-        "codegen.rs no longer emits RetAbi::ArrayOut. If array return was withdrawn, this \
-         guard is wrong and the documents would be right"
-    );
-
-    const WINDOW: usize = 45;
-    for (path, text) in every_markdown_file() {
-        let flat = flatten_prose(&text);
-        let chars: Vec<char> = flat.chars().collect();
-        let needle: Vec<char> = "배열 반환".chars().collect();
-        for start in 0..chars.len().saturating_sub(needle.len()) {
-            if chars[start..start + needle.len()] != needle[..] {
-                continue;
-            }
-            let lo = start.saturating_sub(WINDOW);
-            let hi = (start + needle.len() + WINDOW).min(chars.len());
-            let window: String = chars[lo..hi].iter().collect();
-            assert!(
-                !(window.contains("미구현") || window.contains('⏳')),
-                "{path} calls 배열 반환 unimplemented, but compiler/src/codegen.rs emits \
-                 RetAbi::ArrayOut and SPEC-array-return closed acceptance A~H on 2026-09-12. \
-                 Context: …{window}…"
-            );
-        }
-    }
-}
+const NO_DOCUMENT_CALLS_ARRAY_RETURN_UNIMPLEMENTED: Stale = Stale {
+    id: "no_document_calls_array_return_unimplemented",
+    evidence: &[("compiler/src/codegen.rs", "RetAbi::ArrayOut")],
+    scope: Scope::AllMarkdown,
+    flatten: true,
+    needles: &["배열 반환"],
+    boundary: false,
+    window: (45, 45),
+    forbidden: &["미구현", "⏳"],
+    context: &[],
+    truth: "compiler/src/codegen.rs emits RetAbi::ArrayOut and SPEC-array-return closed \
+            acceptance A~H on 2026-09-12",
+};
 
 /// **No live document teaches a symbol no module exports.**
 ///
@@ -455,28 +515,18 @@ fn no_document_calls_array_return_unimplemented() {
 ///
 /// Matching `ml_iface_hash(` with the paren attached is what separates the two names: the
 /// qualified form is `ml_iface_hash_discount(`, which does not contain it.
-#[test]
-fn no_live_document_names_the_bare_fingerprint_export() {
-    let codegen = read("compiler/src/codegen.rs");
-    assert!(
-        codegen.contains("ml_iface_hash_{}"),
-        "codegen.rs no longer emits a module-qualified fingerprint export. If the bare name \
-         came back, this guard is wrong and the documents are right — check \
-         SPEC-qualified-iface-hash.md before deleting it"
-    );
-
-    for (path, text) in every_markdown_file() {
-        let rel = path.replace('\\', "/");
-        if rel.starts_with("docs/") {
-            continue;
-        }
-        assert!(
-            !text.contains("ml_iface_hash("),
-            "{path} names a bare `ml_iface_hash(`, but every module exports \
-             `ml_iface_hash_<module>` (compiler/src/codegen.rs). A host author copying this \
-             name gets NULL from GetProcAddress and skips the fingerprint check, which looks \
-             the same as passing it. Files under docs/ are exempt because they record the \
-             rename; this file is not a record."
-        );
-    }
-}
+const NO_LIVE_DOCUMENT_NAMES_THE_BARE_FINGERPRINT_EXPORT: Stale = Stale {
+    id: "no_live_document_names_the_bare_fingerprint_export",
+    evidence: &[("compiler/src/codegen.rs", "ml_iface_hash_{}")],
+    scope: Scope::OutsideDocs,
+    flatten: false,
+    needles: &["ml_iface_hash("],
+    boundary: false,
+    window: (0, 0),
+    forbidden: &[],
+    context: &[],
+    truth: "every module exports ml_iface_hash_<module> (compiler/src/codegen.rs): a host \
+            author copying the bare name gets NULL from GetProcAddress and skips the \
+            fingerprint check, which looks the same as passing it. Files under docs/ are \
+            exempt because they record the rename",
+};

@@ -3953,15 +3953,25 @@ fn the_history_archive_is_indexed_and_numbered() {
         );
     }
 
-    let mut blocks: Vec<u32> = files
-        .iter()
-        .filter_map(|(path, _)| {
-            path.strip_prefix("docs/history/start-block-")?
-                .strip_suffix(".md")?
-                .parse()
-                .ok()
-        })
-        .collect();
+    // Three digits, always: `.parse()` alone would take `start-block-47.md` as 47, and the next
+    // number would sort out of place in every listing (Grok).
+    let mut blocks: Vec<u32> = Vec::new();
+    for (path, _) in &files {
+        let Some(stem) = path
+            .strip_prefix("docs/history/start-block-")
+            .and_then(|rest| rest.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        if stem == "index" {
+            continue;
+        }
+        assert!(
+            stem.len() == 3 && stem.bytes().all(|b| b.is_ascii_digit()),
+            "{path}: a ▶ record is named start-block-NNN.md with exactly three digits"
+        );
+        blocks.push(stem.parse().expect("three ascii digits"));
+    }
     blocks.sort_unstable();
     assert!(
         !blocks.is_empty(),

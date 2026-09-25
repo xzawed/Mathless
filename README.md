@@ -102,22 +102,17 @@ calls them, alongside a gate that compiles every generated `.pas` (`MATHLESS_GAT
 `MATHLESS_GATE_FPC`).
 
 **A fifth runs locally only.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with real
-`dcc64` — through the IDE builder when the edition refuses command-line builds — and it passes
-on the development machine. It cannot run in CI: the runner has neither Delphi nor an
-interactive session. Free Pascal's `-Mdelphi` is dialect emulation and does not stand in for it.
+`dcc64` and calls the modules across the C ABI. The edition available refuses command-line
+builds, so the gate drives the IDE instead (`bds.exe -b`), which it does allow, and it passes on
+the development machine. It cannot run in CI: the runner has neither Delphi nor an interactive
+session.
 
 Acceptance A, B, C and D all pass. It compiles, the oracle calls it, the export and size proxies
 hold, and a real C host loads the same module. The stripped `no_std` build is about 9.0-9.5 KB —
-the exact byte count is machine-dependent (measured: 9,728 B here, 9,216 B on GitHub's
-`windows-latest`, same pinned rustc; the pin covers rustc, not the MSVC linker) — and it
-exports exactly the three symbols it should — `mlx_discount` plus the reserved
-`ml_module_abi_version` and `ml_iface_hash_<module>`. We cross-check that count against
-`dumpbin /exports`, so it does not rest on our own PE reader alone.
-
-**Delphi is gated, but not in CI.** `MATHLESS_GATE_DELPHI` builds `hosts/delphi-host` with
-`dcc64` and calls the modules across the C ABI. The edition available refuses command-line
-builds, so the gate drives the IDE instead (`bds.exe -b`), which it does allow. That gate
-runs on a developer machine only — the CI runner has neither Delphi nor an interactive session.
+the exact byte count depends on the machine's linker, so
+[docs/SECURITY.md](docs/SECURITY.md) keeps the measurements — and it exports only the
+functions you declare plus the reserved symbols the ABI defines, cross-checked against
+`dumpbin /exports` so it does not rest on our own PE reader alone.
 
 What CI does check on the Pascal side is **Object Pascal, not Delphi**: `MATHLESS_GATE_FPC`
 compiles every generated unit and `MATHLESS_GATE_FPC_HOST` builds a Pascal host that loads x64

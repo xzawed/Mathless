@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 저장소 성격
 
-- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. **크레이트는 둘**(`Cargo.toml`의 `members`): `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`)와 `hosts/rust-oracle/`(kernel32 로더 + PE export 리더). `examples/`(`.mls` 소스)와 `runtime/`(C ABI 헤더)은 **크레이트가 아니라 디렉터리다** — `-p examples`는 존재하지 않는 패키지 에러를 낸다. 크레이트는 아니지만 **`hosts/c-host/`(동적 결합)** 와 **`hosts/c-host-link/`(링크 결합, 2026-09-03)** 두 C11 데모 호스트도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본, `ubuntu-latest`는 프런트엔드 보험. **CI가 required로 거는 게이트는 셋이다**(`MATHLESS_GATE_D`=C 호스트 · `MATHLESS_GATE_FPC`=생성 유닛 컴파일 · `MATHLESS_GATE_FPC_HOST`=Pascal 호스트 로드·호출) — 목록의 정본은 `.github/workflows/ci.yml`의 `env:`이고 여기 복제하지 않는다. **`MATHLESS_GATE_DELPHI`은 로컬 전용**이다(러너에 Delphi도 대화형 세션도 없다).
+- **Phase 1(수직 슬라이스) 구현 진행 중.** 설계 문서 + Rust 워크스페이스가 공존한다. **크레이트는 둘**(`Cargo.toml`의 `members`): `compiler/`(mlc — lex→parse→typeck→IR→codegen + `mlc build` CLI)와 `hosts/rust-oracle/`(kernel32 로더 + PE export 리더). `examples/`(`.mls` 소스)와 `runtime/`(C ABI 헤더)은 **크레이트가 아니라 디렉터리다** — `-p examples`는 존재하지 않는 패키지 에러를 낸다. 크레이트는 아니지만 **`hosts/c-host/`(동적 결합)** 와 **`hosts/c-host-link/`(링크 결합, 2026-09-03)** 두 C11 데모 호스트도 워크스페이스 테스트가 빌드·실행한다. 빌드/테스트 명령이 **있다**: `cargo build --workspace` / `cargo test --workspace`(Windows에서 **수용 A/B/C/D** 실행 — D는 실제 C 호스트다). CI는 **두 잡**: `windows-latest`가 정본, `ubuntu-latest`는 프런트엔드 보험. **CI가 require로 거는 게이트는 `.github/workflows/ci.yml`의 `env:`가 정본이고 여기 복제하지 않는다** — 로컬에서도 거기 적힌 것을 전부 건다(명령은 `CONTRIBUTING.md`). **`MATHLESS_GATE_DELPHI`은 로컬 전용**이다(러너에 Delphi도 대화형 세션도 없다).
 - 설계 산출물은 여전히 `docs/*.md`와 루트의 `README.md` / `CLAUDE.md`이며, **개념을 깨지 않는 것**이 최우선이다(위 규칙 우선).
 - 작업은 이제 **문서 정합(모순 탐지·열린 질문)** 과 **SDD+WBS+TDD 구현**을 함께 한다. 코드 변경은 실패 테스트 → 구현 → 통과 → Grok 검증 → PR 순서를 따른다(아래 "개발 방법론").
 
@@ -30,13 +30,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 파이프라인(모두 컴파일 타임, 런타임 해석 없음):
 
 ```
-표면 문법 .mls  →  parse/typecheck  →  내부 IR  →  네이티브 codegen  →  모듈 .dll  →  [C ABI]  →  호스트(C ✅ CI 게이트 / Delphi ✅ 로컬 게이트 / C++ ✅ 헤더 컴파일만 / C# ⏳ 미검증)
+표면 문법 .mls  →  parse/typecheck  →  내부 IR  →  네이티브 codegen  →  모듈 .dll  →  [C ABI]  →  호스트(C / Delphi / C++ / C# — 어디까지 게이트되는지는 docs/STATUS.md)
 ```
 
 세 가지가 서로 맞물려 있어 하나만 봐선 안 된다:
 
 - **이중 계층** (`LANGUAGE.md`): *Surface*(넓은 개발자층용 표면 문법, C#에 가까운 방향 제안·미확정)와 *Meaning*(강한 정적 타입·네이티브 lowering에 가까운 의미 모델)를 분리한다. "내부가 Delphi"는 Delphi 컴파일러를 부른다는 뜻이 **아니라** 의미 모델이 Object Pascal/네이티브에 가깝다는 뜻이다.
-- **C ABI가 유일한 1급 경계** (`HOST_ABI.md`): 언어별 바인딩은 C ABI 위의 얇은 래퍼다. MVP 마샬링 **목표**는 정수/실수/bool/C 문자열/합의된 레이아웃의 구조체 포인터/1단계 콜백까지다. **오늘 무엇이 구현됐는지는 여기 적지 않는다** — 정본은 `HOST_ABI.md`의 "현재 구현된 경계"이고, 여기 있던 목록은 그것을 복제하다 낡아 **이미 구현된 것을 미구현이라 적고 있었다**(2026-09-22 감사). 변하지 않는 것만 남긴다: **구조체 마샬링과 콜백은 아직 없다**, 가변 길이 데이터는 Q12(caller-allocates)를 따른다, 경계 밖 인덱스는 `ML_ST_INDEX_OUT_OF_RANGE = -2`다. 모듈은 호스트 메모리를 소유하지 않는다. 예외가 ABI를 가로지르지 않게 한다.
+- **C ABI가 유일한 1급 경계** (`HOST_ABI.md`): 언어별 바인딩은 C ABI 위의 얇은 래퍼다. MVP 마샬링 **목표**는 정수/실수/bool/C 문자열/합의된 레이아웃의 구조체 포인터/1단계 콜백까지다. **오늘 무엇이 구현됐는지는 여기 적지 않는다** — 정본은 `HOST_ABI.md`의 "현재 구현된 경계"이고, 여기 있던 목록은 그것을 복제하다 낡아 **이미 구현된 것을 미구현이라 적고 있었다**(2026-09-22 감사). 변하지 않는 것만 남긴다: 가변 길이 데이터는 Q12(caller-allocates)를 따른다, 경계 밖 인덱스는 `ML_ST_INDEX_OUT_OF_RANGE = -2`다. 모듈은 호스트 메모리를 소유하지 않는다. 예외가 ABI를 가로지르지 않게 한다.
 - **보호는 단계적** (`SECURITY.md`): 목표는 "리버싱 불가"가 아니라 분석·변조 비용을 높이는 것. **오늘은 P0까지**(소스 미배포 + 심볼 strip + 최소 export, 실측). P1(무결성/화이트리스트)·P2(난독화)와 **개발/배포 빌드의 보호 수준 분리(D13)는 ⏳ 미구현**이다.
 
 ## 반드시 지킬 것
@@ -110,7 +110,7 @@ Phase 1부터 모든 구현 작업의 기본 절차. 순서를 건너뛰지 않�
 
 ## 작업 우선순위
 
-Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 **A/B/C/D**는 **완료**다 — 단 D의 Delphi 절반은 **로컬 게이트까지**이고 **CI 게이트는 아직 C·FPC뿐**이다(아래 1번).
+Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소 parse→IR→native 파이프라인)과 Phase 1 수용 **A/B/C/D**는 **완료**다 — 단 D의 Delphi 절반은 **로컬 게이트까지**다(아래 1번; 호스트별 게이트 현황의 정본은 `docs/STATUS.md`).
 
 > **우선순위의 정본은 `docs/STATUS.md` §9다** — 이 목록은 슬라이스마다 낡는다. 착수 전 그 문서를 먼저 읽는다.
 > 완료된 슬라이스 이력은 `docs/slices/README.md` 색인, phase 단위 작업 분해는 `docs/phase1/WBS.md`.
@@ -127,7 +127,7 @@ Phase 0 항목(Q1~Q5 닫기 → D14~D18, 표면 MVP 범위, C ABI 초안, 최소
 - **소스 편집에 스크립트를 쓰지 않는다.** 이스케이프가 줄 연속 `\`를 먹으면 진단에 공백 뭉침이 되돌아오고 파일에 NUL 바이트가 들어간다 — 반복해서 일어났고, 그 실패를 재려고 쓴 스캐너까지 같은 이유로 헛돌았다. 불가피하면 백슬래시를 `chr(92)`로 구성한다. **여러 치환을 한 배치로 묶지 않는다** — 중간 실패가 앞선 성공까지 버린다(STATUS §7-3).
 - **docs만 바뀐 PR도 관련 가드는 돌린다**(`cargo test -p ml_oracle --test doc_claims`). 전체 스위트를 건너뛰는 것은 괜찮지만, 초 단위 확인을 분 단위 CI 왕복으로 미루지 않는다(STATUS §7-3).
 - **`docs/STATUS.md`는 Read 한 번에 들어가야 한다**(`doc_claims.rs`의 `status_fits_in_one_read`). 넘치면 지우지 말고, 닫힌 항목을 한 줄 + 본문 링크로 접고 서사는 `docs/history/status-<절>.md`로 바이트 그대로 옮긴다. 옮긴 표제는 한 줄 스텁으로 남긴다 — `STATUS §N` 인용이 주소다(`every_status_citation_resolves`).
-- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). **현재 실제 레이아웃**: `compiler/`(프론트엔드+IR+codegen+`mlc build` CLI — 산출물 4종 `.dll`·`.h`·`.pas`·`.lib`), `hosts/rust-oracle/`(kernel32 로더+PE 리더), `runtime/`(C ABI 헤더), `examples/`. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지). `host/c`는 **이름만 다르고 실재한다** — `hosts/c-host/`가 수용 D를 닫고 CI를 게이트하며, **`hosts/c-host-link/`가 두 번째 소비 경로(헤더 + `.lib` 링크)를 닫는다**(2026-09-03). **`hosts/delphi-host/`는 2026-09-07에 처음 컴파일·실행됐고, 2026-09-09에 로컬 게이트가 됐다**(`MATHLESS_GATE_DELPHI` — `dcc64`가 거부하면 `bds.exe -b`로 IDE 빌드를 부른다). Free Pascal은 **CI 게이트**다(`MATHLESS_GATE_FPC`·`MATHLESS_GATE_FPC_HOST`) — 다만 `-Mdelphi`는 방언 에뮬레이션이라 **Delphi 게이트를 대신하지 못한다**. **CI에 도는 Delphi 게이트는 없다.**
+- 코드는 Rust 워크스페이스에 있다(실험 코드와 제품 코드를 섞지 않는다). 레이아웃은 위 "저장소 성격"이 정본이다. `ARCHITECTURE.md`가 권장하는 경계 중 `backend/`(codegen 분리)·`packager/`는 **아직 미생성**(후속 슬라이스에서 도입 여지)이고, `host/c`는 **이름만 다르게** `hosts/c-host/`·`hosts/c-host-link/`로 실재한다. Free Pascal `-Mdelphi`는 방언 에뮬레이션이라 **Delphi 게이트를 대신하지 못한다** — 호스트별 게이트 현황의 정본은 `docs/STATUS.md`다.
 - 추측은 `OPEN_QUESTIONS.md`로 보낸다. 문서 본문에 확정인 것처럼 쓰지 않는다.
 - 확장자(`.mls`, `.mll`)와 C API 함수명은 모두 **가칭**이다. 확정된 것처럼 서술하지 않는다.
 

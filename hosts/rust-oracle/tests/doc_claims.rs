@@ -122,6 +122,18 @@ fn flatten_prose(src: &str) -> String {
     words.join(" ")
 }
 
+/// Whether `text` names `name` as a whole identifier, not as part of a longer one.
+/// `MATHLESS_GATE_D` begins `MATHLESS_GATE_DELPHI`, `MATHLESS_GATE_FPC` begins
+/// `MATHLESS_GATE_FPC_HOST`, and `len` ends `byte_len`, so a bare `contains` passed on documents
+/// that named none of the three (plants, 2026-09-25).
+fn names_identifier(text: &str, name: &str) -> bool {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    text.match_indices(name).any(|(at, _)| {
+        !text[..at].chars().next_back().is_some_and(ident)
+            && !text[at + name.len()..].chars().next().is_some_and(ident)
+    })
+}
+
 /// Every place `needle` starts in `hay`. `windows` tries each start, the last one included —
 /// the four scan loops this replaced ran `0..len - n` and never tried a needle that ends the
 /// text (Grok found it reviewing the guards; `stale.rs` has the plants).

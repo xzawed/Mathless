@@ -171,7 +171,7 @@ fn no_document_says_the_generated_unit_is_unbuilt_while_the_gates_build_it() {
     let contributing = read("CONTRIBUTING.md");
     for gate in ["MATHLESS_GATE_FPC", "MATHLESS_GATE_DELPHI"] {
         assert!(
-            contributing.contains(gate),
+            names_identifier(&contributing, gate),
             "CONTRIBUTING.md no longer names {gate}. Dropping the false sentence is not \
              enough — the one document a new contributor reads has to say which gate covers \
              the Delphi arm, or the absence reads as absence of the gate"
@@ -266,6 +266,7 @@ fn no_document_still_states_a_claim_the_code_has_left() {
                     !is_dated_record(path) && !prefixes.iter().any(|p| path.starts_with(p))
                 }
                 Scope::OutsideDocs => !path.starts_with("docs/"),
+                Scope::Only(paths) => paths.contains(&path.as_str()),
             };
             if !in_scope {
                 continue;
@@ -325,6 +326,8 @@ enum Scope {
     LiveExcept(&'static [&'static str]),
     /// Every `.md` outside `docs/` — product-facing prose only.
     OutsideDocs,
+    /// Exactly these `.md` files, for a claim only they ever made.
+    Only(&'static [&'static str]),
 }
 
 /// One claim the code has left. `id` is the name the guard had as a function, so references
@@ -357,6 +360,7 @@ const STALE: &[&Stale] = &[
     &NO_DOCUMENT_SAYS_C_IS_THE_ONLY_GATED_HOST,
     &NO_DOCUMENT_CALLS_ARRAY_RETURN_UNIMPLEMENTED,
     &NO_LIVE_DOCUMENT_NAMES_THE_BARE_FINGERPRINT_EXPORT,
+    &THE_READMES_DO_NOT_UNDERSTATE_THE_EXPORT_SET,
 ];
 
 /// **A slice decided against is not "not done yet".**
@@ -529,4 +533,25 @@ const NO_LIVE_DOCUMENT_NAMES_THE_BARE_FINGERPRINT_EXPORT: Stale = Stale {
             author copying the bare name gets NULL from GetProcAddress and skips the \
             fingerprint check, which looks the same as passing it. Files under docs/ are \
             exempt because they record the rename",
+};
+
+/// **The READMEs do not call the export set two symbols.** Why: the fingerprint slice (#105)
+/// added a third reserved export and both READMEs kept "two" for two slices. They no longer
+/// enumerate the set — `docs/SECURITY.md` does, and `no_document_enumerates_the_export_set_…`
+/// checks any enumeration — so what is left to pin is the sentence #105 left behind.
+const THE_READMES_DO_NOT_UNDERSTATE_THE_EXPORT_SET: Stale = Stale {
+    id: "the_readmes_do_not_understate_the_export_set",
+    evidence: &[(
+        "hosts/rust-oracle/tests/protection.rs",
+        "ml_iface_hash_{module}",
+    )],
+    scope: Scope::Only(&["README.md", "README.ko.md"]),
+    flatten: false,
+    needles: &["the two symbols", "심볼 두 개"],
+    boundary: false,
+    window: (0, 0),
+    forbidden: &[],
+    context: &[],
+    truth: "every module exports three symbols since #105 — protection.rs pins the set and \
+            docs/SECURITY.md lists it",
 };

@@ -97,21 +97,15 @@ export를 찾습니다. 그리고 두 번째 C 호스트는 **평범한 방식**
 함께 돕니다(`MATHLESS_GATE_FPC_HOST`·`MATHLESS_GATE_FPC`, C 호스트는 `MATHLESS_GATE_D`).
 
 **다섯 번째는 로컬에서만 돕니다.** `MATHLESS_GATE_DELPHI`가 진짜 `dcc64`로 `hosts/delphi-host`를
-빌드하고(에디션이 명령줄 빌드를 거부하면 IDE 빌더로 넘어갑니다) 개발 머신에서 통과합니다.
-CI에서는 돌 수 없습니다 — 러너에 Delphi도 대화형 세션도 없습니다. Free Pascal의 `-Mdelphi`는
-방언 에뮬레이션이라 그것을 대신하지 못합니다.
+빌드해 C ABI 너머로 모듈을 호출합니다. 가지고 있는 에디션이 명령줄 빌드를 거부하므로 게이트는
+IDE(`bds.exe -b`)를 부르고, 그것은 허용되며, 개발 머신에서 통과합니다. CI에서는 돌 수 없습니다 —
+러너에 Delphi도 대화형 세션도 없습니다.
 
 수용 A, B, C, D가 모두 통과합니다. 컴파일되고, 오라클이 호출하고, export·크기 프록시가 유지되며,
 실제 C 호스트가 같은 모듈을 로드합니다. strip된 `no_std` 빌드는 약 9.0~9.5 KB입니다 — **정확한
-바이트 수는 머신에 따라 다릅니다**(실측: 이 머신 9,728 B, GitHub `windows-latest` 9,216 B. 같은
-핀된 rustc이며, 핀은 rustc를 덮지 MSVC 링커를 덮지 않습니다). 의도한 심볼 세 개
-(`mlx_discount` + 예약 심볼 `ml_module_abi_version`·`ml_iface_hash_<module>`)만 export합니다. 이 개수는
-`dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더 하나에만 기대지 않습니다.
-
-**Delphi에는 게이트가 있습니다 — 단 CI에는 없습니다.** `MATHLESS_GATE_DELPHI`가
-`hosts/delphi-host`를 `dcc64`로 빌드해 C ABI 너머로 모듈을 호출합니다. 가지고 있는 에디션이
-명령줄 빌드를 거부하므로 게이트는 IDE(`bds.exe -b`)를 부르고, 그것은 허용됩니다. 이 게이트는
-**개발 머신에서만** 돕니다 — CI 러너에는 Delphi도 대화형 세션도 없습니다.
+바이트 수는 머신의 링커에 따라 달라서** 측정값은 [docs/SECURITY.md](docs/SECURITY.md)에 둡니다. 선언한
+함수와 ABI가 정한 예약 심볼만 export하며, `dumpbin /exports`와 교차 확인했습니다. 우리 PE 리더
+하나에만 기대지 않습니다.
 
 CI가 Pascal 쪽에서 검사하는 것은 **Object Pascal이지 Delphi가 아닙니다**: `MATHLESS_GATE_FPC`가
 생성 유닛 전부를 컴파일하고, `MATHLESS_GATE_FPC_HOST`가 Pascal 호스트를 빌드해 x64 모듈을

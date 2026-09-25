@@ -377,8 +377,8 @@ const STALE: &[&Stale] = &[
 /// **Honest limit**: the needle is two phrasings, so a reworded "not done yet" escapes it. The
 /// alternative was a positive pin requiring every mention to carry the rejection, and that
 /// fires on `SPEC-error-prefix.md`, which legitimately recorded DP-H3(b) as open on 2026-09-03,
-/// two days before the decision. `docs/slices/` and `docs/HISTORY.md` are exempt for that
-/// reason: they are records of what was true when written.
+/// two days before the decision. `docs/slices/` and the dated records (`is_dated_record`) are
+/// exempt for that reason: they are records of what was true when written.
 const A_REJECTED_SLICE_IS_NOT_DESCRIBED_AS_MERELY_PENDING: Stale = Stale {
     id: "a_rejected_slice_is_not_described_as_merely_pending",
     evidence: &[
@@ -432,13 +432,15 @@ const NO_DOCUMENT_CALLS_INTERFACE_METADATA_UNIMPLEMENTED: Stale = Stale {
 /// `FPC뿐` — so the first draft of this guard flagged `CLAUDE.md` and `DECISIONS.md` for saying
 /// the CORRECT thing, *"CI 게이트는 C·FPC뿐"*. A guard that fires on the true sentence is one
 /// somebody deletes (§9-A A6 is the same shape from the other direction: a needle with no
-/// polarity passing the false sentence). Requiring the preceding character not to be an ASCII
-/// letter separates them, and that separation was measured on all 53 documents before this
-/// was written, not assumed.
+/// polarity passing the false sentence). Requiring that neither neighbour of the hit is an
+/// ASCII letter separates them, and that separation was measured on all 53 documents before
+/// this was written, not assumed. (The check was on the preceding character only until the
+/// true sentence *"The only CI gate …"* matched `only C`; Grok found it.)
 ///
-/// **One exemption, `docs/HISTORY.md`**, because it is the history file: its tables record
-/// which documents carried this claim and when. Exempting it is not a loophole for a live
-/// document, because a live document is not in it.
+/// **One exemption, the dated records** (`is_dated_record`: `docs/HISTORY.md` and
+/// `docs/history/`), because they are the history: they record which documents carried this
+/// claim and when. Exempting them is not a loophole for a live document, because a live
+/// document is not in them.
 const NO_DOCUMENT_SAYS_C_IS_THE_ONLY_GATED_HOST: Stale = Stale {
     id: "no_document_says_c_is_the_only_gated_host",
     evidence: &[(

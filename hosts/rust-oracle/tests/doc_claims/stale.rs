@@ -171,7 +171,7 @@ fn no_document_says_the_generated_unit_is_unbuilt_while_the_gates_build_it() {
     let contributing = read("CONTRIBUTING.md");
     for gate in ["MATHLESS_GATE_FPC", "MATHLESS_GATE_DELPHI"] {
         assert!(
-            contributing.contains(gate),
+            names_identifier(&contributing, gate),
             "CONTRIBUTING.md no longer names {gate}. Dropping the false sentence is not \
              enough — the one document a new contributor reads has to say which gate covers \
              the Delphi arm, or the absence reads as absence of the gate"

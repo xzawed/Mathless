@@ -120,7 +120,7 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
     for (doc, text) in [("README.md", &en), ("README.ko.md", &ko)] {
         for b in &builtins {
             assert!(
-                text.contains(b.as_str()),
+                names_identifier(text, b),
                 "{doc} does not name the built-in `{b}`, which compiler/src/typeck.rs declares. \
                  The READMEs are where a reader learns what the language has; a built-in that \
                  ships without appearing here is one nobody can find"
@@ -128,7 +128,7 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
         }
         for g in &gates {
             assert!(
-                text.contains(g.as_str()),
+                names_identifier(text, g),
                 "{doc} does not name {g}, which .github/workflows/ci.yml sets to `require`. \
                  A host path CI proves on every push, missing from the page that says which \
                  host paths are proven, understates the product"

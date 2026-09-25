@@ -147,7 +147,7 @@ fn the_local_command_block_runs_every_gate_ci_requires() {
     for block in &blocks {
         for gate in &required {
             assert!(
-                block.contains(gate.as_str()),
+                names_identifier(block, gate),
                 "a CONTRIBUTING.md command block runs `cargo test --workspace` without setting \
                  {gate}, which .github/workflows/ci.yml requires. On a machine missing that \
                  toolchain the gate SKIPS, the suite exits 0, and CI is the one that says no"

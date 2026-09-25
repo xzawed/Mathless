@@ -210,9 +210,9 @@ fn no_document_still_states_a_claim_the_code_has_left() {
         for (path, text) in &docs {
             let in_scope = match row.scope {
                 Scope::AllMarkdown => true,
-                Scope::Live => !is_dated_record(path),
+                Scope::Live => !is_record(path),
                 Scope::LiveExcept(prefixes) => {
-                    !is_dated_record(path) && !prefixes.iter().any(|p| path.starts_with(p))
+                    !is_record(path) && !prefixes.iter().any(|p| path.starts_with(p))
                 }
                 Scope::OutsideDocs => !path.starts_with("docs/"),
                 Scope::Only(paths) => paths.contains(&path.as_str()),
@@ -267,11 +267,11 @@ fn no_document_still_states_a_claim_the_code_has_left() {
 /// the row that deliberately reads the records too (Grok, reviewing this table's design).
 #[derive(Clone, Copy)]
 enum Scope {
-    /// Every `.md`, dated records included.
+    /// Every `.md`, records (dated ones and SPECs) included.
     AllMarkdown,
-    /// Every `.md` except dated records (`is_dated_record`).
+    /// Every `.md` except records (`is_record`: dated records and SPECs).
     Live,
-    /// Every `.md` except dated records and anything under these prefixes.
+    /// Every `.md` except records and anything under these prefixes.
     LiveExcept(&'static [&'static str]),
     /// Every `.md` outside `docs/` — product-facing prose only.
     OutsideDocs,

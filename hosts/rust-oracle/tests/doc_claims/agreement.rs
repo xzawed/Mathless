@@ -149,7 +149,7 @@ fn no_document_states_a_rust_version_other_than_the_pin() {
 
     let mut seen = 0usize;
     for (path, text) in every_markdown_file() {
-        if is_dated_record(&path) {
+        if is_record(&path) {
             continue;
         }
         let bytes: Vec<char> = text.chars().collect();
@@ -332,7 +332,7 @@ fn no_document_publishes_a_baseline_that_requires_only_some_gates() {
     );
 
     for (path, text) in every_markdown_file() {
-        if is_dated_record(&path) {
+        if is_record(&path) {
             continue;
         }
         for (no, line) in text.lines().enumerate() {

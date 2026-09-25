@@ -55,8 +55,10 @@ Free Pascal로 빌드한 호스트가 x64 모듈을 로드·호출한다). **Del
 
 ## Phase 4 — 두 번째 호스트
 
-- C# P/Invoke 또는 C++ 헤더
-- ABI 버전 정책
+- C# P/Invoke ⏳ 또는 C++ 헤더 — **C++는 헤더 컴파일까지 ✅**: 생성 헤더가 `cl /TP`로 컴파일된다
+  (`hosts/rust-oracle/tests/c_host.rs`). 모듈을 부르는 C++ 호스트는 없다
+- ABI 버전 정책 ✅ — Phase 1에서 앞당겨 구현했다(Windows 참조 호스트의 거부까지 — 서드파티 호스트에는
+  계약이다). 정본은 [`HOST_ABI.md`](HOST_ABI.md) "버전"
 
 ## Phase 5 — 보호 강화 / 선택적 WASM
 

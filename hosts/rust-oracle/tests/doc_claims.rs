@@ -3723,10 +3723,12 @@ fn every_status_citation_resolves() {
         (level >= 2).then(|| (level, line[level..].trim_start().to_string()))
     };
     let resolves = |label: &str| -> bool {
+        // `{label}. ` with the space: without it `5-5.` would also claim a `5-5.7…` heading
+        // (Grok). Every numbered heading in STATUS.md is written `N. title`.
         if lines
             .iter()
             .filter_map(|l| heading(l))
-            .any(|(_, text)| text.starts_with(&format!("{label}.")))
+            .any(|(_, text)| text.starts_with(&format!("{label}. ")))
         {
             return true;
         }
@@ -3736,7 +3738,7 @@ fn every_status_citation_resolves() {
         };
         let Some((start, level)) = lines.iter().enumerate().find_map(|(i, l)| {
             heading(l)
-                .filter(|(_, text)| text.starts_with(&format!("{section}.")))
+                .filter(|(_, text)| text.starts_with(&format!("{section}. ")))
                 .map(|(level, _)| (i, level))
         }) else {
             return false;
@@ -3752,7 +3754,7 @@ fn every_status_citation_resolves() {
         let sub_heading = body
             .iter()
             .take_while(|l| heading(l).is_none_or(|(inner, _)| inner > level))
-            .any(|l| heading(l).is_some_and(|(_, text)| text.starts_with(&format!("{item}."))));
+            .any(|l| heading(l).is_some_and(|(_, text)| text.starts_with(&format!("{item}. "))));
         own_item || sub_heading
     };
 

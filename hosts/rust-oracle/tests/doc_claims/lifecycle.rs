@@ -591,7 +591,13 @@ fn status_holds_no_closed_item() {
         t.split_once(". ")
             .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
     };
-    let row = |t: &str| t.starts_with("| ") && !t.starts_with("| # ") && !t.starts_with("|--");
+    // A table data row: not the `| # |` header, and not a separator, which is only pipes,
+    // dashes, colons and spaces however it is spaced (`|---|` and `| --- |` alike — Grok).
+    let row = |t: &str| {
+        t.starts_with('|')
+            && !t.starts_with("| # ")
+            && !t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
+    };
     let mut wrong = Vec::new();
     for (i, (path, text)) in status_pages().iter().enumerate() {
         for (no, line) in text.lines().enumerate() {

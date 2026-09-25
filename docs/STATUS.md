@@ -41,8 +41,8 @@
   > ```
 - **수용 A/B/C/D 전부 통과.** **CI가 강제하는 호스트 게이트는 C와 Free Pascal 둘이고, Delphi는 로컬 전용이다**
   — MSVC로 빌드한 C11 호스트가 산출 DLL을
-  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **로드하는 모듈 21개 전부**에
-  지문 게이트가 붙는다 — 이 수치는 `doc_claims.rs`가 `host.c`의 실제 `load(` 호출 수에 묶어 둔다).
+  `LoadLibrary`/`GetProcAddress`로 로드·호출한다(`hosts/c-host/host.c`, **로드하는 모듈 전부**에
+  지문 게이트가 붙는다 — 개수는 `host.c`가 정본이라 여기 적지 않는다).
   **체크 개수는 여기 적지 않는다(2026-09-11).** 게이트를 돌려 세고, 세는 명령은 아래 블록에 있다.
   > 체크 수는 호스트가 **실제로 찍은 줄**을 센다 — `grep -c '^  ok   '`. 소스의 `grep -c 'check('`는
   > 루프 안의 한 호출·정의부·주석까지 걸려 **다른 값**을 준다. 재현 명령을 적을 때는 그 명령을 실제로
@@ -66,17 +66,10 @@
 - **두 번째 소비 경로 (2026-09-03):** `hosts/c-host-link`가 `GetProcAddress` 없이 `.lib`을 링크해
   호출하고, **드리프트 모듈은 exit 3으로 거부**한다. 동적 경로(`hosts/c-host`)와 **둘 다 유지**한다 —
   한쪽으로 바꾸면 다른 쪽의 증거가 사라진다(DP-L4).
-- **산출물:** `mlc build <f.mls> -o <dir>` → `.dll` + `.h` + `.pas` + **`.lib`**(MSVC 임포트
-  라이브러리, 2026-09-03 추가 — `SPEC-linkable-bindings` §3-A). `discount.dll`은
-  **이 머신에서 9,728 B, GitHub `windows-latest`에서 9,216 B**다 —
-  **크기는 머신에 따라 다르다(2026-09-03 실측, D3에서 발견)**. 같은 커밋·같은 핀된 rustc 1.97.1인데
-  `FileAlignment` 한 블록만큼 어긋난다: `rust-toolchain.toml`의 핀은 **rustc를 덮지 MSVC `link.exe`와
-  Windows SDK를 덮지 않는다.** 그래서 **한 값을 프로젝트 상수처럼 적지 않는다** —
-  가드는 범위(`protection.rs`)이고 `doc_claims.rs`가 이 문단이 두 값을 다 담는지 확인한다.
-  export는 **정확히 3개**(`mlx_*` + `ml_module_abi_version` + `ml_iface_hash_<모듈>`, 자체 PE 리더 +
-  `dumpbin` 교차 확인). **2026-09-02에 2개 → 3개가 됐다**(§3a-8). **export가 하나 늘었는데도 크기는
-  같은 블록에 머물렀다** — §5-5.1이 말한 512바이트 양자화 그대로이며, **파일 크기가 신호가 못 된다는
-  증거가 하나 더 늘었다**(이제 머신 차이라는 증거까지 둘이다).
+- **산출물:** `mlc build <f.mls> -o <dir>`가 쓰는 파일은 `README.md`와 `HOST_ABI.md`가, 모듈
+  크기와 export 집합의 측정은 `SECURITY.md`가 정본이다 — 여기 다시 적지 않는다. 크기는 머신마다
+  `FileAlignment` 한 블록만큼 달라(핀은 rustc를 덮지 MSVC `link.exe`를 덮지 않는다) 한 값을 프로젝트
+  상수처럼 적지 않고, 512 B 단위로 양자화돼 신호가 되지도 못한다(§5-5.1).
 - **라이선스:** Apache-2.0 OR MIT 이중.
 
 ## 2. 오늘 컴파일되는 언어
@@ -121,7 +114,7 @@
 2. ✅ **닫힘 — 예약어 검사 범위 (2026-09-02, 사용자 결정: 대상별 검사).** export 파라미터·모듈 이름은
    Rust + C + Pascal, 내부 파라미터·지역 변수는 Rust + C만 검사한다(`compiler/src/reserved.rs`).
 3. ✅ **닫힘 — Q15 산출물 라이선스 지위 → (a) 산출물 예외 (2026-09-02, 사용자 승인 → D23).**
-   `LICENSE-OUTPUT-EXCEPTION` — 법률 조언이 아니다.
+   무엇을 덮는지는 D23과 그 라이선스 파일이 정본이다 — 법률 조언이 아니다.
 4. ✅ **닫힘 — LICENSE 저작권자 표기.** 사용자 결정(2026-09-02): **계정명 `xzawed`를 그대로 둔다.**
 5. **홈페이지 URL** — 여전히 `null`이고, **그대로 둔다.** 가리킬 것이 없다: 이 프로젝트에는 문서
    사이트가 없고, 저장소 URL을 저장소의 홈페이지로 적는 것은 순환이다. **웹 UI 전용도 아니었다** —

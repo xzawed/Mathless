@@ -58,15 +58,13 @@ machine is therefore not "fixing the setup" — it lets you run one more local g
 ### What legitimately differs on another machine — do not read these as breakage
 
 1. **The module byte-size pin will fail on a third machine, on purpose.**
-   `hosts/rust-oracle/tests/protection.rs` pins **9,728 B** on the development machine and
-   **9,216 B** on GitHub's `windows-latest`, chosen by `GITHUB_ACTIONS`. Anything else asserts
-   out. That is not a defect in the module: the toolchain pin covers **rustc**, not MSVC
-   `link.exe` or the Windows SDK, so a different SDK gives a different size. The failure
-   message says exactly this and what to do — re-measure, and update the constant **and every
-   document that publishes the pair** in the same commit. `doc_claims.rs` guards five —
-   `README.md`, `README.ko.md`, `docs/SECURITY.md`, `docs/STATUS.md` and **this file**, which
-   joined on 2026-09-22 after publishing both values four times while telling you only four
-   documents were guarded. A partial update stays red.
+   `hosts/rust-oracle/tests/protection.rs` pins one size for the development machine and one
+   for GitHub's `windows-latest` (`DISCOUNT_DLL_MEASURED_DEV` / `_CI`, chosen by
+   `GITHUB_ACTIONS`). Anything else asserts out. That is not a defect in the module: the
+   toolchain pin covers **rustc**, not MSVC `link.exe` or the Windows SDK, so a different SDK
+   gives a different size. The failure message says exactly this and what to do — re-measure,
+   and update the constant **and `docs/SECURITY.md`**, the one document that publishes the pair,
+   in the same commit. `doc_claims` keeps it red until both match.
 
    Still grep rather than trusting this list: the guard's scope is a hand-written array, and
    a sixth document can publish the pair without anything noticing. That is the general limit
@@ -237,14 +235,12 @@ Rust 의존성은 **0개**다(`Cargo.lock`에 로컬 크레이트 둘뿐).
 ### 다른 머신에서 정당하게 달라지는 것 — 고장으로 읽지 말 것
 
 1. **모듈 바이트 크기 핀은 제3의 머신에서 반드시 실패한다. 의도된 것이다.**
-   `hosts/rust-oracle/tests/protection.rs`가 개발 머신 **9,728 B**, GitHub `windows-latest`
-   **9,216 B**로 고정하고 `GITHUB_ACTIONS`로 둘을 가른다. 다른 값은 assert에 걸린다. 모듈의 결함이
-   아니다 — 툴체인 핀은 **rustc**를 덮지 MSVC `link.exe`나 Windows SDK를 덮지 않으므로, SDK가
-   다르면 크기가 다르다. 실패 메시지가 정확히 이 말과 할 일을 적는다: 다시 재고, **상수와 그 값을
-   싣는 문서 다섯**(`README.md`·`README.ko.md`·`docs/SECURITY.md`·`docs/STATUS.md`, 그리고
-   **이 파일**)을 **같은 커밋에서** 고친다. `doc_claims.rs`가 다섯을 전부 검사하므로 반만 고치면
-   계속 빨갛다. **이 파일은 2026-09-22에 그 목록에 들어왔다** — 그때까지 두 값을 네 번 싣고 있으면서
-   "문서 넷이 가드된다"고 적고 있었다.
+   `hosts/rust-oracle/tests/protection.rs`가 개발 머신용 값과 GitHub `windows-latest`용 값을 하나씩
+   고정하고(`DISCOUNT_DLL_MEASURED_DEV` / `_CI`) `GITHUB_ACTIONS`로 둘을 가른다. 다른 값은 assert에
+   걸린다. 모듈의 결함이 아니다 — 툴체인 핀은 **rustc**를 덮지 MSVC `link.exe`나 Windows SDK를 덮지
+   않으므로, SDK가 다르면 크기가 다르다. 실패 메시지가 정확히 이 말과 할 일을 적는다: 다시 재고,
+   **상수와 `docs/SECURITY.md`**(두 값을 싣는 유일한 문서)를 **같은 커밋에서** 고친다. 둘이 맞을
+   때까지 `doc_claims`가 빨갛다.
 
    그래도 목록을 믿지 말고 grep하라: 가드의 범위는 **손으로 적은 배열**이라 여섯 번째 문서가
    아무 소리 없이 들어올 수 있다. 여기 모든 손-범위 가드의 공통 한계이고, 위 8번의 게이트 목록을

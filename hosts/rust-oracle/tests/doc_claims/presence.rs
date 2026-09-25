@@ -2,16 +2,16 @@
 
 use super::*;
 
-/// The reference C host gates every module it loads. The count is a protection proxy, and
-/// two documents state it in the present tense — so it has to be the count in `host.c`.
+/// **Wherever a live document states how many modules the reference C host gates, it is the
+/// count in `host.c`.** No document has to state it: `host.c` is the home.
 ///
-/// It drifted once already: the fingerprint slice (#105) took it from 2 to 13, then the
-/// string-concat slice (#108) added `receipt.dll` and the documents stayed at 13.
+/// Why: the number lagged twice on record (13 against 14 after #108, 15 against 18 on
+/// 2026-09-11), and the only repair three required copies allowed was editing all three. SPECs
+/// and dated records are records of their moment and are not read.
 #[test]
 fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
     // Comments stripped first: a `load(dir, "…")` written inside a comment would inflate the
-    // count and make the documents "agree" with a number nothing loads. There is no such
-    // comment today (measured, 0 hits) — this keeps it that way for free.
+    // count and make the documents "agree" with a number nothing loads.
     let host_c = strip_c_comments(&read("hosts/c-host/host.c"));
     let gated = host_c.matches("load(dir, \"").count();
     assert!(
@@ -20,77 +20,17 @@ fn the_gated_module_count_in_the_docs_is_the_count_in_host_c() {
          shape changed? This test recognises modules by `load(dir, \"`"
     );
 
-    // STATUS.md was NOT in this list until 2026-09-11, and the gap did exactly what a gap
-    // does: it said "로드하는 모듈 15개" while `host.c` loaded 18, and went on saying it
-    // through the slice that changed the number. The other two documents were corrected the
-    // same day BY THIS GUARD; the one outside it simply kept lying.
-    //
-    // That is the shape worth remembering: a guard's SCOPE is a claim too. This one asserted
-    // "the documents agree with host.c" while checking two of the three that make the claim.
-    //
-    // One consequence, learned immediately: this cannot tell a CLAIM from a QUOTATION of an
-    // old claim. Writing "it used to say 로드하는 모듈 15개" in one of these files fails the
-    // guard — which happened while documenting this very fix. Teaching it about blockquotes
-    // would trade a loud, obvious failure for a silent exemption, so the rule is the other
-    // way round: when recounting a superseded number in these files, do not spell it with
-    // this prefix.
-    for doc in ["docs/SECURITY.md", "docs/HOST_ABI.md", "docs/STATUS.md"] {
-        let text = read(doc);
-        let stated = numbers_between(&text, "로드하는 모듈 ", "개");
-        assert!(
-            !stated.is_empty(),
-            "{doc} no longer states how many modules the reference host gates; either put \
-             the sentence back or drop this document from the check"
-        );
-        for n in stated {
+    // It cannot tell a claim from a quotation of an old one: when recounting a superseded
+    // number, do not spell it with this prefix.
+    for (path, text) in every_markdown_file() {
+        if is_dated_record(&path) || path.starts_with("docs/slices/SPEC-") {
+            continue;
+        }
+        for n in numbers_between(&text, "로드하는 모듈 ", "개") {
             assert_eq!(
                 n, gated,
-                "{doc} says the reference C host gates {n} modules; host.c gates {gated}"
-            );
-        }
-    }
-}
-
-/// Both README versions describe the export table as a protection proxy. The fingerprint
-/// slice added a second reserved symbol, so the count is three — and the prose said two
-/// for two slices while the code block right below it listed all three.
-#[test]
-fn the_readmes_do_not_understate_the_export_set() {
-    // DERIVED, not written here. The earlier version listed the three names in this file and
-    // only checked that protection.rs also contained them — which its own comment described
-    // as "not invented here" while inventing them. A fourth export would have slipped past
-    // this guard entirely (protection.rs would still have caught it, but the READMEs would
-    // have gone stale silently, which is the exact failure this file exists to stop).
-    let protection = read("hosts/rust-oracle/tests/protection.rs");
-    // One of the three carries the module's name, so what protection.rs pins is
-    // `ml_iface_hash_{module}` and what a document can state is `ml_iface_hash_<module>` —
-    // the same two spellings the reserved-symbol guard above reconciles, through the same
-    // one translation.
-    let pinned: Vec<String> = string_literals_in_vec_after(&protection, "        exports,")
-        .iter()
-        .map(|s| placeholder_to_module(s))
-        .collect();
-    assert!(
-        pinned.len() >= 3,
-        "recovered {pinned:?} from protection.rs's export assertion — has its shape changed?"
-    );
-
-    for doc in ["README.md", "README.ko.md"] {
-        let text = read(doc);
-        for name in &pinned {
-            assert!(
-                text.contains(name),
-                "{doc} does not mention '{name}', which every module exports. \
-                 protection.rs pins the set as {pinned:?}"
-            );
-        }
-        // Negative pins: the exact sentences that were left behind by #105.
-        for stale in ["the two symbols", "심볼 두 개"] {
-            assert!(
-                !text.contains(stale),
-                "{doc} still says '{stale}'. A module exports {} symbols today \
-                 (protection.rs asserts the set)",
-                pinned.len()
+                "{path} says the reference C host gates {n} modules; host.c gates {gated}. \
+                 Write \"로드하는 모듈 전부\" instead of a number: host.c is where it lives"
             );
         }
     }
@@ -195,21 +135,6 @@ fn the_readmes_name_every_builtin_and_every_required_gate() {
             );
         }
     }
-
-    // `CLAUDE.md` is checked for the GATES only — built-ins are the READMEs' job. It enumerates
-    // the required gates in the same sentence that says the canonical list is `ci.yml` and must
-    // not be copied here, which is a rule and its violation in one breath. The copy is worth
-    // keeping (a session has to know which gates exist) so the fix is to make the copy
-    // self-maintaining rather than to delete it: a fourth required gate turns this red.
-    let claude = read("CLAUDE.md");
-    for g in &gates {
-        assert!(
-            claude.contains(g.as_str()),
-            "CLAUDE.md does not name {g}, which .github/workflows/ci.yml sets to `require`. \
-             Every session loads CLAUDE.md and takes its gate list as the merge bar; a gate \
-             missing from it is one nobody runs before pushing"
-        );
-    }
 }
 
 /// The artifact set, checked against the emitter rather than against a remembered list.
@@ -248,26 +173,17 @@ fn every_artifact_the_emitter_writes_is_named_in_the_docs() {
         "recovered only {exts:?} from emit.rs — has the array's shape changed?"
     );
 
-    // Three documents was the set when this was written, and three of the files that describe
-    // the same artifacts sat outside it (STATUS §9-A A2). `LICENSE-OUTPUT-EXCEPTION` is the
-    // sharpest of them: it ENUMERATES the artifacts and grants rights over them, so an
-    // artifact missing from that list is a legal sentence that does not cover what `mlc`
-    // hands the user. `docs/STATUS.md` §1 states the set as current fact.
+    // The HOMES of the artifact set, and only those: the READMEs tell a user what they get,
+    // `HOST_ABI.md` is the contract a host author builds against, and `LICENSE-OUTPUT-EXCEPTION`
+    // with D23 GRANT rights over the artifacts — a grant that under-lists what it grants is the
+    // worst place for this drift. `STATUS.md` and `CLAUDE.md` were required copies until the
+    // one-home pass; they now point here instead of restating the set.
     for doc in [
         "README.md",
         "README.ko.md",
         "docs/HOST_ABI.md",
         "LICENSE-OUTPUT-EXCEPTION",
-        "docs/STATUS.md",
-        // D23 is the decision record for a LICENCE GRANT, and it enumerated four items while
-        // LICENSE-OUTPUT-EXCEPTION §1 listed five — the import library was missing from the
-        // decision that points at that licence. A grant that under-lists what it grants is the
-        // worst place for this drift, and it sat outside this guard until 2026-09-05.
         "docs/DECISIONS.md",
-        // `CLAUDE.md` joined 2026-09-22. It states the artifact set TWICE and is the file
-        // every session loads, so a fifth artifact would have turned six documents red and
-        // left this one quietly wrong — the blind-spot shape §7-3 names.
-        "CLAUDE.md",
     ] {
         let text = read(doc);
         for ext in &exts {
@@ -380,21 +296,14 @@ fn the_readme_transcripts_carry_the_draft_note_the_cli_prints() {
     }
 }
 
-/// The artifact-size proxy, checked in the direction nothing checked before: the documents
-/// must carry what was actually measured.
+/// **`docs/SECURITY.md` publishes both measured module sizes; a document that states one
+/// states both.**
 ///
-/// D3 was decided as "assert the exact value" and CI disproved the premise in one run — the
-/// same commit and the same pinned rustc produced 9,728 B here and 9,216 B on
-/// `windows-latest`, one `FileAlignment` block apart, because the pin covers rustc and not
-/// MSVC `link.exe`. The number ten documents publish as a project fact is a *this-machine*
-/// number.
-///
-/// So the guard is not "the docs match one constant" but "the docs carry BOTH observations".
-/// A document that quietly goes back to a single exact byte count fails here.
-///
-/// Only PRESENT-TENSE statements are checked. Every `docs/slices/SPEC-*.md` also carries the
-/// old number, but `slices/README.md` says plainly that each SPEC is the design record of
-/// its own moment — rewriting those would be rewriting history, not fixing a claim.
+/// Why: the same commit and the same pinned rustc gave 9,728 B on the development machine and
+/// 9,216 B on `windows-latest` (the pin covers rustc, not MSVC `link.exe`), so one value alone
+/// is a this-machine number presented as a project fact. SECURITY is the home; the other four
+/// documents used to be required to carry the pair and now point there. SPECs and dated
+/// records are not read.
 #[test]
 fn the_published_module_size_carries_both_measurements() {
     let protection = read("hosts/rust-oracle/tests/protection.rs");
@@ -402,36 +311,37 @@ fn the_published_module_size_carries_both_measurements() {
         u64_const(&protection, "DISCOUNT_DLL_MEASURED_DEV"),
         u64_const(&protection, "DISCOUNT_DLL_MEASURED_CI"),
     ];
+    let pair = observed.map(with_commas);
 
-    // The READMEs were NOT in this list when the size guard was written, and both kept
-    // publishing "about 9.7 KB" — the dev machine's value alone — for a slice after the
-    // measurement that disproved it. They are the outermost documents in a public
-    // repository, so leaving them out was the wrong half to leave out.
-    //
-    // `CONTRIBUTING.md` joined on 2026-09-22 for the same reason, found the same way. It
-    // publishes both values four times AND told the reader that "the four documents that
-    // publish it" are guarded — while being an unguarded fifth. A list that names its own
-    // scope is the one place a missing entry reads as a promise.
+    let security = read("docs/SECURITY.md");
+    for stated in &pair {
+        assert!(
+            security.contains(stated.as_str()),
+            "docs/SECURITY.md does not state '{stated} B'. It is where the measured module \
+             size lives, and it has to carry both: {} B on the development machine and {} B \
+             on GitHub's windows-latest runner",
+            observed[0],
+            observed[1]
+        );
+    }
+
+    // The documents that published the pair before the one-home pass. Stating it stays
+    // allowed; stating half of it does not.
     for doc in [
-        "docs/SECURITY.md",
         "docs/STATUS.md",
         "README.md",
         "README.ko.md",
         "CONTRIBUTING.md",
     ] {
         let text = read(doc);
-        for n in observed {
-            let stated = with_commas(n);
-            assert!(
-                text.contains(&stated),
-                "{doc} does not state '{stated} B'. The stripped module measures \
-                 {} B on the development machine and {} B on GitHub's windows-latest \
-                 runner; a document that publishes only one of them presents a \
-                 machine-specific number as a project fact",
-                observed[0],
-                observed[1]
-            );
-        }
+        let has = pair.each_ref().map(|s| text.contains(s.as_str()));
+        assert!(
+            has[0] == has[1],
+            "{doc} states one measured module size without the other ({} B dev, {} B CI). \
+             Point to docs/SECURITY.md, or state both",
+            observed[0],
+            observed[1]
+        );
     }
 }
 

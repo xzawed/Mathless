@@ -353,6 +353,10 @@ pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 #[no_mangle]
 pub extern "C" fn ml_iface_hash_basket() -> u64 { 0x5D04BA666CC0CBC6 }
 
+fn ml_ck_line_total(q: i32, p: i32) -> Result<i32, i32> {
+    return Ok((match (q).checked_mul(p) { Some(__o) => __o, None => { return Err(-3); } }));
+}
+
 fn ml_fn_basket_total(qty: *const i32, qty_len: i32, price: *const i32, price_len: i32, cap: i32) -> Result<i32, i32> {
     if (qty_len != price_len) {
         return Err(1);
@@ -360,7 +364,7 @@ fn ml_fn_basket_total(qty: *const i32, qty_len: i32, price: *const i32, price_le
     let mut total = 0i32;
     let mut i = 0i32;
     while (i < qty_len) {
-        let line = (match ({ let __i = i; if __i < 0 || __i >= qty_len { return Err(-2); } unsafe { *qty.add(__i as usize) } }).checked_mul({ let __i = i; if __i < 0 || __i >= price_len { return Err(-2); } unsafe { *price.add(__i as usize) } }) { Some(__o) => __o, None => { return Err(-3); } });
+        let line = (match ml_ck_line_total({ let __i = i; if __i < 0 || __i >= qty_len { return Err(-2); } unsafe { *qty.add(__i as usize) } }, { let __i = i; if __i < 0 || __i >= price_len { return Err(-2); } unsafe { *price.add(__i as usize) } }) { Ok(__v) => __v, Err(__e) => { return Err(__e); } });
         if (line > cap) {
             total = (match (total).checked_add(cap) { Some(__o) => __o, None => { return Err(-3); } });
         }

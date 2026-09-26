@@ -11,6 +11,14 @@
 
 error E_LENGTH_MISMATCH = 1
 
+// One line's total. It has no `!` and needs none: a helper a `!` body calls is checked too
+// (SPEC-helper-check-propagation), so a product with no i32 value fails basket_total with
+// ML_ST_OVERFLOW from here — the C host's acceptance for the helper path. Internal, so the
+// module's fingerprint does not change.
+fn line_total(q: i32, p: i32) -> i32 {
+  return q * p
+}
+
 // Line totals with a per-line cap. Two arrays that must agree in length, which the module
 // checks itself: the host passes two independent pointers and nothing else can.
 export fn basket_total(qty: [i32], price: [i32], cap: i32) -> i32! {
@@ -18,7 +26,7 @@ export fn basket_total(qty: [i32], price: [i32], cap: i32) -> i32! {
   let mut total = 0
   let mut i = 0
   while i < len(qty) {
-    let line = qty[i] * price[i]
+    let line = line_total(qty[i], price[i])
     if line > cap {
       total = total + cap
     }

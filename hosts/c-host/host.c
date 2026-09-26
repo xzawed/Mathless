@@ -1377,7 +1377,10 @@ int main(int argc, char **argv) {
         check(pick(qty, 3, 2, &last) == 0 && last == 4, "the last element is in range");
 
         /* A line total with no i32 value. Before SPEC-checked-arithmetic this product wrapped
-           to -2, which is <= cap, so the basket answered -2 with status 0. */
+           to -2, which is <= cap, so the basket answered -2 with status 0. The product now
+           lives in basket.mls's helper `line_total`, which has no `!`: this is also the C host's
+           evidence that a helper under a `!` caller is checked (SPEC-helper-check-propagation
+           acceptance F) -- before that slice the helper would have wrapped silently again. */
         const int32_t big_qty[1] = {INT32_MAX};
         const int32_t two[1] = {2};
         int32_t total = 0x5A5A5A5A;

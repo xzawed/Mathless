@@ -188,14 +188,15 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
     // SPEC-helper-check-propagation: a helper a fallible body executes and that can overflow
     // gets a checked copy, and only the bodies somebody calls are emitted (DP-P8).
     let checked = crate::ir::checked_helpers(module);
+    let loop_free = crate::ir::loop_free_functions(module);
     let plain = plain_bodies(module, &checked);
     for f in &module.functions {
         if plain.contains(f.name.as_str()) {
-            emit_function(f, &checked, &mut out)?;
+            emit_function(f, &checked, &loop_free, &mut out)?;
             out.push('\n');
         }
         if checked.contains(&f.name) {
-            emit_checked_copy(f, &checked, &mut out)?;
+            emit_checked_copy(f, &checked, &loop_free, &mut out)?;
             out.push('\n');
         }
     }
@@ -265,6 +266,7 @@ fn plain_bodies<'a>(module: &'a IrModule, checked: &BTreeSet<String>) -> BTreeSe
 fn emit_checked_copy(
     f: &IrFunction,
     checked: &BTreeSet<String>,
+    loop_free: &BTreeSet<String>,
     out: &mut String,
 ) -> Result<(), CodegenError> {
     // Only infallible functions are members, and an infallible function returns a scalar:
@@ -291,6 +293,7 @@ fn emit_checked_copy(
     let cx = Cx {
         abi: RetAbi::Fallible,
         checked,
+        loop_free,
     };
     for s in &f.body {
         emit_stmt(s, 1, cx, out);
@@ -302,6 +305,7 @@ fn emit_checked_copy(
 fn emit_function(
     f: &IrFunction,
     checked: &BTreeSet<String>,
+    loop_free: &BTreeSet<String>,
     out: &mut String,
 ) -> Result<(), CodegenError> {
     // An array return has no `return` statement -- the value IS the caller's buffer, and the
@@ -364,6 +368,7 @@ fn emit_function(
     let cx = Cx {
         abi: shape,
         checked,
+        loop_free,
     };
     for s in &f.body {
         emit_stmt(s, 1, cx, out);
@@ -601,6 +606,9 @@ impl RetAbi {
 struct Cx<'a> {
     abi: RetAbi,
     checked: &'a BTreeSet<String>,
+    /// `ir::loop_free_functions` — which calls may be leaves of a pure arithmetic tree
+    /// (SPEC-wide-intermediates DP-W2).
+    loop_free: &'a BTreeSet<String>,
 }
 
 fn emit_stmt(s: &IrStmt, indent: usize, cx: Cx<'_>, out: &mut String) {
@@ -877,8 +885,226 @@ fn overflow_bail(abi: RetAbi) -> Option<String> {
     }
 }
 
+/// An i32 arithmetic node: `+ - * / %` on i32 operands, or unary `-` on one.
+fn is_i32_arith(e: &IrExpr) -> bool {
+    match &e.kind {
+        IrExprKind::Binary { op, lhs, .. } => {
+            lhs.ty == IrType::I32
+                && match op {
+                    IrBinOp::Add | IrBinOp::Sub | IrBinOp::Mul | IrBinOp::Div | IrBinOp::Rem => {
+                        true
+                    }
+                    IrBinOp::Lt
+                    | IrBinOp::Gt
+                    | IrBinOp::Le
+                    | IrBinOp::Ge
+                    | IrBinOp::Eq
+                    | IrBinOp::Ne
+                    | IrBinOp::And
+                    | IrBinOp::Or => false,
+                }
+        }
+        IrExprKind::Unary { op, operand } => {
+            operand.ty == IrType::I32
+                && match op {
+                    IrUnOp::Neg => true,
+                    IrUnOp::Not => false,
+                }
+        }
+        IrExprKind::Index { .. }
+        | IrExprKind::Len { .. }
+        | IrExprKind::ByteLen(_)
+        | IrExprKind::ByteSlice { .. }
+        | IrExprKind::Fixed { .. }
+        | IrExprKind::Call { .. }
+        | IrExprKind::Concat(_)
+        | IrExprKind::Cast { .. }
+        | IrExprKind::ConstF64(_)
+        | IrExprKind::ConstStr(_)
+        | IrExprKind::ConstI32(_)
+        | IrExprKind::ConstBool(_)
+        | IrExprKind::Var(_) => false,
+    }
+}
+
+/// May this i32 expression be part of a PURE arithmetic tree (`SPEC-wide-intermediates` §2.1)?
+///
+/// An arithmetic node over pure children, or a leaf that cannot run forever and can fail only
+/// with `-3`: a variable, an i32 constant, `len(xs)`, or a call to a loop-free infallible
+/// function whose arguments are leaves too and carry no string (DP-W2). With such leaves,
+/// computing the tree exactly and checking once at its root changes no status a host can
+/// observe — a real overflow still fails before anything evaluated after the tree runs.
+///
+/// What is NOT a leaf is the whole point: an array read can fail with `-2` and would then
+/// overtake a real overflow; a call with a `while` could run forever where today's check fails
+/// first (both measured on the FULL variant, §9-71.4); `byte_len`, and a callee that takes a
+/// string, loop to the NUL byte — bounded only by the host's contract.
+fn is_pure(e: &IrExpr, cx: Cx<'_>) -> bool {
+    if is_i32_arith(e) {
+        return match &e.kind {
+            IrExprKind::Binary { lhs, rhs, .. } => is_pure(lhs, cx) && is_pure(rhs, cx),
+            IrExprKind::Unary { operand, .. } => is_pure(operand, cx),
+            IrExprKind::Index { .. }
+            | IrExprKind::Len { .. }
+            | IrExprKind::ByteLen(_)
+            | IrExprKind::ByteSlice { .. }
+            | IrExprKind::Fixed { .. }
+            | IrExprKind::Call { .. }
+            | IrExprKind::Concat(_)
+            | IrExprKind::Cast { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        };
+    }
+    match &e.kind {
+        IrExprKind::Var(_) | IrExprKind::ConstI32(_) | IrExprKind::Len { .. } => true,
+        IrExprKind::Call { name, args } => {
+            cx.loop_free.contains(name) && args.iter().all(|a| is_leaf_argument(a, cx))
+        }
+        IrExprKind::Index { .. }
+        | IrExprKind::ByteLen(_)
+        | IrExprKind::ByteSlice { .. }
+        | IrExprKind::Fixed { .. }
+        | IrExprKind::Concat(_)
+        | IrExprKind::Cast { .. }
+        | IrExprKind::Unary { .. }
+        | IrExprKind::Binary { .. }
+        | IrExprKind::ConstF64(_)
+        | IrExprKind::ConstStr(_)
+        | IrExprKind::ConstBool(_) => false,
+    }
+}
+
+/// An argument of a call leaf: no string, and itself a variable, a constant, or pure.
+fn is_leaf_argument(a: &IrExpr, cx: Cx<'_>) -> bool {
+    if a.ty == IrType::Str {
+        return false;
+    }
+    match &a.kind {
+        IrExprKind::Var(_)
+        | IrExprKind::ConstI32(_)
+        | IrExprKind::ConstF64(_)
+        | IrExprKind::ConstBool(_) => true,
+        IrExprKind::Index { .. }
+        | IrExprKind::Len { .. }
+        | IrExprKind::ByteLen(_)
+        | IrExprKind::ByteSlice { .. }
+        | IrExprKind::Fixed { .. }
+        | IrExprKind::Call { .. }
+        | IrExprKind::Concat(_)
+        | IrExprKind::Cast { .. }
+        | IrExprKind::Unary { .. }
+        | IrExprKind::Binary { .. }
+        | IrExprKind::ConstStr(_) => is_pure(a, cx),
+    }
+}
+
+/// The exact (i64) value of a pure tree, operands bound left to right (§2.2). Only emitted in a
+/// fallible context: `+ - *`, `/` and unary `-` still fail with `-3` if i64 itself overflows
+/// (DP-W5), a zero divisor gives `0` (DP-N4) and `%` is the true remainder (DP-O5).
+fn emit_exact(e: &IrExpr, cx: Cx<'_>) -> String {
+    if !is_i32_arith(e) {
+        return format!("(({}) as i64)", emit_expr(e, cx));
+    }
+    let bail = overflow_bail(cx.abi).unwrap_or_default();
+    let checked = |method: &str| {
+        format!("match __wl.{method}(__wr) {{ Some(__o) => __o, None => {{ {bail} }} }}")
+    };
+    match &e.kind {
+        IrExprKind::Binary { op, lhs, rhs } => {
+            let l = emit_exact(lhs, cx);
+            let r = emit_exact(rhs, cx);
+            let body = match op {
+                IrBinOp::Add => checked("checked_add"),
+                IrBinOp::Sub => checked("checked_sub"),
+                IrBinOp::Mul => checked("checked_mul"),
+                IrBinOp::Div => format!(
+                    "if __wr == 0 {{ 0i64 }} else {{ {} }}",
+                    checked("checked_div")
+                ),
+                IrBinOp::Rem => {
+                    "if __wr == 0 { 0i64 } else { __wl.wrapping_rem(__wr) }".to_string()
+                }
+                IrBinOp::Lt
+                | IrBinOp::Gt
+                | IrBinOp::Le
+                | IrBinOp::Ge
+                | IrBinOp::Eq
+                | IrBinOp::Ne
+                | IrBinOp::And
+                | IrBinOp::Or => unreachable!("is_i32_arith admits arithmetic operators only"),
+            };
+            format!("{{ let __wl: i64 = {l}; let __wr: i64 = {r}; {body} }}")
+        }
+        IrExprKind::Unary { operand, .. } => format!(
+            "(match ({}).checked_neg() {{ Some(__o) => __o, None => {{ {bail} }} }})",
+            emit_exact(operand, cx)
+        ),
+        IrExprKind::Index { .. }
+        | IrExprKind::Len { .. }
+        | IrExprKind::ByteLen(_)
+        | IrExprKind::ByteSlice { .. }
+        | IrExprKind::Fixed { .. }
+        | IrExprKind::Call { .. }
+        | IrExprKind::Concat(_)
+        | IrExprKind::Cast { .. }
+        | IrExprKind::ConstF64(_)
+        | IrExprKind::ConstStr(_)
+        | IrExprKind::ConstI32(_)
+        | IrExprKind::ConstBool(_)
+        | IrExprKind::Var(_) => unreachable!("is_i32_arith admits Binary and Unary only"),
+    }
+}
+
+/// `SPEC-wide-intermediates`: in a fallible body a pure tree is computed exactly and narrowed
+/// ONCE, at its root — whatever takes the value (`let`, argument, index, `as f64`, `return`, an
+/// impure parent). A comparison whose two sides are pure compares the exact values and narrows
+/// nothing (DP-W4). `None` means the ordinary lowering below applies.
+fn emit_wide(e: &IrExpr, cx: Cx<'_>) -> Option<String> {
+    let bail = overflow_bail(cx.abi)?;
+    if is_i32_arith(e) && is_pure(e, cx) {
+        return Some(format!(
+            "(match i32::try_from({}) {{ Ok(__n) => __n, Err(_) => {{ {bail} }} }})",
+            emit_exact(e, cx)
+        ));
+    }
+    let IrExprKind::Binary { op, lhs, rhs } = &e.kind else {
+        return None;
+    };
+    let comparison = match op {
+        IrBinOp::Lt | IrBinOp::Gt | IrBinOp::Le | IrBinOp::Ge | IrBinOp::Eq | IrBinOp::Ne => true,
+        IrBinOp::Add
+        | IrBinOp::Sub
+        | IrBinOp::Mul
+        | IrBinOp::Div
+        | IrBinOp::Rem
+        | IrBinOp::And
+        | IrBinOp::Or => false,
+    };
+    if comparison
+        && lhs.ty == IrType::I32
+        && (is_i32_arith(lhs) || is_i32_arith(rhs))
+        && is_pure(lhs, cx)
+        && is_pure(rhs, cx)
+    {
+        return Some(format!(
+            "{{ let __wl: i64 = {}; let __wr: i64 = {}; __wl {} __wr }}",
+            emit_exact(lhs, cx),
+            emit_exact(rhs, cx),
+            op_str(*op)
+        ));
+    }
+    None
+}
+
 fn emit_expr(e: &IrExpr, cx: Cx<'_>) -> String {
     let abi = cx.abi;
+    if let Some(wide) = emit_wide(e, cx) {
+        return wide;
+    }
     match &e.kind {
         // `xs[i]`, bounds-checked (SPEC-array-input 2.3).
         //

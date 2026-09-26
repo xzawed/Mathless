@@ -6,7 +6,8 @@
 > 진행(2026-08-31 실측): **W0~W7 ✅** · **STEP1 CLI ✅** · **W8~W17 ✅**. 아래 "W7 이후" 표가 정본이다 —
 > D17 에러 경로 · `let` · `i32` · `let mut` · 수용 D(C 호스트) · `while` · 단항 · `&&`/`||` ·
 > 내부 함수와 호출 · `as`까지 전부 머지됐다. (이 줄이 W10에서 멈춰 있었다 — 2026-08-31 정정.)
-> **수용 A/B/C 완료 + D는 C 호스트로 통과**(2026-08-29). **Delphi(`dcc64`)만 미검증**.
+> **수용 A/B/C 완료 + D는 C 호스트로 통과**(2026-08-29). **Delphi는 로컬 게이트까지**(`MATHLESS_GATE_DELPHI`,
+> 아래 게이트/블로커) — CI는 X1로 남았다.
 > 테스트 수·CI 구성의 정본은 `docs/STATUS.md`다(여기 숫자를 복제하면 곧 낡는다 — 실제로 두 번 낡았다).
 > 잔여 작업 목록의 정본은 `docs/STATUS.md` §9(**▶ 여기서 시작한다** 블록)다.
 >
@@ -73,7 +74,7 @@ W0~W7은 원래 SPEC의 계획이었다. 아래는 그 뒤에 **별도 SPEC + �
 - **W4 필수(Grok 지적) — 처리됨(강화):** 초기에는 codegen이 마지막 문이 `return`이 아니면 거부했으나(`block_always_returns`), 이후 **typeck로 올려** "모든 경로 return"을 프런트엔드에서 강제한다(PR #20) — 진단이 소스에 가까워짐.
 - **크로스 타깃 식별자 하드닝 — 처리됨:** 파라미터명이 대상 언어(Rust/C/Pascal) 예약어와 겹치면 typecheck가 명확한 에러로 거부한다(`compiler/src/reserved.rs`; 프런트엔드 단일 검사 → 모든 백엔드 보호, Pascal은 대소문자 무시). 함수명은 `mlx_` 접두어라 안전.
 - **잔여 하드닝(버그 아님):**
-  - `mlc build`(`emit_artifacts`)는 호출마다 고유 임시 빌드 트리(`mlc-build-<pid>-<seq>`)를 쓰고 성공·실패와 무관하게 정리한다 → CLI 경로 경합/임시폴더 누수 해소(STEP1, Grok verify 반영). `codegen::build_cdylib`의 직접 소비자(테스트 `end_to_end`/`protection`)는 고정 `workdir`명 유지(직렬 실행이라 미실현 경합).
+  - `mlc build`(`emit_artifacts`)는 호출마다 고유 임시 빌드 트리(`mlc-build-<pid>-<seq>`)를 쓰고 성공·실패와 무관하게 정리한다 → CLI 경로 경합/임시폴더 누수 해소(STEP1, Grok verify 반영). ~~`codegen::build_cdylib`의 직접 소비자(테스트 `end_to_end`/`protection`)는 고정 `workdir`명 유지~~ → **처리됨**(#19): 테스트는 `common::TempOut`(`%TEMP%/mlc_<tag>_<pid>`, drop 때 삭제)에 빌드한다.
   - ~~`mlc build` 산출은 원자적이지 않다~~ → **처리됨**(#42): 세 산출물을 `out_dir` 안의 스테이지에 모두 만든 뒤 이동한다. 이동이 실패하면 이번 호출이 놓은 것을 걷어내고 밀어냈던 기존 파일을 되돌린다. 남는 실패 창은 이동 그 자체뿐이며, **롤백 도중 크래시**까지는 보장하지 않는다(저널이 필요한 범위 — 하지 않는다).
   - ~~모듈명에 식별자 검증이 없다~~ → **처리됨**(#42): `emit_artifacts`가 진입 즉시 모듈명을 검사한다 — 식별자 + `reserved.rs` 전 대상 + Windows 예약 장치명(`nul`/`con`/`com1`…). 이름은 생성 `Cargo.toml`의 `name = "…"`, C 헤더 가드, Delphi unit 이름, 그리고 **파일명**에 그대로 들어간다. 같은 검토에서 `reserved.rs`의 PASCAL 목록에 **`at`·`on` 누락**을 발견해 함께 채웠다 — 이는 파라미터·지역 변수명에도 영향이 있었다(E1: Delphi 문서상 예약어, dcc64 없어 컴파일 확인 불가).
   - ~~후속 변수(local) 도입 시 예약어 검사를 변수명에도 확장.~~ → **처리됨**: `let` 슬라이스(PR #26)가 지역 변수명에도 `reserved.rs`와 `out_value` 검사를 적용한다.

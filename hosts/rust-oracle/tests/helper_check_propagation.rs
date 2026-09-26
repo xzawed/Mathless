@@ -38,6 +38,7 @@ export fn chain(x: i32) -> i32! { return h1(x) }
 export fn chain_plain(x: i32) -> i32 { return h1(x) }
 export fn pred(a: i32, b: i32) -> bool! { return big(a, b) }
 export fn conv(x: f64) -> f64! { return toi(x) }
+export fn conv_plain(x: f64) -> f64 { return toi(x) }
 export fn call_export(a: i32, b: i32) -> i32! { return wmul(a, b) }
 export fn call_via(a: i32, b: i32) -> i32! { return viaint(a, b) }
 export fn and_short(p: bool, x: i32) -> bool! { return p && sq(x) > 0 }
@@ -163,6 +164,12 @@ fn bool_and_f64_helpers_are_checked() {
     assert_eq!(c(3.9), (0, 3.0));
     assert_eq!(c(f64::NAN).0, OVERFLOW, "f64 as i32 in an f64 helper");
     assert_eq!(c(3e9).0, OVERFLOW);
+
+    // B for the conversion: the same helper under an infallible caller keeps saturating
+    // (NaN -> 0, 3e9 -> i32::MAX), which is what HOST_ABI.md says a host call does.
+    let conv_plain: extern "C" fn(f64) -> f64 = sym(&m, b"mlx_conv_plain\0");
+    assert_eq!(conv_plain(f64::NAN), 0.0);
+    assert_eq!(conv_plain(3e9), 2147483647.0);
     drop(m);
 }
 

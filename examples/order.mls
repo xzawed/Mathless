@@ -3,34 +3,35 @@
 // The module owns the table, so adding a state or an edge changes one file, not two. The host
 // keeps the current state and asks the module where an event leads.
 //
-// It was written before constant declarations existed, so each state and event is a
-// zero-argument internal `fn`. That keeps the numbers in one place inside the module - and it
-// is also the limit of this form: the numbers are function BODIES. The generated header carries no name for
-// them, and the interface fingerprint does not cover them, so renumbering a state keeps the
-// header and the fingerprint byte-identical while the module's answers move (measured in
-// hosts/rust-oracle/tests/order_state_machine.rs). The host has to treat 1..6 and 1..5 as part
-// of the contract by hand. The error codes, by contrast, are in both.
+// The states and events are `export const`s (SPEC-constants). Each number reaches the generated
+// header under a name - ML_ORDER_CONST_PAID - and the interface fingerprint covers it, so a host
+// compares against the header's names instead of retyping numbers, and a module whose
+// numbering changed is refused at load instead of misread (hosts/c-host/host.c refuses a copy
+// with PAID renumbered). The first version of this file wrote each code as a zero-argument
+// `fn`, because there were no constants; renumbering one passed the gate silently (STATUS
+// section 9-67.2).
 
 error E_BAD_TRANSITION = 1
 error E_UNKNOWN_STATE = 2
 
 // States.
-fn created() -> i32 { return 1 }
-fn paid() -> i32 { return 2 }
-fn shipped() -> i32 { return 3 }
-fn delivered() -> i32 { return 4 }
-fn cancelled() -> i32 { return 5 }
-fn refunded() -> i32 { return 6 }
+export const CREATED = 1
+export const PAID = 2
+export const SHIPPED = 3
+export const DELIVERED = 4
+export const CANCELLED = 5
+export const REFUNDED = 6
 
-// Events.
-fn pay() -> i32 { return 1 }
-fn ship() -> i32 { return 2 }
-fn deliver() -> i32 { return 3 }
-fn cancel() -> i32 { return 4 }
-fn refund() -> i32 { return 5 }
+// Events. The same numbers as some states, on purpose: a constant is a name for a value, not
+// a unique code, so nothing requires them to differ (SPEC-constants DP-K8).
+export const PAY = 1
+export const SHIP = 2
+export const DELIVER = 3
+export const CANCEL = 4
+export const REFUND = 5
 
 fn known(state: i32) -> bool {
-  return state >= created() && state <= refunded()
+  return state >= CREATED && state <= REFUNDED
 }
 
 // The table. There is no `else` or `match`, so each edge is an early return and anything that
@@ -38,12 +39,12 @@ fn known(state: i32) -> bool {
 // "this order is in a state I do not know" is a different bug from "this event is not allowed".
 export fn next_state(state: i32, event: i32) -> i32! {
   if !known(state) { fail E_UNKNOWN_STATE }
-  if state == created() && event == pay() { return paid() }
-  if state == created() && event == cancel() { return cancelled() }
-  if state == paid() && event == ship() { return shipped() }
-  if state == paid() && event == cancel() { return refunded() }
-  if state == shipped() && event == deliver() { return delivered() }
-  if state == delivered() && event == refund() { return refunded() }
+  if state == CREATED && event == PAY { return PAID }
+  if state == CREATED && event == CANCEL { return CANCELLED }
+  if state == PAID && event == SHIP { return SHIPPED }
+  if state == PAID && event == CANCEL { return REFUNDED }
+  if state == SHIPPED && event == DELIVER { return DELIVERED }
+  if state == DELIVERED && event == REFUND { return REFUNDED }
   fail E_BAD_TRANSITION
 }
 
@@ -63,15 +64,15 @@ export fn replay(start: i32, events: [i32]) -> i32! {
 }
 
 export fn is_terminal(state: i32) -> bool {
-  return state == cancelled() || state == refunded()
+  return state == CANCELLED || state == REFUNDED
 }
 
 export fn state_label(state: i32) -> string! {
-  if state == created() { return "주문됨" }
-  if state == paid() { return "결제됨" }
-  if state == shipped() { return "배송중" }
-  if state == delivered() { return "배송완료" }
-  if state == cancelled() { return "취소됨" }
-  if state == refunded() { return "환불됨" }
+  if state == CREATED { return "주문됨" }
+  if state == PAID { return "결제됨" }
+  if state == SHIPPED { return "배송중" }
+  if state == DELIVERED { return "배송완료" }
+  if state == CANCELLED { return "취소됨" }
+  if state == REFUNDED { return "환불됨" }
   fail E_UNKNOWN_STATE
 }

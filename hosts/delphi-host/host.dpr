@@ -210,6 +210,8 @@ var
   Flags1: array of Boolean;
   Flags4: array of LongBool;
   Wrote: string;
+  { export const (SPEC-constants): read into an Integer, so "it fits" is the compiler's to say. }
+  ConstNeg, ConstMin: Integer;
 begin
   if ParamCount < 1 then
   begin
@@ -297,6 +299,14 @@ begin
       Break;
     end;
   Check(ByteCanary, 'the module wrote exactly one byte for a bool out-param');
+
+  { export const (SPEC-constants section 2.5). The unit spells i32::MIN as `-2147483648`,
+    which C cannot (host.c asserts the C spelling is an int). Measured here as a VALUE, so
+    the Pascal spelling is checked the way the C one is and not only compiled. }
+  ConstNeg := ML_SHAPES_CONST_SHAPE_NEG;
+  ConstMin := ML_SHAPES_CONST_SHAPE_MIN;
+  Check(ConstNeg = -1, 'ML_SHAPES_CONST_SHAPE_NEG is -1');
+  Check(ConstMin = Low(Integer), 'ML_SHAPES_CONST_SHAPE_MIN is Low(Integer)');
 
   { HOST_ABI.md's string rule 5 names THREE spellings of "UnicodeString -> PAnsiChar" and
     says which are right. Until this ran they were all E1 -- Embarcadero documentation,

@@ -22,6 +22,7 @@
  * here in CI.
  *
  * usage: host <artifact_dir> <expected_abi_version> [drifted_module.dll] [longest_named.dll]
+ *             [renumbered_order.dll]
  */
 /* <math.h> is here for the rounding checks: DP-R3 says the module's floor/ceil/round/trunc
    match C's exactly, so the honest test is to call both and compare - including signbit(),
@@ -65,6 +66,7 @@
 #include "basket.h"
 #include "schedule.h"
 #include "allocate.h"
+#include "order.h"
 /* Included for the header alone (N1): these are exercised by the Rust oracle, but
  * until now no C compiler had read the headers that ship beside them. `shapes.h` is the
  * one that matters most -- shapes.mls collects the export shapes where a mis-written
@@ -75,10 +77,24 @@
 #include "discount3.h"
 #include "shapes.h"
 #include "refund.h"
-#include "order.h"
 
 typedef uint32_t (*abi_version_fn)(void);
 typedef uint64_t (*iface_hash_fn)(void);
+/* export const (SPEC-constants): a named integer is a VALUE the header carries, so its C
+ * spelling is measured here rather than read. `_Generic` sees the expression's TYPE. A
+ * negative written bare would still compile, and i32::MIN written `-2147483648` would too -
+ * but that is the negation of a literal too big for `int`, so it is not an int, and the
+ * "minimum" would not compare as one. shapes.mls declares both on purpose. */
+_Static_assert(_Generic(ML_SHAPES_CONST_SHAPE_NEG, int: 1, default: 0),
+               "ML_SHAPES_CONST_SHAPE_NEG is not an int");
+_Static_assert(ML_SHAPES_CONST_SHAPE_NEG == -1, "ML_SHAPES_CONST_SHAPE_NEG is not -1");
+_Static_assert(_Generic(ML_SHAPES_CONST_SHAPE_MIN, int: 1, default: 0),
+               "ML_SHAPES_CONST_SHAPE_MIN is not an int");
+_Static_assert(ML_SHAPES_CONST_SHAPE_MIN == INT32_MIN, "ML_SHAPES_CONST_SHAPE_MIN is not INT32_MIN");
+/* order.mls: the state machine whose codes this host takes from the header, not by hand. */
+typedef int32_t (*next_state_fn)(int32_t, int32_t, int32_t *);
+_Static_assert(_Generic(&mlx_next_state, next_state_fn: 1, default: 0),
+               "generated mlx_next_state signature changed");
 /* schedule.mls / allocate.mls: array RETURN (SPEC-array-return). The Q12 triple comes LAST,
  * and here ml_cap and ml_needed count ELEMENTS -- the header says so, and this host allocates
  * with the multiplication on purpose so the trap is written in code and not only in prose. */
@@ -1266,6 +1282,49 @@ int main(int argc, char **argv) {
     } else {
         printf("GATE_D_NAMEBOUND_SKIPPED: no longest-named module given, so the module name "
                "bound was NOT exercised by this run\n");
+    }
+
+    /* --- order.dll: a state machine whose codes come from the HEADER (SPEC-constants E). ---
+     *
+     * The first version of order.mls wrote its states as zero-argument functions: the header
+     * had no name for them, a host had to retype 1..6, and a module that renumbered one passed
+     * the gate and was misread (STATUS section 9-67.2). Every code below is a header name. */
+    HMODULE ord = load(dir, "order.dll", expected_abi, ML_ORDER_IFACE_HASH);
+    if (ord == NULL) {
+        return 1;
+    }
+    next_state_fn next_state = (next_state_fn)sym(ord, "mlx_next_state");
+    if (next_state) {
+        int32_t state = -7;
+        check(next_state(ML_ORDER_CONST_CREATED, ML_ORDER_CONST_PAY, &state) == 0 &&
+                  state == ML_ORDER_CONST_PAID,
+              "an order paid for is PAID - by the header's names, not retyped numbers");
+        state = -7;
+        check(next_state(ML_ORDER_CONST_SHIPPED, ML_ORDER_CONST_PAY, &state) ==
+                      ML_ORDER_ERR_E_BAD_TRANSITION &&
+                  state == -7,
+              "an event the state does not accept is a domain error, and writes nothing");
+    }
+    FreeLibrary(ord);
+
+    /* argv[5], when present, names `order` rebuilt with ONE exported constant renumbered
+     * (PAID 2 -> 7) and nothing else. The C signatures are identical and every symbol
+     * resolves; before constants this exact change passed the gate silently. The fingerprint
+     * now covers the export const table, so the gate must refuse it. Same marker discipline
+     * as the drift block above: a condition that can skip a check says which way it went. */
+    if (argc >= 6) {
+        HMODULE renum = load_raw(dir, argv[5]);
+        if (renum != NULL) {
+            check(!gate(renum, argv[5], expected_abi, ML_ORDER_IFACE_HASH),
+                  "the gate refuses a module whose exported constants were renumbered");
+            check(GetProcAddress(renum, "mlx_next_state") != NULL,
+                  "control: the renumbered module still resolves mlx_next_state by name");
+            FreeLibrary(renum);
+            printf("GATE_D_CONSTDRIFT_CHECKED\n");
+        }
+    } else {
+        printf("GATE_D_CONSTDRIFT_SKIPPED: no renumbered module given, so the constant drift "
+               "refusal was NOT exercised by this run\n");
     }
 
     /* --- basket.dll: array INPUT (SPEC-array-input). ---

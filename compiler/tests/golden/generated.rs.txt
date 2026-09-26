@@ -1288,7 +1288,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash_order() -> u64 { 0x796C5E8CDC313B47 }
+pub extern "C" fn ml_iface_hash_order() -> u64 { 0xF1C03F4F38B372F9 }
 
 fn ml_strout(src: *const u8, buf: *mut u8, cap: i32, needed: *mut i32) -> i32 {
     // Pass 1: count to the NUL, inclusive. `n` ends at >= 1 for every string.
@@ -1311,75 +1311,31 @@ fn ml_strout(src: *const u8, buf: *mut u8, cap: i32, needed: *mut i32) -> i32 {
     0
 }
 
-fn ml_fn_created() -> i32 {
-    return 1i32;
-}
-
-fn ml_fn_paid() -> i32 {
-    return 2i32;
-}
-
-fn ml_fn_shipped() -> i32 {
-    return 3i32;
-}
-
-fn ml_fn_delivered() -> i32 {
-    return 4i32;
-}
-
-fn ml_fn_cancelled() -> i32 {
-    return 5i32;
-}
-
-fn ml_fn_refunded() -> i32 {
-    return 6i32;
-}
-
-fn ml_fn_pay() -> i32 {
-    return 1i32;
-}
-
-fn ml_fn_ship() -> i32 {
-    return 2i32;
-}
-
-fn ml_fn_deliver() -> i32 {
-    return 3i32;
-}
-
-fn ml_fn_cancel() -> i32 {
-    return 4i32;
-}
-
-fn ml_fn_refund() -> i32 {
-    return 5i32;
-}
-
 fn ml_fn_known(state: i32) -> bool {
-    return ((state >= ml_fn_created()) && (state <= ml_fn_refunded()));
+    return ((state >= 1i32) && (state <= 6i32));
 }
 
 fn ml_fn_next_state(state: i32, event: i32) -> Result<i32, i32> {
     if (!ml_fn_known(state)) {
         return Err(2);
     }
-    if ((state == ml_fn_created()) && (event == ml_fn_pay())) {
-        return Ok(ml_fn_paid());
+    if ((state == 1i32) && (event == 1i32)) {
+        return Ok(2i32);
     }
-    if ((state == ml_fn_created()) && (event == ml_fn_cancel())) {
-        return Ok(ml_fn_cancelled());
+    if ((state == 1i32) && (event == 4i32)) {
+        return Ok(5i32);
     }
-    if ((state == ml_fn_paid()) && (event == ml_fn_ship())) {
-        return Ok(ml_fn_shipped());
+    if ((state == 2i32) && (event == 2i32)) {
+        return Ok(3i32);
     }
-    if ((state == ml_fn_paid()) && (event == ml_fn_cancel())) {
-        return Ok(ml_fn_refunded());
+    if ((state == 2i32) && (event == 4i32)) {
+        return Ok(6i32);
     }
-    if ((state == ml_fn_shipped()) && (event == ml_fn_deliver())) {
-        return Ok(ml_fn_delivered());
+    if ((state == 3i32) && (event == 3i32)) {
+        return Ok(4i32);
     }
-    if ((state == ml_fn_delivered()) && (event == ml_fn_refund())) {
-        return Ok(ml_fn_refunded());
+    if ((state == 4i32) && (event == 5i32)) {
+        return Ok(6i32);
     }
     return Err(1);
 }
@@ -1406,7 +1362,7 @@ pub extern "C" fn mlx_replay(start: i32, events: *const i32, events_len: i32, ou
 }
 
 fn ml_fn_is_terminal(state: i32) -> bool {
-    return ((state == ml_fn_cancelled()) || (state == ml_fn_refunded()));
+    return ((state == 5i32) || (state == 6i32));
 }
 #[no_mangle]
 pub extern "C" fn mlx_is_terminal(state: i32) -> bool {
@@ -1414,22 +1370,22 @@ pub extern "C" fn mlx_is_terminal(state: i32) -> bool {
 }
 
 fn ml_fn_state_label(state: i32, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i32) -> i32 {
-    if (state == ml_fn_created()) {
+    if (state == 1i32) {
         return ml_strout(b"\xEC\xA3\xBC\xEB\xAC\xB8\xEB\x90\xA8\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
-    if (state == ml_fn_paid()) {
+    if (state == 2i32) {
         return ml_strout(b"\xEA\xB2\xB0\xEC\xA0\x9C\xEB\x90\xA8\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
-    if (state == ml_fn_shipped()) {
+    if (state == 3i32) {
         return ml_strout(b"\xEB\xB0\xB0\xEC\x86\xA1\xEC\xA4\x91\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
-    if (state == ml_fn_delivered()) {
+    if (state == 4i32) {
         return ml_strout(b"\xEB\xB0\xB0\xEC\x86\xA1\xEC\x99\x84\xEB\xA3\x8C\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
-    if (state == ml_fn_cancelled()) {
+    if (state == 5i32) {
         return ml_strout(b"\xEC\xB7\xA8\xEC\x86\x8C\xEB\x90\xA8\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
-    if (state == ml_fn_refunded()) {
+    if (state == 6i32) {
         return ml_strout(b"\xED\x99\x98\xEB\xB6\x88\xEB\x90\xA8\0".as_ptr(), ml_buf, ml_cap, ml_needed);
     }
     return 2;
@@ -1872,7 +1828,7 @@ fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 pub extern "C" fn ml_module_abi_version() -> u32 { 1 }
 
 #[no_mangle]
-pub extern "C" fn ml_iface_hash_shapes() -> u64 { 0xEBBDE5676601568D }
+pub extern "C" fn ml_iface_hash_shapes() -> u64 { 0x1665B30D52746EC1 }
 
 fn ml_streq(a: *const u8, b: *const u8) -> bool {
     let mut i = 0usize;

@@ -227,7 +227,11 @@ fn the_item_after_a_constant_answers_for_itself() {
         );
     }
     // A token that continues the value is still the constant's to answer for.
-    for tail in ["+ 1", "* 2", "as f64", "[0]", "(1)", "== 1", "&& true"] {
+    // Every token `continues_value` lists, one each.
+    for tail in [
+        "+ 1", "- 1", "* 2", "/ 2", "% 2", "< 1", "> 1", "<= 1", ">= 1", "== 1", "!= 1", "&& true",
+        "|| true", "as f64", "(1)", "[0]",
+    ] {
         let src = format!("const A = 1 {tail}\nexport fn f() -> i32 {{ return 1 }}");
         let e = refused(&src);
         assert!(

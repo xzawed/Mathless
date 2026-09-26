@@ -367,13 +367,29 @@ impl Parser {
             _ => return self.single_literal_err(&name),
         };
         self.pos += 1;
-        // What follows must start the next top-level item. `const A = 1 + 1` and
-        // `const B = A` stop here rather than one token later.
-        let next_is_item = matches!(
+        // Only a token that CONTINUES the value is this constant's fault — `const A = 1 + 1`
+        // stops here rather than one token later. Anything else is the next item's to answer
+        // for: a `struct` on the following line is refused as a struct, not as this constant.
+        let continues_value = matches!(
             self.peek(),
-            Token::Eof | Token::Export | Token::Fn | Token::Error
-        ) || matches!(self.peek(), Token::Ident(s) if s == "const");
-        if !next_is_item {
+            Token::Plus
+                | Token::Minus
+                | Token::Star
+                | Token::Slash
+                | Token::Percent
+                | Token::Lt
+                | Token::Gt
+                | Token::Le
+                | Token::Ge
+                | Token::EqEq
+                | Token::Ne
+                | Token::AndAnd
+                | Token::OrOr
+                | Token::As
+                | Token::LParen
+                | Token::LBracket
+        );
+        if continues_value {
             return self.single_literal_err(&name);
         }
         Ok(ConstDecl {

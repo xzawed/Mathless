@@ -234,6 +234,21 @@ fn data_shapes_that_do_not_exist_yet() {
         "host fn import",
         "import fn host_log(x: i32)\nexport fn f(a: i32) -> i32 { return a }",
     );
+    // Four gaps the 2026-09-26 §7 sweep met in several domains, missing from the block that
+    // claims to hold every gap.
+    rejected("i64 type", "export fn f(x: i64) -> i64 { return x }");
+    rejected(
+        "math builtin",
+        "export fn f(x: f64) -> f64 { return pow(x, 2.0) }",
+    );
+    rejected(
+        "min builtin",
+        "export fn f(a: i32, b: i32) -> i32 { return min(a, b) }",
+    );
+    rejected(
+        "array literal",
+        "export fn f() -> i32 { let ys = [1, 2]  return 0 }",
+    );
     // "null 안전 또는 option" is a whole bullet of the gap block, and neither half was pinned.
     rejected("option type", "export fn f(a: f64?) -> f64 { return a }");
     rejected("null literal", "export fn f(a: f64) -> f64 { return null }");
@@ -273,6 +288,10 @@ const GAPS: &[(&str, &str)] = &[
     ("복합 대입", "compound assign"),
     ("비트", "bitwise &"),
     ("import", "host fn import"),
+    ("`i64`", "i64 type"),
+    ("수학 내장 함수", "math builtin"),
+    ("`min`/`max`", "min builtin"),
+    ("지역 배열", "array literal"),
     ("재귀", "recursion"),
     ("나머지", "f64 %"),
     ("bool` 변환", "bool as i32"),
@@ -431,4 +450,37 @@ fn array_misuse_is_refused_with_a_readable_message() {
     // and STATUS section 7 says to guard the artifact rather than the code that writes it.
     // The honest position is that this catches the shape in the cases it runs, and a NEW
     // diagnostic still needs a human to add a case here.
+}
+
+/// **A known gap is named where the author meets it.** Each of these was refused with a token
+/// dump — `found Ident("t")`, `found Lt`, `found If`, `found LBracket` — so the author learned
+/// nothing about which feature was missing (the 2026-09-26 §7 sweep met all four).
+///
+/// One short concept phrase per case, not a sentence — the module doc explains why wording is
+/// never pinned.
+#[test]
+fn a_known_gap_is_named_where_it_is_met() {
+    for (src, names) in [
+        (
+            "export fn f(a: i32) -> i32 { let mut t = 0  t += a  return t }",
+            "compound assignment",
+        ),
+        ("export fn f(a: i32) -> i32 { return a << 2 }", "bit shift"),
+        ("export fn f(a: i32) -> i32 { return a >> 2 }", "bit shift"),
+        (
+            "export fn f(a: i32) -> i32 { let x = if a > 0 { 1 } else { 2 }  return x }",
+            "`if` is a statement",
+        ),
+        (
+            "export fn f() -> i32 { let ys = [1, 2]  return 0 }",
+            "array literals",
+        ),
+    ] {
+        let e = compile_to_ir(src).expect_err(src).to_string();
+        readable(names, &e);
+        assert!(
+            e.contains(names),
+            "{src:?} is refused without naming the gap ({names}): {e}"
+        );
+    }
 }

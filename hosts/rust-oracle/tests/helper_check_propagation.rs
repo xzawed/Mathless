@@ -221,8 +221,14 @@ fn mul(a: i32) -> i32 { return a * 2 }
 fn ck_mul(a: i32) -> i32 { return a + 1 }
 fn __twin_mul(a: i32) -> i32 { return a * 3 }
 export fn f(a: i32) -> i32! { return mul(a) - ck_mul(a) + __twin_mul(a) }
+export fn g(a: i32) -> i32 { return mul(a) - ck_mul(a) + __twin_mul(a) }
 ";
+    // `g` is the infallible caller that keeps every PLAIN body alive. Without it all three
+    // plain bodies are dropped (DP-P8) and there is nothing left for a copy's name to collide
+    // with — a planted `ml_fn_ck_<name>` scheme passed this test until `g` was added.
     let (_out, m) = load_src("names", src);
+    let g: Plain = sym(&m, b"mlx_g\0");
+    assert_eq!(g(10), 39);
     let f: Un = sym(&m, b"mlx_f\0");
     // 20 - 11 + 30: each name reached its own function. Had `ck_mul` resolved to mul's
     // copy the answer would be 30, had `__twin_mul` done so, 29.

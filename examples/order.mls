@@ -3,9 +3,9 @@
 // The module owns the table, so adding a state or an edge changes one file, not two. The host
 // keeps the current state and asks the module where an event leads.
 //
-// There are no constant declarations yet, so each state and event is a zero-argument internal
-// `fn`. That keeps the numbers in one place inside the module - and it is also the limit of
-// this example: the numbers are function BODIES. The generated header carries no name for
+// It was written before constant declarations existed, so each state and event is a
+// zero-argument internal `fn`. That keeps the numbers in one place inside the module - and it
+// is also the limit of this form: the numbers are function BODIES. The generated header carries no name for
 // them, and the interface fingerprint does not cover them, so renumbering a state keeps the
 // header and the fingerprint byte-identical while the module's answers move (measured in
 // hosts/rust-oracle/tests/order_state_machine.rs). The host has to treat 1..6 and 1..5 as part

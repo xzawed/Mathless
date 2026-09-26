@@ -45,6 +45,7 @@ fn lowers_discount_to_typed_ir() {
 
     let expected = IrModule {
         errors: vec![],
+        consts: vec![],
         functions: vec![IrFunction {
             name: "discount".into(),
             params: vec![

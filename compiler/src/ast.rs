@@ -1,21 +1,44 @@
 //! Mathless AST — Phase 1 MVP subset (D15): `export fn`, `f64`/`bool`, `if`, `return`,
 //! arithmetic and comparison expressions.
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Module {
     pub functions: Vec<Function>,
     /// Module-scoped error-code declarations (`error NAME = N`), for fallible functions (D17).
     pub errors: Vec<ErrorDecl>,
+    /// Module-scoped constants (`const` / `export const`), SPEC-constants.
+    pub consts: Vec<ConstDecl>,
 }
 
 /// `error NAME = N` — a module-defined domain error code (Q13: positive i32).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ErrorDecl {
     pub name: String,
     pub code: i32,
 }
 
-#[derive(Debug, PartialEq)]
+/// `const NAME = <literal>` or `export const NAME = <literal>` (SPEC-constants).
+///
+/// A named literal (DP-K5): the typechecker folds every use into the literal before it checks
+/// anything, so a constant meets every check its literal would. Only `export const` crosses
+/// the boundary — into the bindings and the fingerprint (DP-K1).
+#[derive(Debug, PartialEq, Clone)]
+pub struct ConstDecl {
+    pub name: String,
+    pub value: ConstValue,
+    pub exported: bool,
+}
+
+/// A constant's value as written, sign already applied. Range and type are the
+/// typechecker's to judge (DP-K2), so an out-of-range integer still parses.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum ConstValue {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub name: String,
     pub params: Vec<Param>,
@@ -28,7 +51,7 @@ pub struct Function {
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Param {
     pub name: String,
     pub ty: Type,
@@ -85,7 +108,7 @@ impl ArrayElem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     /// `if <cond> { <body> }` (no `else` in the MVP subset).
     If { cond: Expr, body: Vec<Stmt> },
@@ -156,7 +179,7 @@ pub enum UnOp {
     Not,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     Number(f64),
     /// `"…"` — an ASCII string literal. Lowers to a static NUL-terminated byte array.

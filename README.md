@@ -85,8 +85,10 @@ return counts bytes. Control flow is `if`, `while` and `return`; there is no `el
 `fixed` for decimal formatting. A function can be fallible: `-> T!` with `error NAME = N` and
 `fail NAME`, which lowers to an integer status and an out-parameter, and it can declare
 extra `out` parameters to return several values. Internal `fn` declarations can call each
-other, but recursion is rejected at compile time.
-[docs/LANGUAGE.md](docs/LANGUAGE.md) keeps the definitive list.
+other, but recursion is rejected at compile time. Constants are named literals: a `const`
+stays inside the module, while an `export const` is an `i32` that the header names
+`ML_<MODULE>_CONST_<NAME>` and the interface fingerprint covers, so renumbering one changes
+the fingerprint. [docs/LANGUAGE.md](docs/LANGUAGE.md) keeps the definitive list.
 
 **The CLI.** `mlc build <file.mls> -o <dir>` writes four files side by side: the `.dll` module,
 a `.h` C header, a `.pas` Delphi import unit, and a `.lib` import library so a C host can

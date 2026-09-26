@@ -148,11 +148,12 @@ fn terminal_states_and_labels() {
     drop(m);
 }
 
-/// **The old form: a state written as a function body passes the gate when renumbered.**
+/// **The old form: renumbering a state written as a function body leaves the gate nothing to refuse.**
 ///
 /// Kept as the baseline this slice was measured against (§9-67.2, `HOST_ABI.md` cites it). A
-/// body-only edit keeps the header and the fingerprint, so a host built against the old
-/// numbering loads the new module, passes the gate, and reads 7 as a state it does not know.
+/// body-only edit keeps the header and the fingerprint — which is all a host's gate compares —
+/// while the module's answer moves to 7, a state a host built against the old numbering does
+/// not know.
 #[test]
 fn a_state_written_as_a_function_body_is_outside_the_fingerprint() {
     let body = "fn paid() -> i32 { return 2 }\n\

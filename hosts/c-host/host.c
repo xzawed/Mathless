@@ -99,6 +99,9 @@ _Static_assert(_Generic(&mlx_next_state, next_state_fn: 1, default: 0),
  * and here ml_cap and ml_needed count ELEMENTS -- the header says so, and this host allocates
  * with the multiplication on purpose so the trap is written in code and not only in prose. */
 typedef int32_t (*schedule_fn)(int32_t, int32_t, int32_t *, int32_t, int32_t *);
+typedef int32_t (*one_payment_fn)(int32_t, int32_t, int32_t, int32_t *);
+_Static_assert(_Generic(&mlx_one_payment, one_payment_fn: 1, default: 0),
+               "generated mlx_one_payment signature changed");
 typedef int32_t (*allocate_fn)(const int32_t *, int32_t, int32_t, int32_t *, int32_t,
                                int32_t *);
 typedef int32_t (*in_stock_fn)(const int32_t *, int32_t, bool *, int32_t, int32_t *);
@@ -1463,6 +1466,34 @@ int main(int argc, char **argv) {
         needed = -999;
         check(schedule(100000, 7, buf, -5, &needed) == ML_ST_INSUFFICIENT_BUFFER,
               "a negative capacity is zero, not an enormous unsigned one");
+    }
+
+    /* SPEC-wide-intermediates acceptance F. one_payment is
+       principal * (month + 1) / months - principal * month / months: at 1,000,000,000 over
+       12 months, principal * (month + 1) leaves int32_t from month 2 on while every payment
+       fits. Checked at each operator that was ML_ST_OVERFLOW; the expression is pure, so the
+       module now computes it exactly and narrows once -- the host gets the payment. */
+    one_payment_fn one_payment = (one_payment_fn)sym(sc, "mlx_one_payment");
+    if (one_payment) {
+        int32_t pay = -999;
+        check(one_payment(1000000000, 12, 2, &pay) == 0 && pay == 83333334,
+              "one_payment(1e9, 12, 2) is 250000000 - 166666666 although 3e9 has no int32_t");
+        int32_t total = 0;
+        int answered = 1;
+        for (int32_t m = 0; m < 12; m++) {
+            pay = -999;
+            if (one_payment(1000000000, 12, m, &pay) != 0) {
+                answered = 0;
+            } else {
+                total += pay;
+            }
+        }
+        check(answered && total == 1000000000,
+              "every month answers and the twelve payments sum to the principal exactly");
+        /* The domain check comes first and still owns its status. */
+        pay = -999;
+        check(one_payment(1000000000, 12, 12, &pay) == ML_SCHEDULE_ERR_E_BAD_TERM && pay == -999,
+              "month 12 of 12 is the domain error and leaves the out-param untouched");
     }
 
     HMODULE al = load(dir, "allocate.dll", expected_abi, ML_ALLOCATE_IFACE_HASH);

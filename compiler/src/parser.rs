@@ -7,8 +7,11 @@
 //! any of the three `try` forms, and `primary` did not mention string literals.
 //!
 //! ```text
-//! module    := (function | error_decl)*
+//! module    := (function | error_decl | const_decl)*
 //! error_decl:= 'error' ident '=' int_literal            … 1..=i32::MAX (Q13)
+//! const_decl:= 'export'? 'const' ident '=' '-'? (int_literal | number)
+//!            | 'export'? 'const' ident '=' ('true' | 'false')
+//!                                                      … `const` is contextual (SPEC-constants)
 //! function  := 'export'? 'fn' ident '(' params? ')' '->' type '!'? block
 //!                                                      … '!' = fallible (D17)
 //! params    := param (',' param)*
@@ -757,6 +760,27 @@ impl Parser {
                      into it. Read with `{name}[i]`; there is no assignment through an index"
                 ))
             }
+            // `t += a`: a known gap (LANGUAGE.md), which otherwise fell to the fallback below
+            // and was reported as the identifier `t`.
+            Token::Ident(name)
+                if matches!(
+                    self.peek_at(1),
+                    Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent
+                ) && self.peek_at(2) == &Token::Assign =>
+            {
+                let name = name.clone();
+                let op = match self.peek_at(1) {
+                    Token::Plus => "+",
+                    Token::Minus => "-",
+                    Token::Star => "*",
+                    Token::Slash => "/",
+                    _ => "%",
+                };
+                self.err(format!(
+                    "compound assignment (`{op}=`) is not in Mathless yet — write \
+                     `{name} = {name} {op} …`"
+                ))
+            }
             other => self.err(format!(
                 "expected statement (if|while|return|fail|let|assignment), found {other:?}"
             )),
@@ -993,6 +1017,29 @@ impl Parser {
                 self.eat(&Token::RParen, "')'")?;
                 Ok(e)
             }
+            // Three known gaps met in expression position, each reported by name rather than
+            // as the token that happened to be next.
+            Token::Lt | Token::Gt
+                if self.pos > 0 && self.toks[self.pos - 1].tok == *self.peek() =>
+            {
+                let op = if *self.peek() == Token::Lt {
+                    "<<"
+                } else {
+                    ">>"
+                };
+                self.err(format!(
+                    "bit shift `{op}` is not in Mathless yet — bit operators are a known gap \
+                     (LANGUAGE.md). Multiply or divide by a power of two instead"
+                ))
+            }
+            Token::If => self.err(
+                "`if` is a statement, not an expression — declare `let mut x = …` and assign \
+                 it inside the `if`",
+            ),
+            Token::LBracket => self.err(
+                "array literals are not in Mathless yet — an array arrives as a parameter \
+                 (SPEC-array-input 2.1), and a module has no array locals",
+            ),
             other => self.err(format!("expected expression, found {other:?}")),
         }
     }

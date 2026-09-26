@@ -1152,6 +1152,16 @@ fn check_try_call(
              land inside a module function"
         )));
     }
+    // The same for an ARRAY return: its elements go into the host's buffer too (Q12), and a
+    // module function has no array local for them. Accepted until 2026-09-26, it failed in
+    // the generated crate with E0061 instead.
+    if matches!(sig.ret, IrType::Array(_)) {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' returns an array (`-> [T]!`), which cannot be \
+             `try`-called — its elements go into the host's buffer, and a module function has \
+             no array local for the result to land in"
+        )));
+    }
     if args.len() != sig.params.len() {
         return Err(TypeError::new(format!(
             "function '{fname}': '{callee}' expects {} argument(s), found {}",
@@ -1620,6 +1630,16 @@ fn check_stmt(
                      supported — a string can be a parameter or a `-> string!` return, but \
                      there is nowhere for a local to live (the module has no allocator). \
                      Compare it in place, or return it directly, instead of binding it"
+                )));
+            }
+            // An array is a parameter only (SPEC-array-input §2.1): it arrives as a pointer plus
+            // a length the compiler appends, and a local would carry the pointer without the
+            // length — indexing it, `len` and passing it on all failed in the generated crate.
+            if matches!(value.ty, IrType::Array(_)) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' would be an array, which is not \
+                     supported — an array is a borrowed parameter, and its length travels as a \
+                     companion only the parameter has. Use the parameter directly"
                 )));
             }
             // A local is emitted raw into the generated module and appears in no binding —

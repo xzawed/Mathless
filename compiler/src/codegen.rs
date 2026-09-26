@@ -412,6 +412,25 @@ fn rust_params(params: &[IrParam]) -> Vec<String> {
     out
 }
 
+/// A call site's arguments, in the shape `rust_params` declares: an array argument is two
+/// Rust arguments, the pointer and its `_len` companion (SPEC-array-input DP-A2).
+///
+/// An array can only be a parameter — there are no array locals, literals or array-valued
+/// calls — so an array argument is always a `Var` naming one, and `<name>_len` is in scope.
+fn emit_call_args(args: &[IrExpr], abi: RetAbi) -> String {
+    let mut out = Vec::with_capacity(args.len());
+    for a in args {
+        out.push(emit_expr(a, abi));
+        if matches!(a.ty, IrType::Array(_)) {
+            let IrExprKind::Var(name) = &a.kind else {
+                unreachable!("an array argument that is not a parameter: {:?}", a.kind);
+            };
+            out.push(format!("{name}_len"));
+        }
+    }
+    out.join(", ")
+}
+
 /// The argument names for a forwarding call, in the same shape `rust_params` declares.
 fn rust_args(params: &[IrParam]) -> Vec<String> {
     let mut out = Vec::with_capacity(params.len());
@@ -640,13 +659,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
         IrStmt::TryCall {
             dest, callee, args, ..
         } => {
-            let call = format!(
-                "ml_fn_{callee}({})",
-                args.iter()
-                    .map(|a| emit_expr(a, abi))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            let call = format!("ml_fn_{callee}({})", emit_call_args(args, abi));
             let prop = abi.propagate();
             match dest {
                 IrTryDest::Let { name, mutable } => {
@@ -827,7 +840,7 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
         IrExprKind::Call { name, args } => {
-            let args: Vec<String> = args.iter().map(|a| emit_expr(a, abi)).collect();
+            let args = emit_call_args(args, abi);
             // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). That is
             // safe because `reserved::generated_prefix` rejects `ml_` on PARAMETERS and
             // LOCALS, which are still emitted raw — when this comment once claimed the prefix
@@ -838,13 +851,13 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             // Function names no longer need the rule: since the wrapper refactor a user
             // function is `ml_fn_<name>`, which cannot collide with `ml_floor` (SPEC-export-wrappers DP-W4).
             if crate::typeck::Rounder::from_name(name).is_some() {
-                format!("ml_{name}({})", args.join(", "))
+                format!("ml_{name}({args})")
             } else {
                 // Every Mathless function is one body named `ml_fn_<name>`, exported or not,
                 // so a call site no longer has to know which it is. Before the wrapper
                 // refactor this branch chose between `mlx_<name>` and the bare name, and
                 // choosing wrong meant the generated crate did not build (#95).
-                format!("ml_fn_{name}({})", args.join(", "))
+                format!("ml_fn_{name}({args})")
             }
         }
         IrExprKind::Cast { to, operand } => {

@@ -553,3 +553,22 @@ fn a_gap_in_the_conditions_is_caught_for_a_scalar_and_not_for_an_array() {
          wrong, which is a bigger change than this test",
     );
 }
+
+/// **An array-returning function cannot be `try`-called** — its elements go into the host's
+/// buffer, and a module function has no array local for them. `-> string!` is refused for
+/// the same reason (DP-F7); the array return was accepted here and failed in the generated
+/// crate with E0061 instead (the 2026-09-26 §7 sweep).
+#[test]
+fn an_array_returning_function_cannot_be_try_called() {
+    refused(
+        "try-call an array return",
+        "export fn g(n: i32) -> [i32]! {\n\
+         \x20 result n\n\
+         }\n\
+         export fn f(n: i32) -> i32! {\n\
+         \x20 let x = try g(n)\n\
+         \x20 return 1\n\
+         }",
+        "returns an array",
+    );
+}

@@ -168,7 +168,7 @@ fn an_impure_operator_keeps_its_check_in_place() {
             (f(c"abcde".as_ptr(), 500000000, &mut v), v),
             (OVERFLOW, -7),
             "{}",
-            String::from_utf8_lossy(name)
+            String::from_utf8_lossy(&name[..name.len() - 1])
         );
     }
     drop(m);

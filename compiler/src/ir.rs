@@ -761,6 +761,53 @@ pub fn module_can_fail_overflow(module: &IrModule) -> bool {
     })
 }
 
+/// The infallible functions that always return: no `while` in their body, and none in any
+/// module function they call (`SPEC-wide-intermediates` §2.1, DP-W2). Recursion is rejected, so
+/// such a call terminates; a name that is not a module function is a built-in rounder, which
+/// terminates too.
+///
+/// A call to one of these — with no string argument — may be a leaf of a pure arithmetic tree:
+/// it cannot run forever, and under helper check propagation it can fail only with `-3`, so
+/// deferring the tree's own check past it changes nothing a host can observe. The string
+/// condition is the caller's to check (codegen): a callee that takes a string runs `==` or
+/// `byte_len` over it, loops bounded only by the host's NUL contract.
+pub fn loop_free_functions(module: &IrModule) -> BTreeSet<String> {
+    fn has_while(body: &[IrStmt]) -> bool {
+        body.iter().any(|s| match s {
+            IrStmt::While { .. } => true,
+            IrStmt::If { body, .. } => has_while(body),
+            IrStmt::ResultSet { .. }
+            | IrStmt::ResultLen(_)
+            | IrStmt::Return(_)
+            | IrStmt::Let { .. }
+            | IrStmt::Assign { .. }
+            | IrStmt::AssignOut { .. }
+            | IrStmt::TryCall { .. }
+            | IrStmt::Fail(_) => false,
+        })
+    }
+    let names: BTreeSet<&str> = module.functions.iter().map(|f| f.name.as_str()).collect();
+    let mut free: BTreeSet<String> = BTreeSet::new();
+    // Fixed point over the DAG: a function joins once every module function it calls has.
+    loop {
+        let before = free.len();
+        for f in module.functions.iter().filter(|f| !f.fallible) {
+            if free.contains(&f.name) || has_while(&f.body) {
+                continue;
+            }
+            if expression_callees(&f.body)
+                .into_iter()
+                .all(|c| free.contains(c) || !names.contains(c))
+            {
+                free.insert(f.name.clone());
+            }
+        }
+        if free.len() == before {
+            return free;
+        }
+    }
+}
+
 /// Does this body compare a span anywhere? — `SPEC-string-slice-compare` DP-C2.
 ///
 /// The companion to [`first_index`], and it exists for the same stated reason: `check_expr`

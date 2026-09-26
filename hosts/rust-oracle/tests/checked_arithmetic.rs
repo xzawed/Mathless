@@ -196,20 +196,21 @@ fn infallible_bodies_still_wrap_and_literals_are_checked() {
     drop(m);
 }
 
-/// **The cost the SPEC names (§0.3): a true answer that fits still fails if a step does not.**
+/// **The cost this SPEC named (§0.3) — and `SPEC-wide-intermediates` removed for pure trees.**
 ///
-/// `a * 2 / 2` is `a` for every i32, but the product is a value of its own and 2^31 is not an
-/// i32. Pinned because `LANGUAGE.md` states it as the price of the rule, and a stated price with
-/// no measurement is the kind of sentence that drifts.
+/// `a * 2 / 2` is `a` for every i32. Under checked arithmetic alone the product was a value of
+/// its own and 2^31 failed with -3; `a * 2 / 2` is a PURE tree (variables and constants), so it
+/// is now computed exactly and answers `a`. The price moved to where a value IS narrowed — a
+/// `let` — which `wide_intermediates.rs` measures (`split`).
 #[test]
-fn an_intermediate_overflow_fails_even_when_the_answer_fits() {
+fn an_intermediate_overflow_in_a_pure_tree_no_longer_fails() {
     let (_out, m) = load("mid");
     let mid: Un = sym(&m, b"mlx_mid\0");
     assert_eq!(un(mid, 1073741823), (0, 1073741823));
     assert_eq!(
         un(mid, 1073741824),
-        (OVERFLOW, -7),
-        "the answer 2^30 fits; the product 2^31 does not"
+        (0, 1073741824),
+        "the answer 2^30 fits; the product 2^31 is computed exactly and never stored"
     );
     drop(m);
 }

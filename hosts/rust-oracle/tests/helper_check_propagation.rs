@@ -20,7 +20,10 @@ fn sq(x: i32) -> i32 { return x * x }
 fn h3(x: i32) -> i32 { return x * x }
 fn h2(x: i32) -> i32 { return h3(x) + 1 }
 fn h1(x: i32) -> i32 { return h2(x) - 1 }
-fn big(a: i32, b: i32) -> bool { return a * b > 100 }
+fn big(a: i32, b: i32) -> bool {
+  let t = a * b
+  return t > 100
+}
 fn toi(x: f64) -> f64 { return (x as i32) as f64 }
 export fn wmul(a: i32, b: i32) -> i32 { return a * b }
 fn viaint(a: i32, b: i32) -> i32 { return wmul(a, b) }
@@ -154,7 +157,9 @@ fn bool_and_f64_helpers_are_checked() {
     };
     assert_eq!(p(10, 11), (0, true));
     assert_eq!(p(10, 10), (0, false));
-    assert_eq!(p(65536, 65536).0, OVERFLOW, "a * b in a bool helper");
+    // Through a `let`, which narrows: a comparison of the bare product would be exact since
+    // SPEC-wide-intermediates (DP-W4) and answer `true`.
+    assert_eq!(p(65536, 65536).0, OVERFLOW, "a * b stored in a bool helper");
 
     let conv: Conv = sym(&m, b"mlx_conv\0");
     let c = |x: f64| {

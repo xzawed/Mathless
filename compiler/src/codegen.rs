@@ -1004,19 +1004,19 @@ fn is_leaf_argument(a: &IrExpr, cx: Cx<'_>) -> bool {
 
 /// The exact (i64) value of a pure tree, operands bound left to right (§2.2). Only emitted in a
 /// fallible context: `+ - *`, `/` and unary `-` still fail with `-3` if i64 itself overflows
-/// (DP-W5), a zero divisor gives `0` (DP-N4) and `%` is the true remainder (DP-O5).
-fn emit_exact(e: &IrExpr, cx: Cx<'_>) -> String {
+/// (DP-W5), a zero divisor gives `0` (DP-N4) and `%` is the true remainder (DP-O5). `bail` is
+/// the fallible context's `overflow_bail`, which [`emit_wide`] has already found.
+fn emit_exact(e: &IrExpr, cx: Cx<'_>, bail: &str) -> String {
     if !is_i32_arith(e) {
         return format!("(({}) as i64)", emit_expr(e, cx));
     }
-    let bail = overflow_bail(cx.abi).unwrap_or_default();
     let checked = |method: &str| {
         format!("match __wl.{method}(__wr) {{ Some(__o) => __o, None => {{ {bail} }} }}")
     };
     match &e.kind {
         IrExprKind::Binary { op, lhs, rhs } => {
-            let l = emit_exact(lhs, cx);
-            let r = emit_exact(rhs, cx);
+            let l = emit_exact(lhs, cx, bail);
+            let r = emit_exact(rhs, cx, bail);
             let body = match op {
                 IrBinOp::Add => checked("checked_add"),
                 IrBinOp::Sub => checked("checked_sub"),
@@ -1041,7 +1041,7 @@ fn emit_exact(e: &IrExpr, cx: Cx<'_>) -> String {
         }
         IrExprKind::Unary { operand, .. } => format!(
             "(match ({}).checked_neg() {{ Some(__o) => __o, None => {{ {bail} }} }})",
-            emit_exact(operand, cx)
+            emit_exact(operand, cx, bail)
         ),
         IrExprKind::Index { .. }
         | IrExprKind::Len { .. }
@@ -1068,7 +1068,7 @@ fn emit_wide(e: &IrExpr, cx: Cx<'_>) -> Option<String> {
     if is_i32_arith(e) && is_pure(e, cx) {
         return Some(format!(
             "(match i32::try_from({}) {{ Ok(__n) => __n, Err(_) => {{ {bail} }} }})",
-            emit_exact(e, cx)
+            emit_exact(e, cx, &bail)
         ));
     }
     let IrExprKind::Binary { op, lhs, rhs } = &e.kind else {
@@ -1084,6 +1084,7 @@ fn emit_wide(e: &IrExpr, cx: Cx<'_>) -> Option<String> {
         | IrBinOp::And
         | IrBinOp::Or => false,
     };
+    // Typeck gives both sides of a comparison one type, so `lhs` answers for `rhs` too.
     if comparison
         && lhs.ty == IrType::I32
         && (is_i32_arith(lhs) || is_i32_arith(rhs))
@@ -1092,8 +1093,8 @@ fn emit_wide(e: &IrExpr, cx: Cx<'_>) -> Option<String> {
     {
         return Some(format!(
             "{{ let __wl: i64 = {}; let __wr: i64 = {}; __wl {} __wr }}",
-            emit_exact(lhs, cx),
-            emit_exact(rhs, cx),
+            emit_exact(lhs, cx, &bail),
+            emit_exact(rhs, cx, &bail),
             op_str(*op)
         ));
     }

@@ -65,6 +65,16 @@ export fn dom(a: i32, b: i32) -> i32! {
   if a * b / b > 1000 { fail E_BIG }
   return 0
 }
+fn id(x: i32) -> i32 { return x }
+export fn len_leaf(xs: [i32], a: i32) -> i32! { return a * len(xs) / len(xs) }
+export fn at_assign(a: i32, b: i32) -> i32! {
+  let mut t = 0
+  t = a * b / b
+  return t
+}
+export fn at_arg(a: i32, b: i32) -> i32! { return id(a * b / b) }
+export fn at_arg_over(a: i32, b: i32) -> i32! { return id(a * b) }
+export fn at_index(xs: [i32], a: i32, b: i32) -> i32! { return xs[a * b / b - 99999] }
 fn sq(x: i32) -> i32 { return x * x }
 export fn inl(x: i32) -> i32! { return x * x / x }
 export fn ext(x: i32) -> i32! { return sq(x) / x }
@@ -78,6 +88,7 @@ type Bin = extern "C" fn(i32, i32, *mut i32) -> i32;
 type Tri = extern "C" fn(i32, i32, i32, *mut i32) -> i32;
 type Un = extern "C" fn(i32, *mut i32) -> i32;
 type Idx = extern "C" fn(*const i32, i32, i32, i32, *mut i32) -> i32;
+type Arr1 = extern "C" fn(*const i32, i32, i32, *mut i32) -> i32;
 type Str = extern "C" fn(*const core::ffi::c_char, i32, *mut i32) -> i32;
 type Cmp = extern "C" fn(i32, i32, *mut bool) -> i32;
 type Tof = extern "C" fn(i32, i32, *mut f64) -> i32;
@@ -134,6 +145,29 @@ fn a_pure_tree_answers_exactly_and_fails_only_when_the_value_does_not_fit() {
     assert_eq!(tri(quot_div, 100000, 100000, 0), (0, 0));
     // The price (§2.6): a `let` is a narrowing point.
     assert_eq!(bin(split, 100000, 100000), (OVERFLOW, -7));
+
+    // `len` is a leaf: 2^30 * 2 overflows only in the middle.
+    let len_leaf: Arr1 = sym(&m, b"mlx_len_leaf\0");
+    let xs = [1i32, 2];
+    let mut v = -7;
+    assert_eq!(
+        (len_leaf(xs.as_ptr(), 2, 1073741824, &mut v), v),
+        (0, 1073741824)
+    );
+    // Every place that takes the value narrows it once, and only there (DP-W3): an assignment,
+    // an argument, an index.
+    let at_assign: Bin = sym(&m, b"mlx_at_assign\0");
+    let at_arg: Bin = sym(&m, b"mlx_at_arg\0");
+    let at_arg_over: Bin = sym(&m, b"mlx_at_arg_over\0");
+    assert_eq!(bin(at_assign, 100000, 100000), (0, 100000));
+    assert_eq!(bin(at_arg, 100000, 100000), (0, 100000));
+    assert_eq!(bin(at_arg_over, 100000, 100000), (OVERFLOW, -7));
+    let at_index: Idx = sym(&m, b"mlx_at_index\0");
+    let mut v = -7;
+    assert_eq!(
+        (at_index(xs.as_ptr(), 2, 100000, 100000, &mut v), v),
+        (0, 2)
+    );
     drop(m);
 }
 

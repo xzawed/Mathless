@@ -219,3 +219,87 @@ fn an_array_parameter_adds_no_import_over_a_scalar_baseline() {
         );
     }
 }
+
+/// **An array parameter can be passed to another function** (SPEC-array-input §2.1: "내부
+/// `fn`도 배열 파라미터를 받는다"). The callee declares `xs, xs_len` and the call site used to
+/// pass `xs` alone, so the generated crate failed with E0061 for every element type, plain
+/// call or `try`, internal or exported callee (the 2026-09-26 §7 sweep). Values, not a build.
+#[test]
+fn an_array_parameter_can_be_passed_to_another_function() {
+    let src = "\
+error E_EMPTY = 1
+fn count(xs: [i32]) -> i32 { return len(xs) }
+fn total(xs: [i32]) -> i32! {
+  let mut s = 0
+  let mut i = 0
+  while i < len(xs) { s = s + xs[i]  i = i + 1 }
+  return s
+}
+fn biggest(xs: [f64]) -> f64! {
+  if len(xs) == 0 { fail E_EMPTY }
+  let mut m = xs[0]
+  let mut i = 1
+  while i < len(xs) { if xs[i] > m { m = xs[i] }  i = i + 1 }
+  return m
+}
+fn any(flags: [bool]) -> bool! {
+  let mut i = 0
+  while i < len(flags) { if flags[i] { return true }  i = i + 1 }
+  return false
+}
+export fn sum_twice(xs: [i32], ys: [i32]) -> i32! {
+  let a = try total(xs)
+  let b = try total(ys)
+  return a + b + count(xs) * 0
+}
+export fn top(xs: [f64]) -> f64! { return try biggest(xs) }
+export fn has(flags: [bool]) -> bool! { return try any(flags) }
+export fn via_export(xs: [i32]) -> i32! { return try sum_twice(xs, xs) }
+";
+    let out = common::TempOut::new("ai_pass");
+    let arts = emit_artifacts(src, "passer", &out).expect("emit: arrays passed between functions");
+    let m = Module::load(arts.dll.to_str().unwrap()).expect("load passer.dll");
+
+    type Sum2 = extern "C" fn(*const i32, i32, *const i32, i32, *mut i32) -> i32;
+    type Top = extern "C" fn(*const f64, i32, *mut f64) -> i32;
+    type Has = extern "C" fn(*const bool, i32, *mut bool) -> i32;
+    type Via = extern "C" fn(*const i32, i32, *mut i32) -> i32;
+    let sum_twice: Sum2 = unsafe { std::mem::transmute(m.symbol(b"mlx_sum_twice\0").unwrap()) };
+    let top: Top = unsafe { std::mem::transmute(m.symbol(b"mlx_top\0").unwrap()) };
+    let has: Has = unsafe { std::mem::transmute(m.symbol(b"mlx_has\0").unwrap()) };
+    let via: Via = unsafe { std::mem::transmute(m.symbol(b"mlx_via_export\0").unwrap()) };
+
+    // Two different arrays through the same callee: each call must see ITS OWN length. A
+    // companion taken from the wrong parameter would read past `ys` or stop short of it.
+    let xs = [1, 2, 3];
+    let ys = [10, 20];
+    let mut v = -7;
+    assert_eq!(sum_twice(xs.as_ptr(), 3, ys.as_ptr(), 2, &mut v), 0);
+    assert_eq!(v, 36);
+
+    let fs = [1.5, 9.25, -3.0];
+    let mut f = -7.0;
+    assert_eq!(top(fs.as_ptr(), 3, &mut f), 0);
+    assert_eq!(f, 9.25);
+    // The callee's own failure crosses the call: an empty array is E_EMPTY, not a read of xs[0].
+    let mut untouched = -7.0;
+    assert_eq!(top(fs.as_ptr(), 0, &mut untouched), 1);
+    assert_eq!(untouched, -7.0);
+
+    let flags = [false, false, true];
+    let mut b = false;
+    assert_eq!(has(flags.as_ptr(), 3, &mut b), 0);
+    assert!(b);
+    let mut b2 = true;
+    assert_eq!(has(flags.as_ptr(), 2, &mut b2), 0);
+    assert!(
+        !b2,
+        "the length the host passed is the length the callee sees"
+    );
+
+    // An exported callee called from inside the module, forwarding one array twice.
+    let mut w = -7;
+    assert_eq!(via(xs.as_ptr(), 3, &mut w), 0);
+    assert_eq!(w, 12);
+    drop(m);
+}

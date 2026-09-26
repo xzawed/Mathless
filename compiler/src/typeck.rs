@@ -1152,6 +1152,16 @@ fn check_try_call(
              land inside a module function"
         )));
     }
+    // The same for an ARRAY return: its elements go into the host's buffer too (Q12), and a
+    // module function has no array local for them. Accepted until 2026-09-26, it failed in
+    // the generated crate with E0061 instead.
+    if matches!(sig.ret, IrType::Array(_)) {
+        return Err(TypeError::new(format!(
+            "function '{fname}': '{callee}' returns an array (`-> [T]!`), which cannot be \
+             `try`-called — its elements go into the host's buffer, and a module function has \
+             no array local for the result to land in"
+        )));
+    }
     if args.len() != sig.params.len() {
         return Err(TypeError::new(format!(
             "function '{fname}': '{callee}' expects {} argument(s), found {}",

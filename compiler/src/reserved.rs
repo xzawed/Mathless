@@ -5,9 +5,10 @@
 //! produce invalid output. The frontend rejects such names with a clear error — a single
 //! check that protects all backends (WBS hardening).
 //!
-//! **Exported** function names are safe without this check: they are emitted with the `mlx_`
-//! prefix. **Internal** function names are not — since SPEC-calls they are emitted as-is —
-//! so `typeck` runs them through here too.
+//! **Function** names are safe without this check: every function body is emitted as
+//! `ml_fn_<name>` (SPEC-export-wrappers DP-W4, #101), its export adapter as `mlx_<name>`, and a
+//! checked copy as `ml_ck_<name>` (SPEC-helper-check-propagation DP-P7) — prefixes no parameter
+//! or local may take (see [`generated_prefix`]).
 //!
 //! Target keywords are only half the problem. codegen also injects its OWN identifiers into
 //! the same emitted scope, and those need reserving as well — see [`generated_prefix`].

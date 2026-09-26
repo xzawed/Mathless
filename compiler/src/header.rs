@@ -144,13 +144,14 @@ fn can_report_out_of_range(module: &IrModule) -> bool {
 }
 
 /// Can any FALLIBLE function in this module answer `ML_ST_OVERFLOW`? One predicate for both
-/// bindings, for the reason [`can_report_out_of_range`] gives. Infallible bodies are not asked:
-/// they keep wrapping and have no status to report it with (SPEC-checked-arithmetic DP-O1).
+/// bindings, for the reason [`can_report_out_of_range`] gives — and the same set codegen reads to
+/// decide which helpers get a checked copy (SPEC-helper-check-propagation DP-P6).
+///
+/// It asked only `f.fallible && can_fail_overflow(&f.body)` while the rule was the body's. Once a
+/// helper under a `!` caller is checked too, that answered `false` for a module that returns `-3`
+/// through the helper: measured on the prototype, both bindings stayed silent.
 fn can_report_overflow(module: &IrModule) -> bool {
-    module
-        .functions
-        .iter()
-        .any(|f| f.fallible && crate::ir::can_fail_overflow(&f.body))
+    crate::ir::module_can_fail_overflow(module)
 }
 
 /// Does this module RETURN any byte outside ASCII?
@@ -354,12 +355,15 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     if can_report_overflow(module) {
         let _ = writeln!(
             s,
-            "/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value \
-             (overflow,"
+            "/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in"
         );
         let _ = writeln!(
             s,
-            " * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */"
+            " * its own body or in any function it calls -- has no i32 value (overflow, or NaN)."
+        );
+        let _ = writeln!(
+            s,
+            " * The out-parameter is NOT written (D17); calling again gives the same answer. */"
         );
         let _ = writeln!(s, "#ifndef ML_ST_OVERFLOW");
         let _ = writeln!(s, "#define ML_ST_OVERFLOW ({})", crate::abi::ML_ST_OVERFLOW);
@@ -850,9 +854,13 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
     if can_report_overflow(module) {
         let _ = writeln!(
             s,
-            "  {{ A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value\n    \
-             (overflow, or NaN). The out-parameter is NOT written (D17). }}"
+            "  {{ i32 arithmetic or an f64-to-i32 conversion that a fallible function executes --"
         );
+        let _ = writeln!(
+            s,
+            "    in its own body or in any function it calls -- has no i32 value (overflow, or NaN)."
+        );
+        let _ = writeln!(s, "    The out-parameter is NOT written (D17). }}");
         let _ = writeln!(s, "  ML_ST_OVERFLOW = {};", crate::abi::ML_ST_OVERFLOW);
     }
     s.push('\n');

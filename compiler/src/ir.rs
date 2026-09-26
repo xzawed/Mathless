@@ -6,6 +6,8 @@
 //!
 //! Every [`IrExpr`] carries its resolved [`IrType`], so the backend never re-infers types.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum IrType {
     /// Lowered as `*const u8`: borrowed for the call (D16 rule 1), never owned.
@@ -614,6 +616,148 @@ pub fn can_fail_overflow(body: &[IrStmt]) -> bool {
         | IrStmt::AssignOut { value: e, .. } => in_expr(e),
         IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
         IrStmt::Fail(_) => false,
+    })
+}
+
+/// The functions a body calls in expression position, in order, with repeats.
+///
+/// Expression-position calls are the only calls to INFALLIBLE functions: calling a fallible
+/// one takes a `try` statement, whose callee is not listed here — but whose arguments are
+/// walked, because a helper call can sit inside them. Built-in rounders are `Call`s too; they
+/// name no module function, so a lookup by name simply misses them.
+pub fn expression_callees(body: &[IrStmt]) -> Vec<&str> {
+    fn in_expr<'a>(e: &'a IrExpr, out: &mut Vec<&'a str>) {
+        match &e.kind {
+            IrExprKind::Call { name, args } => {
+                out.push(name.as_str());
+                args.iter().for_each(|a| in_expr(a, out));
+            }
+            IrExprKind::Concat(args) => args.iter().for_each(|a| in_expr(a, out)),
+            IrExprKind::Binary { lhs, rhs, .. } => {
+                in_expr(lhs, out);
+                in_expr(rhs, out);
+            }
+            IrExprKind::Unary { operand, .. }
+            | IrExprKind::Cast { operand, .. }
+            | IrExprKind::ByteLen(operand) => in_expr(operand, out),
+            IrExprKind::Index { index, .. } => in_expr(index, out),
+            IrExprKind::ByteSlice { s, from, to } => {
+                in_expr(s, out);
+                in_expr(from, out);
+                in_expr(to, out);
+            }
+            IrExprKind::Fixed { x, places } => {
+                in_expr(x, out);
+                in_expr(places, out);
+            }
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => {}
+        }
+    }
+    fn in_stmts<'a>(body: &'a [IrStmt], out: &mut Vec<&'a str>) {
+        for s in body {
+            match s {
+                IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+                    in_expr(cond, out);
+                    in_stmts(body, out);
+                }
+                IrStmt::ResultSet { index, value } => {
+                    in_expr(index, out);
+                    in_expr(value, out);
+                }
+                IrStmt::ResultLen(e)
+                | IrStmt::Return(e)
+                | IrStmt::Let { value: e, .. }
+                | IrStmt::Assign { value: e, .. }
+                | IrStmt::AssignOut { value: e, .. } => in_expr(e, out),
+                IrStmt::TryCall { args, .. } => args.iter().for_each(|a| in_expr(a, out)),
+                IrStmt::Fail(_) => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    in_stmts(body, &mut out);
+    out
+}
+
+/// The infallible functions whose arithmetic a fallible body executes and that can overflow —
+/// `SPEC-helper-check-propagation` §2.5 (DP-P6). **One set, three readers**: codegen gives each
+/// member a checked copy and calls it from fallible bodies, and both bindings declare
+/// `ML_ST_OVERFLOW` through [`module_can_fail_overflow`], which asks this set. Two walks would be
+/// two answers, and the prototype measured what that costs: the module returned `-3` through a
+/// helper while neither binding named it (#238's defect, one hop further out).
+///
+/// A member is (1) reached from a fallible body through calls into infallible functions —
+/// exported ones included (DP-P2): `export` decides host visibility, not internal meaning — and
+/// (2) able to overflow in its own body or in an infallible function it calls. The call graph
+/// is acyclic (recursion is rejected, SPEC-calls), so both walks terminate.
+pub fn checked_helpers(module: &IrModule) -> BTreeSet<String> {
+    let infallible: BTreeMap<&str, &IrFunction> = module
+        .functions
+        .iter()
+        .filter(|f| !f.fallible)
+        .map(|f| (f.name.as_str(), f))
+        .collect();
+
+    // (2) Can this infallible function overflow, itself or below? Memoised over the DAG.
+    fn can<'a>(
+        name: &'a str,
+        infallible: &BTreeMap<&'a str, &'a IrFunction>,
+        memo: &mut BTreeMap<&'a str, bool>,
+    ) -> bool {
+        if let Some(&v) = memo.get(name) {
+            return v;
+        }
+        let Some(f) = infallible.get(name) else {
+            return false;
+        };
+        let v = can_fail_overflow(&f.body)
+            || expression_callees(&f.body)
+                .into_iter()
+                .any(|c| can(c, infallible, memo));
+        memo.insert(name, v);
+        v
+    }
+
+    // (1) Everything reachable from a fallible body through infallible callees.
+    let mut reached: BTreeSet<&str> = BTreeSet::new();
+    let mut stack: Vec<&str> = module
+        .functions
+        .iter()
+        .filter(|f| f.fallible)
+        .flat_map(|f| expression_callees(&f.body))
+        .collect();
+    while let Some(name) = stack.pop() {
+        if let Some(f) = infallible.get(name) {
+            if reached.insert(name) {
+                stack.extend(expression_callees(&f.body));
+            }
+        }
+    }
+
+    let mut memo = BTreeMap::new();
+    reached
+        .into_iter()
+        .filter(|name| can(name, &infallible, &mut memo))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Can this module return `ML_ST_OVERFLOW`? A fallible body holds a checked operation of its own,
+/// or calls a member of [`checked_helpers`] — the only two places `-3` comes from. The bindings'
+/// one predicate (SPEC-helper-check-propagation §2.5). A `try` callee needs no walk: it is a
+/// fallible function, so its own body is one of the bodies asked.
+pub fn module_can_fail_overflow(module: &IrModule) -> bool {
+    let checked = checked_helpers(module);
+    module.functions.iter().filter(|f| f.fallible).any(|f| {
+        can_fail_overflow(&f.body)
+            || expression_callees(&f.body)
+                .into_iter()
+                .any(|c| checked.contains(c))
     })
 }
 

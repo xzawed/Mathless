@@ -164,7 +164,12 @@ fn string_and_array_bodies_are_checked_too() {
     drop(m);
 }
 
-/// **Acceptance C, DP-O7, DP-O9: the rule belongs to the body.**
+/// **Acceptance C, DP-O9 — and DP-O7 as `SPEC-helper-check-propagation` reversed it.**
+///
+/// An infallible body with no status channel keeps wrapping. A helper is no longer an escape
+/// hatch: under a fallible caller it is checked too, because the rule belongs to the call path
+/// (DP-P1). The values of that rule live in `helper_check_propagation.rs`; this line keeps the
+/// case this file used to pin, so the reversal is visible where the old rule was.
 #[test]
 fn infallible_bodies_still_wrap_and_literals_are_checked() {
     let (_out, m) = load("scope");
@@ -183,9 +188,11 @@ fn infallible_bodies_still_wrap_and_literals_are_checked() {
     assert_eq!(un(via_const, 0), (0, i32::MAX));
     assert_eq!(un(via_const, 1), (OVERFLOW, -7));
 
-    // DP-O7: an infallible helper is the escape hatch — it wraps even under a fallible caller.
+    // DP-O7 reversed (SPEC-helper-check-propagation DP-P1, DP-P10): the helper `twice` runs
+    // under a fallible caller, so its `a * 2` is checked and the answer is -3, not i32::MIN.
     let via_helper: Un = sym(&m, b"mlx_via_helper\0");
-    assert_eq!(un(via_helper, 1073741824), (0, i32::MIN));
+    assert_eq!(un(via_helper, 1073741823), (0, 2147483646));
+    assert_eq!(un(via_helper, 1073741824), (OVERFLOW, -7));
     drop(m);
 }
 

@@ -203,6 +203,15 @@ fn each_conditional_binding_block_fires_for_exactly_the_shapes_that_need_it() {
             &[H_OVF],
             &[pas_ovf],
         ),
+        // The same status reached ONLY through a helper: the fallible body does no arithmetic
+        // of its own. The predicate that looked at that body alone said "absent" here while
+        // the module returned -3 (SPEC-helper-check-propagation §2.5).
+        (
+            "helper overflow",
+            "fn sq(x: i32) -> i32 { return x * x }\nexport fn f(x: i32) -> i32! { return sq(x) }",
+            &[H_OVF],
+            &[pas_ovf],
+        ),
         // A string parameter with a scalar return: only the Delphi note, because only Delphi
         // has a way to get this wrong silently (measured 2026-09-10, DP-S2).
         (

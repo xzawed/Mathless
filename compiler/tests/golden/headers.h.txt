@@ -44,8 +44,9 @@
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
 #endif
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -164,8 +165,9 @@ int32_t mlx_add(int32_t /* a */, int32_t /* b */);
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
 #endif
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -222,8 +224,9 @@ int32_t mlx_in_stock(const int32_t* /* stock */, int32_t /* stock_len */, bool* 
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
 #endif
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -904,8 +907,9 @@ int32_t mlx_negate_if(int32_t /* x */, bool /* flip */);
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
 #endif
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -975,8 +979,9 @@ int32_t mlx_state_label(int32_t /* state */, char* ml_buf, int32_t ml_cap, int32
  * type, parameter order, out-ness or error code does. */
 #define ML_PACK_IFACE_HASH 0xDA0077B3A04515ABULL
 
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -1089,8 +1094,9 @@ int32_t mlx_line_check(int32_t /* qty */, int32_t* /* tier */, int32_t* out_valu
 #define ML_ST_INSUFFICIENT_BUFFER (-1)
 #endif
 
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -1261,8 +1267,9 @@ int32_t mlx_safe_div(double /* a */, double /* b */, double* out_value);
 #ifndef ML_ST_INDEX_OUT_OF_RANGE
 #define ML_ST_INDEX_OUT_OF_RANGE (-2)
 #endif
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif
@@ -1324,8 +1331,9 @@ int32_t mlx_one_payment(int32_t /* principal */, int32_t /* months */, int32_t /
 #define ML_ST_INSUFFICIENT_BUFFER (-1)
 #endif
 
-/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value (overflow,
- * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */
+/* i32 arithmetic or an f64-to-i32 conversion that a fallible function executes -- in
+ * its own body or in any function it calls -- has no i32 value (overflow, or NaN).
+ * The out-parameter is NOT written (D17); calling again gives the same answer. */
 #ifndef ML_ST_OVERFLOW
 #define ML_ST_OVERFLOW (-3)
 #endif

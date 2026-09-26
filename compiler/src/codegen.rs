@@ -4,6 +4,7 @@
 //! --crate-type cdylib`. The IR is backend-independent, so a C-emit backend can be
 //! added later without touching the front/middle end.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -184,9 +185,19 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
     emit_rounding_helpers(module, &mut out);
     emit_fixed_helpers(module, &mut out);
 
+    // SPEC-helper-check-propagation: a helper a fallible body executes and that can overflow
+    // gets a checked copy, and only the bodies somebody calls are emitted (DP-P8).
+    let checked = crate::ir::checked_helpers(module);
+    let plain = plain_bodies(module, &checked);
     for f in &module.functions {
-        emit_function(f, &mut out)?;
-        out.push('\n');
+        if plain.contains(f.name.as_str()) {
+            emit_function(f, &checked, &mut out)?;
+            out.push('\n');
+        }
+        if checked.contains(&f.name) {
+            emit_checked_copy(f, &checked, &mut out)?;
+            out.push('\n');
+        }
     }
 
     // A no_std cdylib requires a panic handler. Nothing on today's surface can reach this one:
@@ -210,7 +221,89 @@ pub fn emit(module: &IrModule, module_name: &str) -> Result<String, CodegenError
     Ok(out)
 }
 
-fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
+/// Which functions keep their plain `ml_fn_<name>` body (SPEC-helper-check-propagation DP-P8).
+///
+/// Every function does, as before this slice, except a checked helper that no plain body calls:
+/// its only callers are fallible bodies and checked copies, and those call `ml_ck_<name>`, so its
+/// plain body would be dead code — a warning, and a failed build under an ambient
+/// `RUSTFLAGS=-D warnings` (measured on the prototype). A function nobody calls at all is not a
+/// checked helper and keeps its body exactly as before (acceptance H).
+fn plain_bodies<'a>(module: &'a IrModule, checked: &BTreeSet<String>) -> BTreeSet<&'a str> {
+    let mut keep: BTreeSet<&str> = module
+        .functions
+        .iter()
+        .filter(|f| f.fallible || f.exported || !checked.contains(&f.name))
+        .map(|f| f.name.as_str())
+        .collect();
+    // A checked helper also keeps its plain body when a kept INFALLIBLE body calls it: that is
+    // a plain call. A fallible caller never is. Iterated to a fixed point; the graph is a DAG.
+    loop {
+        let before = keep.len();
+        for f in module.functions.iter().filter(|f| !f.fallible) {
+            if keep.contains(f.name.as_str()) {
+                for c in crate::ir::expression_callees(&f.body) {
+                    if checked.contains(c) {
+                        keep.insert(c);
+                    }
+                }
+            }
+        }
+        if keep.len() == before {
+            return keep;
+        }
+    }
+}
+
+/// The checked copy of a helper (SPEC-helper-check-propagation §2.1, §2.6): the same body,
+/// emitted as a fallible one, so every checked operation fails with `-3` at the operator
+/// (DP-P4) and the caller propagates it. Its callees in the set are called through THEIR copies,
+/// because the context says so — which is how the check reaches a chain of any depth.
+///
+/// The name is `ml_ck_<name>` (DP-P7). User functions are always `ml_fn_<name>` and parameters
+/// and locals may not start with `ml_`, so no legal program can name the same thing. The
+/// prototype used `ml_fn___twin_<name>`, and `fn __twin_mul` beside `fn mul` failed with E0428.
+fn emit_checked_copy(
+    f: &IrFunction,
+    checked: &BTreeSet<String>,
+    out: &mut String,
+) -> Result<(), CodegenError> {
+    // Only infallible functions are members, and an infallible function returns a scalar:
+    // a string or array return needs the caller's buffer and is always `!`.
+    if f.fallible || matches!(f.ret, IrType::Array(_) | IrType::Str) {
+        return Err(CodegenError::new(format!(
+            "internal: '{}' cannot have a checked copy (fallible, or a buffer return)",
+            f.name
+        )));
+    }
+    if !block_always_returns(&f.body) {
+        return Err(CodegenError::new(format!(
+            "function '{}' may not return on all paths",
+            f.name
+        )));
+    }
+    let _ = writeln!(
+        out,
+        "fn ml_ck_{}({}) -> Result<{}, i32> {{",
+        f.name,
+        rust_params(&f.params).join(", "),
+        rust_type(f.ret)
+    );
+    let cx = Cx {
+        abi: RetAbi::Fallible,
+        checked,
+    };
+    for s in &f.body {
+        emit_stmt(s, 1, cx, out);
+    }
+    out.push_str("}\n");
+    Ok(())
+}
+
+fn emit_function(
+    f: &IrFunction,
+    checked: &BTreeSet<String>,
+    out: &mut String,
+) -> Result<(), CodegenError> {
     // An array return has no `return` statement -- the value IS the caller's buffer, and the
     // status is emitted after the body. Typeck exempts it for the same reason; this is the
     // backend half of that exemption, and leaving it out made every correct program fail here
@@ -238,7 +331,7 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
     // only because the `mlx_` prefix hides them from rustc's keyword list) and why the
     // internal-name reserved-word check loses its reason to exist.
     let mut body_params = params.clone();
-    let (body_ret, abi) = if let IrType::Array(elem) = f.ret {
+    let (body_ret, shape) = if let IrType::Array(elem) = f.ret {
         // The same triple as a string return, and for the same reason (RetAbi::ArrayOut): the
         // elements have nowhere to live until they are in the caller's buffer. The pointer is
         // `*mut` of the ELEMENT type, so `[f64]` writes 8-byte strides and `[bool]` 1-byte
@@ -268,13 +361,17 @@ fn emit_function(f: &IrFunction, out: &mut String) -> Result<(), CodegenError> {
         body_params.join(", "),
         body_ret
     );
+    let cx = Cx {
+        abi: shape,
+        checked,
+    };
     for s in &f.body {
-        emit_stmt(s, 1, abi, out);
+        emit_stmt(s, 1, cx, out);
     }
     // An array body has no `return`: reaching the end IS success, and the status says so.
     // Every failure before this point has already returned -- truncation, an out-of-range
     // write, or a `fail` placed before `result` (2.4b refuses one placed after it).
-    if matches!(abi, RetAbi::ArrayOut(_)) {
+    if matches!(shape, RetAbi::ArrayOut(_)) {
         out.push_str("    0\n");
     }
     out.push_str("}\n");
@@ -417,10 +514,10 @@ fn rust_params(params: &[IrParam]) -> Vec<String> {
 ///
 /// An array can only be a parameter — there are no array locals, literals or array-valued
 /// calls — so an array argument is always a `Var` naming one, and `<name>_len` is in scope.
-fn emit_call_args(args: &[IrExpr], abi: RetAbi) -> String {
+fn emit_call_args(args: &[IrExpr], cx: Cx<'_>) -> String {
     let mut out = Vec::with_capacity(args.len());
     for a in args {
-        out.push(emit_expr(a, abi));
+        out.push(emit_expr(a, cx));
         if matches!(a.ty, IrType::Array(_)) {
             let IrExprKind::Var(name) = &a.kind else {
                 unreachable!("an array argument that is not a parameter: {:?}", a.kind);
@@ -495,7 +592,19 @@ impl RetAbi {
     }
 }
 
-fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
+/// What a statement or expression is emitted INTO: the body's return shape, and the module's
+/// set of helpers that are checked under a fallible caller (`ir::checked_helpers`,
+/// SPEC-helper-check-propagation DP-P6). The set is the one piece of module-level knowledge an
+/// expression needs — a call site in a fallible body must know whether its callee has a checked
+/// copy — so it rides along with the shape instead of living in global state.
+#[derive(Clone, Copy)]
+struct Cx<'a> {
+    abi: RetAbi,
+    checked: &'a BTreeSet<String>,
+}
+
+fn emit_stmt(s: &IrStmt, indent: usize, cx: Cx<'_>, out: &mut String) {
+    let abi = cx.abi;
     let pad = "    ".repeat(indent);
     match s {
         // AR1 landed the surface; AR3 lands the lowering. `emit` refuses a module carrying
@@ -531,7 +640,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                 IrArrayElem::Bool => "false",
                 IrArrayElem::I32 => "0",
             };
-            let _ = writeln!(out, "{pad}let __n = {};", emit_expr(n, abi));
+            let _ = writeln!(out, "{pad}let __n = {};", emit_expr(n, cx));
             let _ = writeln!(out, "{pad}let __n = if __n < 0 {{ 0 }} else {{ __n }};");
             let _ = writeln!(out, "{pad}unsafe {{ *ml_needed = __n; }}");
             let _ = writeln!(
@@ -557,7 +666,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
         // declared one is what makes the error mean "you wrote outside your own result".
         IrStmt::ResultSet { index, value } => {
             let _ = writeln!(out, "{pad}{{");
-            let _ = writeln!(out, "{pad}    let __i = {};", emit_expr(index, abi));
+            let _ = writeln!(out, "{pad}    let __i = {};", emit_expr(index, cx));
             let _ = writeln!(
                 out,
                 "{pad}    if __i < 0 || __i >= __n {{ return {}; }}",
@@ -566,7 +675,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             let _ = writeln!(
                 out,
                 "{pad}    unsafe {{ *ml_buf.add(__i as usize) = {}; }}",
-                emit_expr(value, abi)
+                emit_expr(value, cx)
             );
             let _ = writeln!(out, "{pad}}}");
         }
@@ -575,10 +684,10 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             // another Mathless function through `try` — can tell success from a propagated
             // status without a sentinel value.
             RetAbi::Fallible => {
-                let _ = writeln!(out, "{pad}return Ok({});", emit_expr(e, abi));
+                let _ = writeln!(out, "{pad}return Ok({});", emit_expr(e, cx));
             }
             RetAbi::Plain => {
-                let _ = writeln!(out, "{pad}return {};", emit_expr(e, abi));
+                let _ = writeln!(out, "{pad}return {};", emit_expr(e, cx));
             }
             // An array-returning function has no `return <value>`: the value IS the host's
             // buffer, which `result[i] = v` fills. Typeck refuses the statement, so reaching
@@ -589,7 +698,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             // A string return IS the write into the caller's buffer.
             RetAbi::StringOut => match &e.kind {
                 // Built here: pieces appended in order (SPEC-string-concat §2.3).
-                IrExprKind::Concat(pieces) => emit_concat_return(pieces, indent, out),
+                IrExprKind::Concat(pieces) => emit_concat_return(pieces, indent, cx, out),
                 // A lone span goes through the SAME emitter as a concatenation, as a
                 // one-piece list. It could have had its own path, but then the length-bounded
                 // copy would exist in two places and only one of them would be covered by the
@@ -597,12 +706,12 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                 // "a new string-shaped one would be handed to `ml_strout` as if it were an
                 // address" — and a span has no NUL at `to`, so that would return the suffix.
                 IrExprKind::ByteSlice { .. } => {
-                    emit_concat_return(core::slice::from_ref(e), indent, out)
+                    emit_concat_return(core::slice::from_ref(e), indent, cx, out)
                 }
                 // And so does a lone `fixed(x, n)`, for the same reason and one more: it is
                 // not a pointer at all. `ml_strout` would take the f64's bits as an address.
                 IrExprKind::Fixed { .. } => {
-                    emit_concat_return(core::slice::from_ref(e), indent, out)
+                    emit_concat_return(core::slice::from_ref(e), indent, cx, out)
                 }
                 // Borrowed: one pointer, the #92 path, unchanged. Spelled out rather than
                 // `_`, because "everything else is already a pointer" is a fact about
@@ -626,7 +735,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                     let _ = writeln!(
                         out,
                         "{pad}return ml_strout({}, ml_buf, ml_cap, ml_needed);",
-                        emit_expr(e, abi)
+                        emit_expr(e, cx)
                     );
                 }
             },
@@ -659,7 +768,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
         IrStmt::TryCall {
             dest, callee, args, ..
         } => {
-            let call = format!("ml_fn_{callee}({})", emit_call_args(args, abi));
+            let call = format!("ml_fn_{callee}({})", emit_call_args(args, cx));
             let prop = abi.propagate();
             match dest {
                 IrTryDest::Let { name, mutable } => {
@@ -700,7 +809,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
                             kind: IrExprKind::Var("__v".to_string()),
                         }),
                         indent + 2,
-                        abi,
+                        cx,
                         out,
                     );
                     let _ = writeln!(out, "{pad}    }}");
@@ -716,7 +825,7 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
         } => {
             // Internal binding — a plain Rust `let`, never an export.
             let kw = if *mutable { "let mut" } else { "let" };
-            let _ = writeln!(out, "{pad}{kw} {name} = {};", emit_expr(value, abi));
+            let _ = writeln!(out, "{pad}{kw} {name} = {};", emit_expr(value, cx));
         }
         IrStmt::AssignOut { name, value } => {
             // Same shape as the D17 success write: a raw store through the caller's pointer.
@@ -726,19 +835,19 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             let _ = writeln!(
                 out,
                 "{pad}unsafe {{ *{name} = {}; }}",
-                emit_expr(value, abi)
+                emit_expr(value, cx)
             );
         }
         IrStmt::Assign { name, value } => {
             // Reassign an in-scope `let mut`. Inside an `if` this mutates the OUTER binding,
             // which is the point of the slice: `if` is a statement, so a mutable local is how
             // a branch result is collected.
-            let _ = writeln!(out, "{pad}{name} = {};", emit_expr(value, abi));
+            let _ = writeln!(out, "{pad}{name} = {};", emit_expr(value, cx));
         }
         IrStmt::If { cond, body } => {
-            let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond, abi));
+            let _ = writeln!(out, "{pad}if {} {{", emit_expr(cond, cx));
             for st in body {
-                emit_stmt(st, indent + 1, abi, out);
+                emit_stmt(st, indent + 1, cx, out);
             }
             let _ = writeln!(out, "{pad}}}");
         }
@@ -746,9 +855,9 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
             // A module export may now fail to return (SPEC-while §5.1). There is nothing to
             // emit for that: no fuel counter without the VM R01 rejected, no timeout without a
             // runtime. The contract is documented in HOST_ABI instead.
-            let _ = writeln!(out, "{pad}while {} {{", emit_expr(cond, abi));
+            let _ = writeln!(out, "{pad}while {} {{", emit_expr(cond, cx));
             for st in body {
-                emit_stmt(st, indent + 1, abi, out);
+                emit_stmt(st, indent + 1, cx, out);
             }
             let _ = writeln!(out, "{pad}}}");
         }
@@ -768,7 +877,8 @@ fn overflow_bail(abi: RetAbi) -> Option<String> {
     }
 }
 
-fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
+fn emit_expr(e: &IrExpr, cx: Cx<'_>) -> String {
+    let abi = cx.abi;
     match &e.kind {
         // `xs[i]`, bounds-checked (SPEC-array-input 2.3).
         //
@@ -795,7 +905,7 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             };
             format!(
                 "{{ let __i = {}; if __i < 0 || __i >= {array}_len {{ {bail} }} unsafe {{ *{array}.add(__i as usize) }} }}",
-                emit_expr(index, abi)
+                emit_expr(index, cx)
             )
         }
         // The companion, read straight out. Cannot fail, so no block and no early return.
@@ -803,7 +913,7 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         // `byte_len(s)` — the same NUL walk `==` and concatenation already do, exposed
         // (SPEC-string-length DP-L1). The terminator is not counted: `""` is 0, not 1, which
         // is deliberately a different number from Q12's `ml_needed` (§2.1).
-        IrExprKind::ByteLen(operand) => format!("ml_slen({})", emit_expr(operand, abi)),
+        IrExprKind::ByteLen(operand) => format!("ml_slen({})", emit_expr(operand, cx)),
         // A concatenation is not an expression in the emitted Rust: it has no value until it
         // is written into the caller's buffer, which is what `emit_concat_return` does. Typeck
         // confines it to `return` (DP-K3) precisely so this arm is unreachable.
@@ -853,7 +963,7 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
         IrExprKind::ConstBool(b) => b.to_string(),
         IrExprKind::Var(name) => name.clone(),
         IrExprKind::Call { name, args } => {
-            let args = emit_call_args(args, abi);
+            let args = emit_call_args(args, cx);
             // A built-in rounder lowers to its `ml_`-prefixed helper (emitted above). That is
             // safe because `reserved::generated_prefix` rejects `ml_` on PARAMETERS and
             // LOCALS, which are still emitted raw — when this comment once claimed the prefix
@@ -865,6 +975,14 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             // function is `ml_fn_<name>`, which cannot collide with `ml_floor` (SPEC-export-wrappers DP-W4).
             if crate::typeck::Rounder::from_name(name).is_some() {
                 format!("ml_{name}({args})")
+            } else if !matches!(abi, RetAbi::Plain) && cx.checked.contains(name) {
+                // SPEC-helper-check-propagation §2.1: under a fallible caller a checked helper
+                // runs as its checked copy, and its `-3` leaves this body the way a propagated
+                // `try` does — here, in source order, where the call stands (DP-P4).
+                format!(
+                    "(match ml_ck_{name}({args}) {{ Ok(__v) => __v, Err(__e) => {{ {}; }} }})",
+                    abi.propagate()
+                )
             } else {
                 // Every Mathless function is one body named `ml_fn_<name>`, exported or not,
                 // so a call site no longer has to know which it is. Before the wrapper
@@ -895,11 +1013,11 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                 if let Some(bail) = overflow_bail(abi) {
                     return format!(
                         "{{ let __c = {}; if !(__c > -2147483649.0f64 && __c < 2147483648.0f64) {{ {bail} }} __c as i32 }}",
-                        emit_expr(operand, abi)
+                        emit_expr(operand, cx)
                     );
                 }
             }
-            format!("({} as {})", emit_expr(operand, abi), rust_type(*to))
+            format!("({} as {})", emit_expr(operand, cx), rust_type(*to))
         }
         IrExprKind::Unary { op, operand } => {
             // Backend safety net for directly-built IR, in the same spirit as
@@ -922,16 +1040,16 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                 if let Some(bail) = overflow_bail(abi) {
                     return format!(
                         "(match ({}).checked_neg() {{ Some(__o) => __o, None => {{ {bail} }} }})",
-                        emit_expr(operand, abi)
+                        emit_expr(operand, cx)
                     );
                 }
-                return format!("({}).wrapping_neg()", emit_expr(operand, abi));
+                return format!("({}).wrapping_neg()", emit_expr(operand, cx));
             }
             let sym = match op {
                 IrUnOp::Neg => "-",
                 IrUnOp::Not => "!",
             };
-            format!("({sym}{})", emit_expr(operand, abi))
+            format!("({sym}{})", emit_expr(operand, cx))
         }
         IrExprKind::Binary { op, lhs, rhs } => {
             // Directly-built IR could put `&&`/`||` on non-bool operands. Note this is a
@@ -980,8 +1098,8 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                     if let Some(bail) = overflow_bail(abi) {
                         return format!(
                             "{{ let __l = {}; let __d = {}; if __d == 0 {{ 0i32 }} else if __d == -1 && __l == i32::MIN {{ {bail} }} else {{ __l.wrapping_div(__d) }} }}",
-                            emit_expr(lhs, abi),
-                            emit_expr(rhs, abi)
+                            emit_expr(lhs, cx),
+                            emit_expr(rhs, cx)
                         );
                     }
                 }
@@ -992,8 +1110,8 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                 };
                 return format!(
                     "{{ let __l = {}; let __d = {}; if __d == 0 {{ 0i32 }} else {{ __l.{}(__d) }} }}",
-                    emit_expr(lhs, abi),
-                    emit_expr(rhs, abi),
+                    emit_expr(lhs, cx),
+                    emit_expr(rhs, cx),
                     method
                 );
             }
@@ -1038,15 +1156,11 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                         let checked = method.replace("wrapping_", "checked_");
                         return format!(
                             "(match ({}).{checked}({}) {{ Some(__o) => __o, None => {{ {bail} }} }})",
-                            emit_expr(lhs, abi),
-                            emit_expr(rhs, abi)
+                            emit_expr(lhs, cx),
+                            emit_expr(rhs, cx)
                         );
                     }
-                    return format!(
-                        "({}).{method}({})",
-                        emit_expr(lhs, abi),
-                        emit_expr(rhs, abi)
-                    );
+                    return format!("({}).{method}({})", emit_expr(lhs, cx), emit_expr(rhs, cx));
                 }
             }
             // A string is a `*const u8` (SPEC-string-input DP-S1). Rust's `==` on raw pointers compares the
@@ -1100,13 +1214,13 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                             "{{ let __ss = {}; let __sf = {}; \
                              let __sl = ml_sublen(__ss, __sf, {}); \
                              if __sl < 0 {{ {bail} }} ml_subeq(__ss, __sf, __sl, {}) }}",
-                            emit_expr(s, abi),
-                            emit_expr(from, abi),
-                            emit_expr(to, abi),
-                            emit_expr(other, abi)
+                            emit_expr(s, cx),
+                            emit_expr(from, cx),
+                            emit_expr(to, cx),
+                            emit_expr(other, cx)
                         )
                     }
-                    None => format!("ml_streq({}, {})", emit_expr(lhs, abi), emit_expr(rhs, abi)),
+                    None => format!("ml_streq({}, {})", emit_expr(lhs, cx), emit_expr(rhs, cx)),
                 };
                 return if matches!(op, IrBinOp::Eq) {
                     call
@@ -1116,9 +1230,9 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             }
             format!(
                 "({} {} {})",
-                emit_expr(lhs, abi),
+                emit_expr(lhs, cx),
                 op_str(*op),
-                emit_expr(rhs, abi)
+                emit_expr(rhs, cx)
             )
         }
     }
@@ -1264,7 +1378,12 @@ fn piece_kind(p: &IrExpr) -> PieceKind<'_> {
     }
 }
 
-fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
+fn emit_concat_return(pieces: &[IrExpr], indent: usize, cx: Cx<'_>, out: &mut String) {
+    // Every piece is emitted into a string body, whatever called this.
+    let cx = Cx {
+        abi: RetAbi::StringOut,
+        ..cx
+    };
     let pad = "    ".repeat(indent);
     // Each piece is bound ONCE, before either pass, and both passes use the binding.
     //
@@ -1280,8 +1399,8 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
         let e = match piece_kind(p) {
             // A concat only ever exists in a `-> string!` body, which is StringOut by
             // construction (SPEC-string-concat 2.3).
-            PieceKind::Digits { operand } => emit_expr(operand, RetAbi::StringOut),
-            PieceKind::Bytes => emit_expr(p, RetAbi::StringOut),
+            PieceKind::Digits { operand } => emit_expr(operand, cx),
+            PieceKind::Bytes => emit_expr(p, cx),
             // A span binds three values, not one, and is emitted separately below so the
             // offsets are evaluated exactly once — the same guarantee the note above earns
             // for the other kinds. `fixed` is the same: two values, and a scaling step whose
@@ -1295,21 +1414,9 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     // D17 says a failed call leaves `*ml_needed` alone, so the check cannot come later.
     for (i, p) in pieces.iter().enumerate() {
         if let PieceKind::Span { s, from, to } = piece_kind(p) {
-            let _ = writeln!(
-                out,
-                "{pad}let __s{i} = {};",
-                emit_expr(s, RetAbi::StringOut)
-            );
-            let _ = writeln!(
-                out,
-                "{pad}let __f{i} = {};",
-                emit_expr(from, RetAbi::StringOut)
-            );
-            let _ = writeln!(
-                out,
-                "{pad}let __t{i} = {};",
-                emit_expr(to, RetAbi::StringOut)
-            );
+            let _ = writeln!(out, "{pad}let __s{i} = {};", emit_expr(s, cx));
+            let _ = writeln!(out, "{pad}let __f{i} = {};", emit_expr(from, cx));
+            let _ = writeln!(out, "{pad}let __t{i} = {};", emit_expr(to, cx));
             let _ = writeln!(out, "{pad}let __l{i} = ml_sublen(__s{i}, __f{i}, __t{i});");
             let _ = writeln!(
                 out,
@@ -1335,16 +1442,8 @@ fn emit_concat_return(pieces: &[IrExpr], indent: usize, out: &mut String) {
     // the alternative is one loop that must then re-derive which kind it is looking at.
     for (i, p) in pieces.iter().enumerate() {
         if let PieceKind::Decimal { x, places } = piece_kind(p) {
-            let _ = writeln!(
-                out,
-                "{pad}let __x{i} = {};",
-                emit_expr(x, RetAbi::StringOut)
-            );
-            let _ = writeln!(
-                out,
-                "{pad}let __k{i} = {};",
-                emit_expr(places, RetAbi::StringOut)
-            );
+            let _ = writeln!(out, "{pad}let __x{i} = {};", emit_expr(x, cx));
+            let _ = writeln!(out, "{pad}let __k{i} = {};", emit_expr(places, cx));
             let _ = writeln!(
                 out,
                 "{pad}let (__v{i}, __ok{i}) = ml_fixscale(__x{i}, __k{i});"

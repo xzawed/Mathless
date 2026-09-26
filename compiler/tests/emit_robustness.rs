@@ -566,6 +566,45 @@ fn a_build_ignores_whatever_cargo_variables_are_already_set() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **SPEC-helper-check-propagation acceptance G(2): checked copies leave no dead code.**
+///
+/// One helper is called from both kinds of body (it needs its plain body AND its checked copy),
+/// one only from a fallible body (its plain body would be dead). Built under an ambient
+/// `RUSTFLAGS=-D warnings`, any body nobody calls is a hard error. The prototype emitted a copy
+/// for every helper and kept every plain body, and `examples/discount4.mls` stopped building this
+/// way (measured). The snake_case names are deliberate: a non-snake_case user name trips
+/// `non_snake_case` under this flag today, which is recorded in the SPEC §5 and is not this
+/// test's subject.
+#[cfg(windows)]
+#[test]
+fn checked_copies_build_under_an_ambient_deny_warnings() {
+    let dir = common::TempOut::new("ckdw");
+    let src = dir.join("ckdw.mls");
+    std::fs::write(
+        &src,
+        "fn sq(x: i32) -> i32 { return x * x }\n\
+         fn cube(x: i32) -> i32 { return x * x * x }\n\
+         export fn f(x: i32) -> i32! { return sq(x) + cube(x) }\n\
+         export fn g(x: i32) -> i32 { return sq(x) }\n",
+    )
+    .expect("write src");
+    let out = dir.join("out");
+    let r = std::process::Command::new(env!("CARGO_BIN_EXE_mlc"))
+        .args(["build".as_ref(), src.as_os_str()])
+        .arg("-o")
+        .arg(&out)
+        .env("RUSTFLAGS", "-D warnings")
+        .output()
+        .expect("run mlc");
+    assert!(
+        r.status.success(),
+        "a module with checked helpers must build under RUSTFLAGS=-D warnings:\n{}\n{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(out.join("ckdw.dll").exists(), "missing ckdw.dll");
+}
+
 /// A module name has a maximum length, and the boundary is checked from both sides.
 ///
 /// The name becomes the suffix of a reserved export (`ml_iface_hash_<module>`) since

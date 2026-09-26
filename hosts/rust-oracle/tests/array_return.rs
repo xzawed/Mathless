@@ -324,6 +324,12 @@ fn a_scalar_export_beside_an_array_one_keeps_the_plain_d17_shape() {
         "the parts sum to the principal exactly"
     );
 
+    // The input of acceptance F, which the C host asserts too: 1e9 · 3 has no i32 value, the
+    // payment does (SPEC-wide-intermediates).
+    let mut big = -999i32;
+    assert_eq!(unsafe { one(1_000_000_000, 12, 2, &mut big) }, 0);
+    assert_eq!(big, 83_333_334);
+
     // The domain error is untouched by this slice, and a failed call writes no out-param.
     let mut canary = 0x5A5A_5A5Ai32;
     assert!(

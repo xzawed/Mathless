@@ -202,6 +202,45 @@ fn values_that_are_refused() {
     assert!(e.contains("i32"), "{e}");
 }
 
+/// **The item after a constant answers for itself** — only a token that CONTINUES the value is
+/// the constant's fault. A `struct`, top-level `let` or `import` on the next line is refused
+/// for what it is.
+#[test]
+fn the_item_after_a_constant_answers_for_itself() {
+    for (next, needle) in [
+        (
+            "struct P { x: i32 }",
+            "struct declarations are not in Mathless yet",
+        ),
+        ("import fn log(x: i32)", "imports are not in Mathless yet"),
+        ("let b = 2", "found Let"),
+    ] {
+        let src = format!("const A = 1\n{next}\nexport fn f() -> i32 {{ return A }}");
+        let e = refused(&src);
+        assert!(
+            !e.contains("constant 'A'"),
+            "{next:?} after a constant blamed the constant: {e}"
+        );
+        assert!(
+            e.contains(needle),
+            "{next:?} was refused, but not for itself: {e}"
+        );
+    }
+    // A token that continues the value is still the constant's to answer for.
+    // Every token `continues_value` lists, one each.
+    for tail in [
+        "+ 1", "- 1", "* 2", "/ 2", "% 2", "< 1", "> 1", "<= 1", ">= 1", "== 1", "!= 1", "&& true",
+        "|| true", "as f64", "(1)", "[0]",
+    ] {
+        let src = format!("const A = 1 {tail}\nexport fn f() -> i32 {{ return 1 }}");
+        let e = refused(&src);
+        assert!(
+            e.contains("constant 'A' must be a single literal"),
+            "`const A = 1 {tail}` must be refused as a non-literal value: {e}"
+        );
+    }
+}
+
 /// **DP-K6: one name, one meaning.**
 #[test]
 fn names_that_are_refused() {

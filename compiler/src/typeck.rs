@@ -1632,6 +1632,16 @@ fn check_stmt(
                      Compare it in place, or return it directly, instead of binding it"
                 )));
             }
+            // An array is a parameter only (SPEC-array-input §2.1): it arrives as a pointer plus
+            // a length the compiler appends, and a local would carry the pointer without the
+            // length — indexing it, `len` and passing it on all failed in the generated crate.
+            if matches!(value.ty, IrType::Array(_)) {
+                return Err(TypeError::new(format!(
+                    "function '{fname}': local '{name}' would be an array, which is not \
+                     supported — an array is a borrowed parameter, and its length travels as a \
+                     companion only the parameter has. Use the parameter directly"
+                )));
+            }
             // A local is emitted raw into the generated module and appears in no binding —
             // measured as zero occurrences in the `.h` and the `.pas` (STATUS §4-2).
             let targets = crate::reserved::reserving_targets_in(

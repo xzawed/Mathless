@@ -87,6 +87,23 @@ fn arrays_outside_a_parameter_are_rejected() {
     }
 }
 
+/// §2.1 again, for the spelling the test above missed: BINDING a parameter to a local. It
+/// type-checked, and the local had the pointer but no `_len` companion, so indexing it, `len`
+/// and passing it on all failed in the generated crate (E0425, found by Grok on 2026-09-26).
+#[test]
+fn binding_an_array_parameter_to_a_local_is_rejected() {
+    for src in [
+        "export fn f(xs: [i32]) -> i32 { let ys = xs  return len(ys) }",
+        "export fn f(xs: [f64]) -> f64! { let mut ys = xs  return ys[0] }",
+    ] {
+        let e = compile_to_ir(src).expect_err(src).to_string();
+        assert!(
+            e.contains("local 'ys' would be an array"),
+            "{src} must be refused as an array local: {e}"
+        );
+    }
+}
+
 /// §2.1: scalar elements only. A string element reopens variable length inside variable
 /// length, which is the thing Q12 exists to bound.
 #[test]

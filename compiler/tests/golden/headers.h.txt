@@ -868,7 +868,7 @@ int32_t mlx_negate_if(int32_t /* x */, bool /* flip */);
  *
  * A change to a function BODY does not change this value; a change to a name,
  * type, parameter order, out-ness or error code does. */
-#define ML_ORDER_IFACE_HASH 0x796C5E8CDC313B47ULL
+#define ML_ORDER_IFACE_HASH 0xF1C03F4F38B372F9ULL
 
 /* Q12 caller-allocates protocol: a buffer too small to hold the
  * result, NUL included. Truncation is a FAILURE, not a short
@@ -891,6 +891,18 @@ int32_t mlx_negate_if(int32_t /* x */, bool /* flip */);
 #endif
 #define ML_ORDER_ERR_E_BAD_TRANSITION 1
 #define ML_ORDER_ERR_E_UNKNOWN_STATE 2
+
+#define ML_ORDER_CONST_CREATED 1
+#define ML_ORDER_CONST_PAID 2
+#define ML_ORDER_CONST_SHIPPED 3
+#define ML_ORDER_CONST_DELIVERED 4
+#define ML_ORDER_CONST_CANCELLED 5
+#define ML_ORDER_CONST_REFUNDED 6
+#define ML_ORDER_CONST_PAY 1
+#define ML_ORDER_CONST_SHIP 2
+#define ML_ORDER_CONST_DELIVER 3
+#define ML_ORDER_CONST_CANCEL 4
+#define ML_ORDER_CONST_REFUND 5
 
 #ifdef __cplusplus
 extern "C" {
@@ -1267,7 +1279,7 @@ int32_t mlx_one_payment(int32_t /* principal */, int32_t /* months */, int32_t /
  *
  * A change to a function BODY does not change this value; a change to a name,
  * type, parameter order, out-ness or error code does. */
-#define ML_SHAPES_IFACE_HASH 0xEBBDE5676601568DULL
+#define ML_SHAPES_IFACE_HASH 0x1665B30D52746EC1ULL
 
 /* Q12 caller-allocates protocol: a buffer too small to hold the
  * result, NUL included. Truncation is a FAILURE, not a short
@@ -1279,6 +1291,9 @@ int32_t mlx_one_payment(int32_t /* principal */, int32_t /* months */, int32_t /
 
 #define ML_SHAPES_ERR_E_NEG 1
 #define ML_SHAPES_ERR_E_ODD 2
+
+#define ML_SHAPES_CONST_SHAPE_NEG (-1)
+#define ML_SHAPES_CONST_SHAPE_MIN (-2147483647 - 1)
 
 #ifdef __cplusplus
 extern "C" {

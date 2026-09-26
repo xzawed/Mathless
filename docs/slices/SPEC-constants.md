@@ -1,7 +1,12 @@
 # SPEC — 상수 선언 `const` · `export const`
 
-- **상태: 확정 · 구현 중 (2026-09-26).** 사용자가 DP-K1~K8을 제안대로 확인했다(2026-09-26). 슬라이스
-  선택도 같은 날 확인받았다(§9-67.4의 권장안).
+> **기록 문서다.** 이 SPEC은 닫힌 슬라이스의 설계 기록이다 — 본문은 닫힌 날의 사실이고 다시 고치지 않는다.
+> 현재 상태는 [`docs/STATUS.md`](../STATUS.md)가 말한다.
+
+- **상태: 확정 · 구현 완료 (2026-09-26).** 사용자가 DP-K1~K8을 제안대로 확인했다(2026-09-26). 슬라이스
+  선택도 같은 날 확인받았다(§9-67.4의 권장안). 수용 A~G 전부 닫혔다 — **E의 거부는 실제 C 호스트가 찍었다**:
+  `refuse order_drift.dll: interface 06CED1D6360435A6, header pinned F1C03F4F38B372F9`. C의 `i32::MIN` 표기는
+  `_Generic`으로 `int`임을, Pascal 표기는 FPC(두 모드)와 로컬 Delphi(`bds.exe -b`)가 값으로 쟀다.
 - 선행: `SPEC-D17-error-abi.md`(`error NAME = N`) · `SPEC-error-prefix.md`(Q14 — `ML_<MODULE>_ERR_<NAME>`) ·
   `SPEC-iface-hash.md`(지문 매니페스트)
 - 관련 결정: **D17**(status 체계) · **D18/Q14**(이름 규칙) · **DP-H6**(에러 코드가 지문에 드는 이유)

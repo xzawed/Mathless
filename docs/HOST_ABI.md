@@ -474,7 +474,9 @@ GetProcAddress 심볼 3개    전부 성공 -> 전부 성공
 함수 본문에 리터럴이나 내부 `const`로만 있는 값은 본문이다 — 0-인자 함수로 상태를 적은 모듈은 번호 하나를
 2에서 7로 바꿔도 헤더와 지문이 바이트 단위로 같았고(`order_state_machine.rs`), 내부 `const`의 값을 바꿔도
 지문은 같다(`compiler/tests/constants.rs`). 모듈 저자가 정한
-정수 중 헤더에 이름이 나가는 것은 `error` 코드와 `export const`다.
+정수 중 헤더에 이름이 나가는 것은 `error` 코드와 `export const`다. `export const` 하나의 번호를 바꾼 모듈은
+참조 C 호스트가 **로드에서 거부한다** — `examples/order.mls`의 `PAID`를 2에서 7로 바꾼 사본으로 잰다(수용 D 출력의
+`refuse order_drift.dll: interface …`).
 
 ⚠ **무결성이 아니다.** 이것은 사고(드리프트) 감지이며 변조 방지가 아니다(`SECURITY.md` P1).
 

@@ -662,9 +662,20 @@ interface
 
 const
   ML_MODULE = 'order.dll';
-  ML_ORDER_IFACE_HASH: UInt64 = UInt64($796C5E8CDC313B47);
+  ML_ORDER_IFACE_HASH: UInt64 = UInt64($F1C03F4F38B372F9);
   ML_ORDER_ERR_E_BAD_TRANSITION = 1;
   ML_ORDER_ERR_E_UNKNOWN_STATE = 2;
+  ML_ORDER_CONST_CREATED = 1;
+  ML_ORDER_CONST_PAID = 2;
+  ML_ORDER_CONST_SHIPPED = 3;
+  ML_ORDER_CONST_DELIVERED = 4;
+  ML_ORDER_CONST_CANCELLED = 5;
+  ML_ORDER_CONST_REFUNDED = 6;
+  ML_ORDER_CONST_PAY = 1;
+  ML_ORDER_CONST_SHIP = 2;
+  ML_ORDER_CONST_DELIVER = 3;
+  ML_ORDER_CONST_CANCEL = 4;
+  ML_ORDER_CONST_REFUND = 5;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
     NUL included. Truncation is a FAILURE, not a short success - nothing is written,
     and ml_needed is the exact size to allocate, in the same unit as ml_cap. }
@@ -959,9 +970,11 @@ interface
 
 const
   ML_MODULE = 'shapes.dll';
-  ML_SHAPES_IFACE_HASH: UInt64 = UInt64($EBBDE5676601568D);
+  ML_SHAPES_IFACE_HASH: UInt64 = UInt64($1665B30D52746EC1);
   ML_SHAPES_ERR_E_NEG = 1;
   ML_SHAPES_ERR_E_ODD = 2;
+  ML_SHAPES_CONST_SHAPE_NEG = -1;
+  ML_SHAPES_CONST_SHAPE_MIN = -2147483648;
   { Q12 caller-allocates protocol: the buffer was too small to hold the result,
     NUL included. Truncation is a FAILURE, not a short success - nothing is written,
     and ml_needed is the exact size to allocate, in the same unit as ml_cap. }

@@ -304,6 +304,19 @@ fn a_real_c_host_loads_and_calls_the_module() {
     )
     .expect("emit receipt");
 
+    // SPEC-constants acceptance E. The host calls `order` by the header's ML_ORDER_CONST_*
+    // names, and a copy with ONE exported constant renumbered — same C signatures, every
+    // symbol resolving — must be refused at load. Before constants that exact change passed
+    // the gate and was misread (§9-67.2).
+    let order_src = include_str!("../../../examples/order.mls");
+    emit_artifacts(order_src, "order", &work).expect("emit order");
+    let renumbered_order = order_src.replace("export const PAID = 2", "export const PAID = 7");
+    assert_ne!(
+        renumbered_order, order_src,
+        "order.mls no longer declares PAID as written here"
+    );
+    emit_artifacts(&renumbered_order, "order_drift", &work).expect("emit renumbered order");
+
     // N1 (`STATUS.md` section 9): four examples sat outside this gate, so their generated
     // headers had never been read by a C compiler. `shapes` was the sharpest of them — it
     // exists to collect the export shapes where a mis-written C ABI adapter would compile
@@ -318,7 +331,6 @@ fn a_real_c_host_loads_and_calls_the_module() {
         (include_str!("../../../examples/discount3.mls"), "discount3"),
         (include_str!("../../../examples/shapes.mls"), "shapes"),
         (include_str!("../../../examples/refund.mls"), "refund"),
-        (include_str!("../../../examples/order.mls"), "order"),
     ] {
         emit_artifacts(src, name, &work).unwrap_or_else(|e| panic!("emit {name}: {e}"));
     }
@@ -535,7 +547,7 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         &vcvars,
         &work,
         &format!(
-            "\"{}\" \"{}\" {} pack_drift.dll {longest_name}.dll",
+            "\"{}\" \"{}\" {} pack_drift.dll {longest_name}.dll order_drift.dll",
             work.join("host.exe").display(),
             work.display(),
             mlc::ML_MODULE_ABI_VERSION
@@ -569,6 +581,22 @@ export fn boxes_checked(qty: i32, per_box: i32) -> i32! {
         "the drift refusal must be the fingerprint comparison, not a symbol the host failed \
          to resolve — `refuse …: a reserved symbol is missing` would satisfy the gate check \
          above while proving nothing about the fingerprint:\n{stdout}"
+    );
+    // SPEC-constants acceptance E, with the drift block's discipline: the marker says the block
+    // ran, and the refusal text says it was the FINGERPRINT that refused — not a symbol the
+    // host failed to resolve, which `!gate(...)` would also accept.
+    assert!(
+        stdout.contains("GATE_D_CONSTDRIFT_CHECKED"),
+        "the C host never exercised the renumbered-constant refusal — it printed \
+         GATE_D_CONSTDRIFT_SKIPPED, so order_drift.dll was not passed:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("refuse order_drift.dll: interface"),
+        "the renumbered module must be refused by the fingerprint comparison:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("ok   an order paid for is PAID"),
+        "the host must call order.dll by the header's constant names:\n{stdout}"
     );
     // Acceptance C of SPEC-module-name-length: the boundary is RUN, not argued. The marker
     // is asserted for the same reason the drift one is — the block is behind an argc test,

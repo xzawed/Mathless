@@ -12,6 +12,14 @@
 error E_NEG = 1
 error E_ODD = 2
 
+// `export const` values a binding can spell wrong (SPEC-constants section 2.5). A negative
+// needs parentheses to survive its neighbours, and i32::MIN cannot be written `-2147483648`
+// in C: that is the negation of a literal too big for `int`, so the "minimum" is not an int
+// at all. hosts/c-host/host.c asserts both are the `int` they claim to be; the FPC unit gate
+// compiles the Pascal spelling.
+export const SHAPE_NEG = -1
+export const SHAPE_MIN = -2147483648
+
 // `-> bool!` — appeared nowhere in the repo before this.
 export fn is_big(n: i32) -> bool! {
   if n < 0 { fail E_NEG }

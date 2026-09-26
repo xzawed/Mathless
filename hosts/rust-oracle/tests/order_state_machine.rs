@@ -1,20 +1,21 @@
 //! `examples/order.mls` — the state machine example `ROADMAP.md` Phase 3 names (E2).
 //!
-//! The example is written in today's language, so its interesting part is the workaround: there
-//! are no constant declarations, so each state and event is a zero-argument internal `fn`. That
-//! works inside the module. What it cannot do is reach the host — the codes are function
-//! bodies, so the header carries no name for them and the fingerprint does not cover them.
-//! The last test pins that boundary so a change to it is seen.
+//! The first version wrote each state and event as a zero-argument internal `fn`, because the
+//! language had no constants. That worked inside the module and failed at the boundary: the
+//! codes were function bodies, so the header had no name for them and the fingerprint did not
+//! cover them (§9-67.2). The example now declares them `export const` (SPEC-constants), and the
+//! last two tests measure both sides of that change — the old form still passes the gate
+//! silently, the new one moves the fingerprint.
 #![cfg(windows)]
 
-use ml_oracle::Module;
+use ml_oracle::{pe, Module};
 use mlc::emit::emit_artifacts;
 
 mod common;
 
 const SRC: &str = include_str!("../../../examples/order.mls");
 
-// The codes the host has to know by number (see the module's own comment).
+// The same numbers the header now names ML_ORDER_CONST_*; a Rust test has no C header to read.
 const CREATED: i32 = 1;
 const PAID: i32 = 2;
 const SHIPPED: i32 = 3;
@@ -147,37 +148,84 @@ fn terminal_states_and_labels() {
     drop(m);
 }
 
-/// **Renumbering a state changes what the module returns and nothing the host can check.**
+/// **The old form: renumbering a state written as a function body leaves the gate nothing to refuse.**
 ///
-/// The codes are function bodies, and a body-only edit keeps the header and the fingerprint
-/// (`HOST_ABI.md` "인터페이스 지문"). So a host built against the old numbering loads the new
-/// module, passes the gate, and reads 7 as a state it does not know. Measured here so the
-/// boundary the example documents is a fact, not a reading of the hash code.
+/// Kept as the baseline this slice was measured against (§9-67.2, `HOST_ABI.md` cites it). A
+/// body-only edit keeps the header and the fingerprint — which is all a host's gate compares —
+/// while the module's answer moves to 7, a state a host built against the old numbering does
+/// not know.
 #[test]
-fn renumbering_a_state_keeps_the_header_and_the_fingerprint() {
-    let renumbered = SRC.replace(
-        "fn paid() -> i32 { return 2 }",
-        "fn paid() -> i32 { return 7 }",
-    );
-    assert_ne!(
-        renumbered, SRC,
-        "the example no longer declares paid() as written here"
-    );
+fn a_state_written_as_a_function_body_is_outside_the_fingerprint() {
+    let body = "fn paid() -> i32 { return 2 }\n\
+                export fn next_state(state: i32, event: i32) -> i32! {\n\
+                  if state == 1 && event == 1 { return paid() }\n\
+                  return 0\n\
+                }";
+    let renumbered = body.replace("return 2 }", "return 7 }");
+    assert_ne!(renumbered, body);
 
-    let old = mlc::compile_to_ir(SRC).expect("compile order");
-    let new = mlc::compile_to_ir(&renumbered).expect("compile renumbered order");
+    let old = mlc::compile_to_ir(body).expect("compile");
+    let new = mlc::compile_to_ir(&renumbered).expect("compile renumbered");
     assert_eq!(
-        mlc::header::emit_c_header(&old, "order.dll"),
-        mlc::header::emit_c_header(&new, "order.dll"),
-        "the header gained something that depends on a state's number"
+        mlc::header::emit_c_header(&old, "order"),
+        mlc::header::emit_c_header(&new, "order"),
+        "the header gained something that depends on a function body"
     );
     assert_eq!(mlc::iface::fingerprint(&old), mlc::iface::fingerprint(&new));
 
     // ...while the module's answer did move.
-    let out = common::TempOut::new("order_renumbered");
+    let out = common::TempOut::new("order_fnbody");
     let arts = emit_artifacts(&renumbered, "order", &out).expect("emit renumbered");
     let m = Module::load(arts.dll.to_str().unwrap()).expect("load renumbered");
     let f: NextFn = sym(&m, b"mlx_next_state\0");
     assert_eq!(next(f, CREATED, PAY), (0, 7));
     drop(m);
+}
+
+/// **The example as written: renumbering an exported state moves the header and the fingerprint.**
+///
+/// SPEC-constants acceptance D for the module that motivated it. The C host measures the other
+/// half — that the moved fingerprint is REFUSED at load (`c_host.rs`, acceptance E).
+#[test]
+fn renumbering_an_exported_state_moves_the_header_and_the_fingerprint() {
+    let renumbered = SRC.replace("export const PAID = 2", "export const PAID = 7");
+    assert_ne!(
+        renumbered, SRC,
+        "the example no longer declares PAID as written here"
+    );
+
+    let old = mlc::compile_to_ir(SRC).expect("compile order");
+    let new = mlc::compile_to_ir(&renumbered).expect("compile renumbered order");
+    let (h_old, h_new) = (
+        mlc::header::emit_c_header(&old, "order"),
+        mlc::header::emit_c_header(&new, "order"),
+    );
+    assert!(h_old.contains("#define ML_ORDER_CONST_PAID 2\n"), "{h_old}");
+    assert!(h_new.contains("#define ML_ORDER_CONST_PAID 7\n"), "{h_new}");
+    assert_ne!(
+        mlc::iface::fingerprint(&old),
+        mlc::iface::fingerprint(&new),
+        "a renumbered export const must move the fingerprint the host gates on"
+    );
+}
+
+/// **Constants are values, not symbols** (SPEC-constants acceptance F): the export table is the
+/// four functions and the two reserved symbols, exactly as before the rewrite.
+#[test]
+fn exported_constants_add_no_export() {
+    let out = common::TempOut::new("order_exports");
+    let arts = emit_artifacts(SRC, "order", &out).expect("emit order");
+    let mut exports = pe::read_exports(&arts.dll).expect("read exports");
+    exports.sort();
+    assert_eq!(
+        exports,
+        [
+            "ml_iface_hash_order",
+            "ml_module_abi_version",
+            "mlx_is_terminal",
+            "mlx_next_state",
+            "mlx_replay",
+            "mlx_state_label",
+        ]
+    );
 }

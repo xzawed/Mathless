@@ -33,6 +33,7 @@ export fn lit() -> i32! { return 2147483647 + 1 }
 export fn via_const(a: i32) -> i32! { return BIG + a }
 fn twice(a: i32) -> i32 { return a * 2 }
 export fn via_helper(a: i32) -> i32! { return twice(a) }
+export fn mid(a: i32) -> i32! { return a * 2 / 2 }
 ";
 
 type Bin = extern "C" fn(i32, i32, *mut i32) -> i32;
@@ -185,5 +186,23 @@ fn infallible_bodies_still_wrap_and_literals_are_checked() {
     // DP-O7: an infallible helper is the escape hatch — it wraps even under a fallible caller.
     let via_helper: Un = sym(&m, b"mlx_via_helper\0");
     assert_eq!(un(via_helper, 1073741824), (0, i32::MIN));
+    drop(m);
+}
+
+/// **The cost the SPEC names (§0.3): a true answer that fits still fails if a step does not.**
+///
+/// `a * 2 / 2` is `a` for every i32, but the product is a value of its own and 2^31 is not an
+/// i32. Pinned because `LANGUAGE.md` states it as the price of the rule, and a stated price with
+/// no measurement is the kind of sentence that drifts.
+#[test]
+fn an_intermediate_overflow_fails_even_when_the_answer_fits() {
+    let (_out, m) = load("mid");
+    let mid: Un = sym(&m, b"mlx_mid\0");
+    assert_eq!(un(mid, 1073741823), (0, 1073741823));
+    assert_eq!(
+        un(mid, 1073741824),
+        (OVERFLOW, -7),
+        "the answer 2^30 fits; the product 2^31 does not"
+    );
     drop(m);
 }

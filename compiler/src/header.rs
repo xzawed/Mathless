@@ -143,6 +143,16 @@ fn can_report_out_of_range(module: &IrModule) -> bool {
         .any(|f| crate::ir::can_fail_out_of_range(&f.body))
 }
 
+/// Can any FALLIBLE function in this module answer `ML_ST_OVERFLOW`? One predicate for both
+/// bindings, for the reason [`can_report_out_of_range`] gives. Infallible bodies are not asked:
+/// they keep wrapping and have no status to report it with (SPEC-checked-arithmetic DP-O1).
+fn can_report_overflow(module: &IrModule) -> bool {
+    module
+        .functions
+        .iter()
+        .any(|f| f.fallible && crate::ir::can_fail_overflow(&f.body))
+}
+
 /// Does this module RETURN any byte outside ASCII?
 ///
 /// Delegates to [`crate::ir::returns_non_ascii_bytes`], which is where it moved when the
@@ -339,6 +349,20 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
             "#define ML_ST_INDEX_OUT_OF_RANGE ({})",
             crate::abi::ML_ST_INDEX_OUT_OF_RANGE
         );
+        let _ = writeln!(s, "#endif");
+    }
+    if can_report_overflow(module) {
+        let _ = writeln!(
+            s,
+            "/* A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value \
+             (overflow,"
+        );
+        let _ = writeln!(
+            s,
+            " * or NaN). The out-parameter is NOT written (D17); calling again gives the same answer. */"
+        );
+        let _ = writeln!(s, "#ifndef ML_ST_OVERFLOW");
+        let _ = writeln!(s, "#define ML_ST_OVERFLOW ({})", crate::abi::ML_ST_OVERFLOW);
         let _ = writeln!(s, "#endif");
     }
     // D17 error codes (module-defined, positive i32). Constants — not exported symbols.
@@ -822,6 +846,14 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
             "  ML_ST_INDEX_OUT_OF_RANGE = {};",
             crate::abi::ML_ST_INDEX_OUT_OF_RANGE
         );
+    }
+    if can_report_overflow(module) {
+        let _ = writeln!(
+            s,
+            "  {{ A fallible function's i32 arithmetic or f64-to-i32 conversion has no i32 value\n    \
+             (overflow, or NaN). The out-parameter is NOT written (D17). }}"
+        );
+        let _ = writeln!(s, "  ML_ST_OVERFLOW = {};", crate::abi::ML_ST_OVERFLOW);
     }
     s.push('\n');
     let _ = writeln!(

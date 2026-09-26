@@ -208,9 +208,6 @@ fn conversions_that_do_not_exist_yet() {
         "i32 as bool",
         "export fn f(a: i32) -> bool { return a as bool }",
     );
-    // 체크드 오버플로 is in the same bullet and is deliberately NOT here: it is a property of
-    // arithmetic, not a construct one can write, so there is no source text to reject.
-    // `-i32::MIN == i32::MIN` is measured in unary.rs instead.
 }
 
 // ------------------------------------------------------------------ data and declarations
@@ -260,10 +257,6 @@ fn data_shapes_that_do_not_exist_yet() {
 ///
 /// The right column is not decoration: it is checked against the actual call sites below, so
 /// a row cannot name a case that does not exist.
-///
-/// One item of the block is deliberately absent — 체크드 오버플로. It is a property of
-/// arithmetic rather than a construct, so there is no source text to reject; see
-/// `conversions_that_do_not_exist_yet`.
 const GAPS: &[(&str, &str)] = &[
     // 부분문자열은 더 이상 공백이 아니다 — `byte_slice(s, from, to)`가 2026-09-13에 들어왔다.
     // 대신 **범위 문법**이 공백이고, 그것이 `s[0..3]`을 거부하는 진짜 이유다. `byte_len`이

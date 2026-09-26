@@ -47,7 +47,8 @@ fn delphi_unit_matches_module_abi() {
 
 /// **Every conditional block in both binding generators, both branches, one table.**
 ///
-/// `header.rs` decides **eleven** things by inspecting the module, and the count is the first
+/// `header.rs` decides **twelve** things by inspecting the module — eleven when this test was
+/// written; `ML_ST_OVERFLOW` (`SPEC-checked-arithmetic`) is the twelfth — and the count is the first
 /// thing this test got wrong: the first draft said eight, covered seven of them, and claimed
 /// to cover all. Review counted again. The `.pas` has its own copies of both status constants
 /// under their own conditions, and the UTF-8 notice is two emissions, not one.
@@ -86,6 +87,7 @@ fn each_conditional_binding_block_fires_for_exactly_the_shapes_that_need_it() {
     const H_Q12_ARR: &str = "Q12 for an ARRAY return";
     const H_INSUF: &str = "ML_ST_INSUFFICIENT_BUFFER";
     const H_OOR: &str = "ML_ST_INDEX_OUT_OF_RANGE";
+    const H_OVF: &str = "#define ML_ST_OVERFLOW";
     const H_UTF8: &str = "UTF-8";
     // The error-constant block. Module-level (`!module.errors.is_empty()`), so it belongs in
     // this matrix — the first draft of the comment below called it per-function and was wrong.
@@ -111,15 +113,16 @@ fn each_conditional_binding_block_fires_for_exactly_the_shapes_that_need_it() {
         "ML_ST_INDEX_OUT_OF_RANGE = {};",
         mlc::abi::ML_ST_INDEX_OUT_OF_RANGE
     );
-    let (pas_insuf, pas_oor) = (p_insuf.as_str(), p_oor.as_str());
+    let p_ovf = format!("ML_ST_OVERFLOW = {};", mlc::abi::ML_ST_OVERFLOW);
+    let (pas_insuf, pas_oor, pas_ovf) = (p_insuf.as_str(), p_oor.as_str(), p_ovf.as_str());
     // Nested inside the `returns_str || returns_array` block: only an ARRAY return gets it.
     const P_ELEMENTS: &str = "count ELEMENTS, not bytes, so the";
     const P_UTF8: &str = "UTF-8";
     const P_ERR: &str = "ML_M_ERR_E_BAD";
 
-    let all = [H_Q12_STR, H_Q12_ARR, H_INSUF, H_OOR, H_UTF8, H_ERR];
+    let all = [H_Q12_STR, H_Q12_ARR, H_INSUF, H_OOR, H_OVF, H_UTF8, H_ERR];
     let all_pas = [
-        P_ARR_RET, P_ARR_PAR, P_UNICODE, pas_insuf, pas_oor, P_ELEMENTS, P_UTF8, P_ERR,
+        P_ARR_RET, P_ARR_PAR, P_UNICODE, pas_insuf, pas_oor, pas_ovf, P_ELEMENTS, P_UTF8, P_ERR,
     ];
 
     let cases: &[(&str, &str, &[&str], &[&str])] = &[
@@ -190,6 +193,15 @@ fn each_conditional_binding_block_fires_for_exactly_the_shapes_that_need_it() {
             "error E_BAD = 1\nexport fn f(x: f64) -> f64! {\n if x < 0.0 { fail E_BAD }\n return x\n}",
             &[H_ERR],
             &[P_ERR],
+        ),
+        // i32 arithmetic in a FALLIBLE body can have no i32 value, so the overflow status is
+        // declared. Every other row does arithmetic on nothing, on f64, or in no fallible body,
+        // and carries the absent half; which operators count is `checked_arithmetic.rs`'s table.
+        (
+            "checked arithmetic",
+            "export fn f(a: i32) -> i32! { return a + 1 }",
+            &[H_OVF],
+            &[pas_ovf],
         ),
         // A string parameter with a scalar return: only the Delphi note, because only Delphi
         // has a way to get this wrong silently (measured 2026-09-10, DP-S2).

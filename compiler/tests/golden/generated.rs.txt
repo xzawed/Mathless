@@ -202,7 +202,7 @@ fn ml_fn_masked(acct: *const u8, ml_buf: *mut u8, ml_cap: i32, ml_needed: *mut i
     let __l0 = ml_sublen(__s0, __f0, __t0);
     if __l0 < 0 { return -2; }
     let __s2 = acct;
-    let __f2 = (ml_slen(acct)).wrapping_sub(4i32);
+    let __f2 = (match (ml_slen(acct)).checked_sub(4i32) { Some(__o) => __o, None => { return -3; } });
     let __t2 = ml_slen(acct);
     let __l2 = ml_sublen(__s2, __f2, __t2);
     if __l2 < 0 { return -2; }
@@ -301,8 +301,8 @@ fn ml_fn_allocate(stock: *const i32, stock_len: i32, want: i32, ml_buf: *mut i32
             if __i < 0 || __i >= __n { return -2; }
             unsafe { *ml_buf.add(__i as usize) = take; }
         }
-        left = (left).wrapping_sub(take);
-        i = (i).wrapping_add(1i32);
+        left = (match (left).checked_sub(take) { Some(__o) => __o, None => { return -3; } });
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return -3; } });
     }
     0
 }
@@ -328,7 +328,7 @@ fn ml_fn_in_stock(stock: *const i32, stock_len: i32, ml_buf: *mut bool, ml_cap: 
             if __i < 0 || __i >= __n { return -2; }
             unsafe { *ml_buf.add(__i as usize) = ({ let __i = i; if __i < 0 || __i >= stock_len { return -2; } unsafe { *stock.add(__i as usize) } } > 0i32); }
         }
-        i = (i).wrapping_add(1i32);
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return -3; } });
     }
     0
 }
@@ -360,14 +360,14 @@ fn ml_fn_basket_total(qty: *const i32, qty_len: i32, price: *const i32, price_le
     let mut total = 0i32;
     let mut i = 0i32;
     while (i < qty_len) {
-        let line = ({ let __i = i; if __i < 0 || __i >= qty_len { return Err(-2); } unsafe { *qty.add(__i as usize) } }).wrapping_mul({ let __i = i; if __i < 0 || __i >= price_len { return Err(-2); } unsafe { *price.add(__i as usize) } });
+        let line = (match ({ let __i = i; if __i < 0 || __i >= qty_len { return Err(-2); } unsafe { *qty.add(__i as usize) } }).checked_mul({ let __i = i; if __i < 0 || __i >= price_len { return Err(-2); } unsafe { *price.add(__i as usize) } }) { Some(__o) => __o, None => { return Err(-3); } });
         if (line > cap) {
-            total = (total).wrapping_add(cap);
+            total = (match (total).checked_add(cap) { Some(__o) => __o, None => { return Err(-3); } });
         }
         if (line <= cap) {
-            total = (total).wrapping_add(line);
+            total = (match (total).checked_add(line) { Some(__o) => __o, None => { return Err(-3); } });
         }
-        i = (i).wrapping_add(1i32);
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return Err(-3); } });
     }
     return Ok(total);
 }
@@ -383,7 +383,7 @@ fn ml_fn_largest(xs: *const f64, xs_len: i32, floor: f64) -> Result<f64, i32> {
         if ({ let __i = i; if __i < 0 || __i >= xs_len { return Err(-2); } unsafe { *xs.add(__i as usize) } } > best) {
             best = { let __i = i; if __i < 0 || __i >= xs_len { return Err(-2); } unsafe { *xs.add(__i as usize) } };
         }
-        i = (i).wrapping_add(1i32);
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return Err(-3); } });
     }
     return Ok(best);
 }
@@ -406,7 +406,7 @@ fn ml_fn_any_set(flags: *const bool, flags_len: i32) -> Result<bool, i32> {
         if { let __i = i; if __i < 0 || __i >= flags_len { return Err(-2); } unsafe { *flags.add(__i as usize) } } {
             return Ok(true);
         }
-        i = (i).wrapping_add(1i32);
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return Err(-3); } });
     }
     return Ok(false);
 }
@@ -1352,7 +1352,7 @@ fn ml_fn_replay(start: i32, events: *const i32, events_len: i32) -> Result<i32, 
     let mut i = 0i32;
     while (i < events_len) {
         s = match ml_fn_next_state(s, { let __i = i; if __i < 0 || __i >= events_len { return Err(-2); } unsafe { *events.add(__i as usize) } }) { Ok(__v) => __v, Err(__e) => return Err(__e) };
-        i = (i).wrapping_add(1i32);
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return Err(-3); } });
     }
     return Ok(s);
 }
@@ -1432,7 +1432,7 @@ fn ml_fn_boxes_checked(qty: i32, per_box: i32) -> Result<i32, i32> {
     if (per_box == 0i32) {
         return Err(1);
     }
-    return Ok({ let __l = qty; let __d = per_box; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } });
+    return Ok({ let __l = qty; let __d = per_box; if __d == 0 { 0i32 } else if __d == -1 && __l == i32::MIN { return Err(-3); } else { __l.wrapping_div(__d) } });
 }
 #[no_mangle]
 pub extern "C" fn mlx_boxes_checked(qty: i32, per_box: i32, out_value: *mut i32) -> i32 {
@@ -1626,7 +1626,7 @@ fn ml_fn_receipt_line(item: *const u8, qty: i32, unit_price: i32, ml_buf: *mut u
     let __p1 = b" x \0".as_ptr();
     let __p2 = qty;
     let __p3 = b" = \0".as_ptr();
-    let __p4 = (qty).wrapping_mul(unit_price);
+    let __p4 = (match (qty).checked_mul(unit_price) { Some(__o) => __o, None => { return -3; } });
     let mut __n: i32 = 1;
     __n += ml_slen(__p0);
     __n += ml_slen(__p1);
@@ -1782,9 +1782,9 @@ fn ml_fn_schedule(principal: i32, months: i32, ml_buf: *mut i32, ml_cap: i32, ml
         {
             let __i = i;
             if __i < 0 || __i >= __n { return -2; }
-            unsafe { *ml_buf.add(__i as usize) = { let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } }; }
+            unsafe { *ml_buf.add(__i as usize) = { let __l = principal; let __d = months; if __d == 0 { 0i32 } else if __d == -1 && __l == i32::MIN { return -3; } else { __l.wrapping_div(__d) } }; }
         }
-        i = (i).wrapping_add(1i32);
+        i = (match (i).checked_add(1i32) { Some(__o) => __o, None => { return -3; } });
     }
     0
 }
@@ -1802,9 +1802,9 @@ fn ml_fn_one_payment(principal: i32, months: i32, month: i32) -> Result<i32, i32
     if (month >= months) {
         return Err(1);
     }
-    let base = { let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_div(__d) } };
+    let base = { let __l = principal; let __d = months; if __d == 0 { 0i32 } else if __d == -1 && __l == i32::MIN { return Err(-3); } else { __l.wrapping_div(__d) } };
     if (month == 0i32) {
-        return Ok((base).wrapping_add({ let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_rem(__d) } }));
+        return Ok((match (base).checked_add({ let __l = principal; let __d = months; if __d == 0 { 0i32 } else { __l.wrapping_rem(__d) } }) { Some(__o) => __o, None => { return Err(-3); } }));
     }
     return Ok(base);
 }
@@ -1889,7 +1889,7 @@ fn ml_fn_bump(n: i32) -> Result<i32, i32> {
     if (n < 0i32) {
         return Err(1);
     }
-    return Ok((n).wrapping_sub(7i32));
+    return Ok((match (n).checked_sub(7i32) { Some(__o) => __o, None => { return Err(-3); } }));
 }
 #[no_mangle]
 pub extern "C" fn mlx_bump(n: i32, out_value: *mut i32) -> i32 {
@@ -1937,7 +1937,7 @@ fn ml_fn_grade(n: i32, tier: *mut i32) -> Result<i32, i32> {
         return Err(1);
     }
     unsafe { *tier = 1i32; }
-    return Ok((n).wrapping_mul(10i32));
+    return Ok((match (n).checked_mul(10i32) { Some(__o) => __o, None => { return Err(-3); } }));
 }
 #[no_mangle]
 pub extern "C" fn mlx_grade(n: i32, tier: *mut i32, out_value: *mut i32) -> i32 {

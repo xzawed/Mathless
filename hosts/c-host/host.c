@@ -528,6 +528,16 @@ int main(int argc, char **argv) {
         status = boxes_checked(17, 0, &untouched);
         check(status == ML_PACK_ERR_E_EMPTY_BOX, "boxes_checked(17, 0) status == ML_PACK_ERR_E_EMPTY_BOX");
         check(untouched == -999, "boxes_checked(17, 0) leaves the out-param untouched");
+
+        /* SPEC-checked-arithmetic acceptance E: the one quotient with no i32 value. `boxes`
+           above is the same `/` in an INFALLIBLE body and still wraps to INT32_MIN; the `!`
+           body answers with the reserved status instead -- the rule belongs to the body. The
+           name comes from pack.h, which declares it because this module can return it. */
+        status = boxes_checked(INT32_MIN, -1, &untouched);
+        check(status == ML_ST_OVERFLOW, "boxes_checked(INT32_MIN, -1) status == ML_ST_OVERFLOW");
+        check(untouched == -999, "and it leaves the out-param untouched");
+        status = boxes_checked(INT32_MIN, 1, &out);
+        check(status == 0 && out == INT32_MIN, "boxes_checked(INT32_MIN, 1) is an answer");
     }
 
     /* --- commission.dll: a declared `out` parameter. The host allocates; the module writes
@@ -1365,6 +1375,15 @@ int main(int argc, char **argv) {
               "a negative index is out of range too");
         int32_t last = -1;
         check(pick(qty, 3, 2, &last) == 0 && last == 4, "the last element is in range");
+
+        /* A line total with no i32 value. Before SPEC-checked-arithmetic this product wrapped
+           to -2, which is <= cap, so the basket answered -2 with status 0. */
+        const int32_t big_qty[1] = {INT32_MAX};
+        const int32_t two[1] = {2};
+        int32_t total = 0x5A5A5A5A;
+        check(basket_total(big_qty, 1, two, 1, 100, &total) == ML_ST_OVERFLOW,
+              "a line total that overflows is ML_ST_OVERFLOW, not a wrapped number");
+        check(total == 0x5A5A5A5A, "and it leaves the out-param untouched");
 
         double best = 0.0;
         const double xs[3] = {1.5, 9.25, -3.0};

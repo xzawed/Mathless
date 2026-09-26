@@ -517,6 +517,10 @@ GetProcAddress 심볼 3개    전부 성공 -> 전부 성공
 - 사용자 모듈이 export하는 함수: 별도 접두어(예: `mlx_`) 또는 모듈명 네임스페이스. `ml_`와 충돌 금지(D18).
 - 모듈이 내보내는 이름 붙은 정수: 에러 코드는 `ML_<MODULE>_ERR_<NAME>`(Q14), `export const`는
   `ML_<MODULE>_CONST_<NAME>`(SPEC-constants DP-K3). 둘 다 **값이지 심볼이 아니고** 지문에 든다.
+  **모듈 사이의 C 매크로 이름은 겹칠 수 있다** — 모듈 `a`의 상수 `ERR_Q`와 모듈 `a_const`의 에러 `Q`가 둘 다
+  `ML_A_CONST_ERR_Q`다(에러끼리도 `a`/`ERR_X` ↔ `a_err`/`X`). 막는 가드가 없어, 값이 다른 두 헤더를 한 번역 단위에
+  include하면 `C4005` 경고가 나고 참조 호스트처럼 `/WX`로 빌드하면 실패한다. Pascal 상수는 유닛 스코프라 겹치지 않는다
+  (SPEC-constants §5).
 
 ## 하지 말 것 (MVP)
 

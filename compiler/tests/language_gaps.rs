@@ -231,6 +231,12 @@ fn data_shapes_that_do_not_exist_yet() {
         "host fn import",
         "import fn host_log(x: i32)\nexport fn f(a: i32) -> i32 { return a }",
     );
+    // SPEC-constants §0.3/§5 left `enum` (a new type, an ABI mapping, an exhaustiveness check)
+    // for later; until 2026-09-27 that was written only in the closed SPEC and §9-68.
+    rejected(
+        "enum declaration",
+        "enum S { A }\nexport fn f(a: i32) -> i32 { return a }",
+    );
     // Four gaps the 2026-09-26 §7 sweep met in several domains, missing from the block that
     // claims to hold every gap.
     rejected("i64 type", "export fn f(x: i64) -> i64 { return x }");
@@ -274,6 +280,7 @@ const GAPS: &[(&str, &str)] = &[
     ("일반 `f64` 포맷", "f64 as string"),
     ("지역 변수", "string local"),
     ("struct", "struct declaration"),
+    ("`enum`", "enum declaration"),
     ("option", "option type"),
     ("for", "for"),
     ("else", "else"),

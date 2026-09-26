@@ -313,7 +313,9 @@
   수 있으므로 **그 함수는 `!`가 된다** — 배열 인덱싱과 같은 규칙이다
   (`slices/SPEC-string-slice-compare.md` DP-C2·DP-C5)
 - struct/record, null 안전 또는 option
-- `for`, `else`, `break`/`continue`, 복합 대입, 비트 연산자
+- **`enum`·타입 있는 상수 집합** — 오늘은 이름 붙은 i32 리터럴(`const`·`export const`)뿐이다. 새 타입 · ABI 매핑 ·
+  완전성 검사를 여는 일이라 `slices/SPEC-constants.md` §0.3·§5가 남겼다
+- `for`, `else`, `break`/`continue`, 비트 연산자
 - **호스트 함수 import**(현재는 모듈 export 단방향), 재귀
 - 다른 정수 폭 **`i64`**, **수학 내장 함수**(`pow`·`exp`·`ln`·`sqrt`·`abs`), **`min`/`max`**,
   **지역 배열·배열 리터럴**(작업 배열) — 넷 다 우회는 된다(곱셈 루프 · 두 줄 내부 `fn` · 파라미터로

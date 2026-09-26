@@ -102,6 +102,20 @@
    푸는 것은 가산적 변경이며 SPEC 갱신이 따라야 한다. (SPEC-calls §5.1)
 4. **생성 모듈의 패닉은 프로세스를 죽이지 않고 호출한 스레드를 무한히 돌린다.** ↓ §5-4
 
+5·6은 갚았다(등록부). 아래 넷은 2026-09-27에 닫힌 기록·SPEC §5에서 옮겨 왔다 — 거기에만 있던 것이다(§9-74).
+
+7. **`runtime/ml_abi.h`는 `-1`만 정의한다.** `-2`(`ML_ST_INDEX_OUT_OF_RANGE`, #200부터)·`-3`(`ML_ST_OVERFLOW`)은
+   생성 헤더에만 `#ifndef`로 있고, 그 파일의 *"the codes below are the whole allocation"* 은 낡았다. `hygiene.rs`의
+   대조도 `-1`만 본다. 고치는 PR: 헤더에 둘을 더하고 대조를 `mlc::abi`의 세 코드로 넓힌다(SPEC-checked-arithmetic §5).
+8. **주변 `RUSTFLAGS=-D warnings`에서 기존 경고가 있는 모듈은 `mlc build`가 깨진다** — snake_case가 아닌 사용자 함수
+   이름(`fn a__b` → `non_snake_case`)과 아무도 부르지 않는 내부 함수(`dead_code`)는 측정됐고, 쓰지 않는 문자열 헬퍼도
+   같은 부류다. `allow`를 더하면 모든 모듈의 생성 Rust가 바뀌어 골든과 부딪히므로 따로 정한다(SPEC-helper-check-propagation §5).
+9. **`!` 문맥 검사의 실행 속도는 잰 적이 없다** — 체크드 산술 · 헬퍼 체크 전파 · 넓은 중간값이 분기 · `Result` 반환 ·
+   i64 연산을 더했지만 잰 것은 `.text` 크기뿐이다(§9-70.4 · §9-71.4 · §9-73.3). 빠르다/느리다를 쓰기 전에 잰다.
+10. **문서 가드의 알려 둔 사각 넷** — `live_documents_do_not_accumulate_correction_notes`는 날짜 없는 서술을 세지 못하고
+    `" 감사"` 뒤에 경계가 없다 · `protection.rs`의 "정확히 N개"는 부분 문자열 검사다 · 함수 본문 안의 긴 `//` 주석은
+    `every_guard_docstring_is_short` 밖이다(§9-66.7).
+
 ### 5-4. 생성 모듈의 패닉은 프로세스를 죽이지 않는다 — 스레드를 무한히 돈다
 
 여러 문서가 `i32 /0`을 두고 "`no_std`+`panic=abort`니까 **호스트를 죽인다**"라고 적어 왔다.
@@ -109,9 +123,9 @@
 
 | 무엇 | 어디 | 값 |
 |---|---|---|
-| no_std | `compiler/src/codegen.rs:39` | `#![no_std]` |
-| 패닉 핸들러 | `compiler/src/codegen.rs:58` | `#[panic_handler] fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }` |
-| 패닉 전략 | 생성 `Cargo.toml`(`codegen.rs:286`) | `[profile.release] panic = "abort"` |
+| no_std | `compiler/src/codegen.rs`(생성 크레이트 머리) | `#![no_std]` |
+| 패닉 핸들러 | `compiler/src/codegen.rs`(`ml_panic`) | `#[panic_handler] fn ml_panic(_: &core::panic::PanicInfo) -> ! { loop {} }` |
+| 패닉 전략 | 생성 `Cargo.toml`(`codegen.rs`의 `CARGO_TOML_PROFILE`) | `[profile.release] panic = "abort"` |
 
 `no_std`에서는 **`#[panic_handler]`가 곧 패닉 런타임**이다. `panic = "abort"`는 언와인딩 테이블을
 없앨 뿐, `abort()`를 부르는 것이 아니다. 그래서 패닉은 `ml_panic`으로 들어가 **`loop {}`에 갇힌다** —
@@ -227,25 +241,26 @@
 
 > ## ▶ 여기서 시작한다
 >
-> ### 2026-09-27 기준 — **넓은 중간값 슬라이스가 닫혔다: `!` 문맥의 순수 산술 식은 정확히 계산된다 (§9-73)**
+> ### 2026-09-27 기준 (2) — **인계 정리: 측정 키트를 저장소 밖으로 옮겼고, 닫힌 기록에만 있던 잔여를 살아 있는 문서로 옮겼다 (§9-74)**
 >
-> SPEC을 권고안대로 확인받아 슬라이스로 닫았다(#341 SPEC · #342 구현). `!` 문맥의 순수 산술 식은 i64로 계산해 값이
-> i32가 되어야 하는 자리에서 한 번 좁힌다. 참값이 드는데 `-3`인 행 59 → 20(626행, 시험 구현과 행마다 같다). 실제 C 호스트가
-> 바꾼 `one_payment`로 곱이 i32 밖인 입력의 정답을 받는다. 지문·ABI·바인딩은 그대로다.
+> 로컬 브랜치는 `main`만 남았다(실험 브랜치 둘은 번들로 백업). §9-69의 626행 코퍼스와 재측정 스크립트가 세션 임시 폴더에만
+> 있어 저장소 밖으로 옮겼고, 옮긴 자리에서 다시 재 같은 표(543 · 44 · 20 · 18)를 얻었다. 닫힌 기록과 SPEC §5에만 있던 잔여는
+> §5-7~§5-10 · `HOST_ABI.md` 네이밍 규약 · `LANGUAGE.md` 공백 블록 · `slices/README.md` 후보 목록으로 옮겼다.
 >
 > **▶ 다음 세션 — 여기서 시작한다.** 순서대로:
 >
-> 1. **강제되는 슬라이스가 없다 — 다음은 측정이다.** 참값이 드는데 `-3`으로 남은 20행 중 17행(FULL로도 남는 행)이
->    무엇인지 귀속하지 않았다(§9-73.7). 귀속이 `i64` 타입이나 다른 후보(`docs/slices/README.md`의 "다음 슬라이스" 절)를
->    가리키면 그때 SPEC을 쓴다.
-> 2. **작은 항목**: C# 호스트(Phase 4) · LSP(Phase 3, 큰 일).
-> 3. **외부**: `X1`·`X2` — Delphi가 있는 CI 러너. 이 저장소 안에서는 닫히지 않는다.
+> 1. **참값이 드는데 `-3`인 20행 중 17행을 귀속한다 — 측정.** 키트는 저장소 밖 `D:\Source\Mathless-lab\kit-626\`(이 머신
+>    전용)이고 재현 절차 · 함정은 그 README에, 20행 목록은 `loud_fits_20_at_b077cb9.txt`에 있다(3행은 배열 읽기).
+>    귀속이 `i64` 타입이나 다른 후보를 가리키면 그때 SPEC을 쓴다.
+> 2. **작은 부채 — 한 PR씩**: §5-7(`ml_abi.h`에 `-2`·`-3`, 대조를 세 코드로) · §5-8(`-D warnings` — 방향은 사용자 결정).
+> 3. **작은 항목**: C# 호스트(Phase 4) · LSP(Phase 3, 큰 일).
+> 4. **외부**: `X1`·`X2` — Delphi가 있는 CI 러너. 이 저장소 안에서는 닫히지 않는다.
 >
 > ⚠ **이 머신의 전체 게이트는 6회 중 2회 실패한다**(§9-63.5) — 실패를 보면 먼저 원인을 읽는다.
 > 강한 신호는 CI 두 잡이다.
 >
-> 📌 **본문은 §9-73이다**(`docs/history/9-73.md`). 그 앞의 2026-09-26 (6) 항목(헬퍼 체크 전파 닫힘)은
-> 바이트 그대로 옮겼다 — 지금은 `docs/history/start-block-054.md`다.
+> 📌 **본문은 §9-74다**(`docs/history/9-74.md`). 그 앞의 2026-09-27 항목(넓은 중간값 닫힘)은
+> 바이트 그대로 옮겼다 — 지금은 `docs/history/start-block-055.md`다.
 >
 >
 > ### 그 앞의 항목들 — **본문은 `docs/history/start-block-NNN.md`로 옮긴다 (2026-09-23부터)**

@@ -1806,11 +1806,7 @@ fn ml_fn_one_payment(principal: i32, months: i32, month: i32) -> Result<i32, i32
     if (month >= months) {
         return Err(1);
     }
-    let base = (match i32::try_from({ let __wl: i64 = ((principal) as i64); let __wr: i64 = ((months) as i64); if __wr == 0 { 0i64 } else { match __wl.checked_div(__wr) { Some(__o) => __o, None => { return Err(-3); } } } }) { Ok(__n) => __n, Err(_) => { return Err(-3); } });
-    if (month == 0i32) {
-        return Ok((match i32::try_from({ let __wl: i64 = ((base) as i64); let __wr: i64 = { let __wl: i64 = ((principal) as i64); let __wr: i64 = ((months) as i64); if __wr == 0 { 0i64 } else { __wl.wrapping_rem(__wr) } }; match __wl.checked_add(__wr) { Some(__o) => __o, None => { return Err(-3); } } }) { Ok(__n) => __n, Err(_) => { return Err(-3); } }));
-    }
-    return Ok(base);
+    return Ok((match i32::try_from({ let __wl: i64 = { let __wl: i64 = { let __wl: i64 = ((principal) as i64); let __wr: i64 = { let __wl: i64 = ((month) as i64); let __wr: i64 = ((1i32) as i64); match __wl.checked_add(__wr) { Some(__o) => __o, None => { return Err(-3); } } }; match __wl.checked_mul(__wr) { Some(__o) => __o, None => { return Err(-3); } } }; let __wr: i64 = ((months) as i64); if __wr == 0 { 0i64 } else { match __wl.checked_div(__wr) { Some(__o) => __o, None => { return Err(-3); } } } }; let __wr: i64 = { let __wl: i64 = { let __wl: i64 = ((principal) as i64); let __wr: i64 = ((month) as i64); match __wl.checked_mul(__wr) { Some(__o) => __o, None => { return Err(-3); } } }; let __wr: i64 = ((months) as i64); if __wr == 0 { 0i64 } else { match __wl.checked_div(__wr) { Some(__o) => __o, None => { return Err(-3); } } } }; match __wl.checked_sub(__wr) { Some(__o) => __o, None => { return Err(-3); } } }) { Ok(__n) => __n, Err(_) => { return Err(-3); } }));
 }
 #[no_mangle]
 pub extern "C" fn mlx_one_payment(principal: i32, months: i32, month: i32, out_value: *mut i32) -> i32 {

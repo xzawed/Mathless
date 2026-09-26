@@ -1,8 +1,8 @@
 // SPEC-array-return, acceptance A. One of the two rules that opened the slice (§0.1).
 //
-// Instalments: the principal split over `months`, with the remainder folded into the first
-// payment so the parts sum to exactly the principal. Before array return the host called this
-// once per month and assembled the schedule itself.
+// Instalments: the principal split over `months`. `schedule` returns the equal parts;
+// `one_payment` spreads the remainder so its parts sum to exactly the principal. Before array
+// return the host called `one_payment` once per month and assembled the schedule itself.
 //
 // The length is declared FIRST. That is where the host's capacity is checked, before a single
 // element is written, which is how a truncated call still writes nothing (SPEC §2.4).
@@ -21,11 +21,15 @@ export fn schedule(principal: i32, months: i32) -> [i32]! {
 // The same split, as a single payment, so a host that wants one month need not take the
 // whole schedule. It also keeps a NON-array export in this module, which is what pins that
 // the buffer triple is added per function rather than per module.
+//
+// Month `m` is the difference of two cumulative shares, so the remainder is spread one unit at
+// a time and the parts telescope to exactly the principal. Each product can leave i32 while
+// the payment fits — 1,000,000,000 over 12 months — and SPEC-wide-intermediates computes the
+// expression exactly and narrows it once, so the host gets the payment instead of
+// ML_ST_OVERFLOW (acceptance F, asserted in hosts/c-host/host.c).
 export fn one_payment(principal: i32, months: i32, month: i32) -> i32! {
     if months <= 0 { fail E_BAD_TERM }
     if month < 0 { fail E_BAD_TERM }
     if month >= months { fail E_BAD_TERM }
-    let base = principal / months
-    if month == 0 { return base + principal % months }
-    return base
+    return principal * (month + 1) / months - principal * month / months
 }

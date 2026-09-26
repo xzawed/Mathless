@@ -296,32 +296,33 @@ fn a_bool_result_is_one_byte_per_element() {
 /// pass every other test in this file and break every scalar export beside it -- and the
 /// generated header would agree with the mistake, because both come from the same place.
 ///
-/// `one_payment` is also the workaround the slice replaced: one call per month, with the
-/// remainder folded into the first. Keeping it callable is deliberate; a host that wants a
-/// single month should not have to take the whole schedule.
+/// `one_payment` is also the workaround the slice replaced: one call per month. Keeping it
+/// callable is deliberate; a host that wants a single month should not have to take the whole
+/// schedule. Since SPEC-wide-intermediates it spreads the remainder (the difference of two
+/// cumulative shares) instead of folding it into the first month.
 #[test]
 fn a_scalar_export_beside_an_array_one_keeps_the_plain_d17_shape() {
     let (_d, m) = build("schedule", "scalar");
     let one: OnePayment = unsafe { std::mem::transmute(m.symbol(b"mlx_one_payment\0").unwrap()) };
 
-    let mut got = -999i32;
-    let st = unsafe { one(100_000, 7, 0, &mut got) };
-    assert_eq!(st, 0);
-    assert_eq!(got, 14_290, "the first payment carries the remainder");
-
-    let mut rest = -999i32;
-    assert_eq!(unsafe { one(100_000, 7, 3, &mut rest) }, 0);
-    assert_eq!(rest, 14_285);
+    // floor(100000·(m+1)/7) − floor(100000·m/7): the five left over land one each on months
+    // 1, 2, 4, 5 and 6.
+    let mut months = [0i32; 7];
+    for (month, v) in months.iter_mut().enumerate() {
+        assert_eq!(unsafe { one(100_000, 7, month as i32, v) }, 0);
+    }
+    assert_eq!(
+        months,
+        [14_285, 14_286, 14_286, 14_285, 14_286, 14_286, 14_286]
+    );
 
     // And the whole schedule still sums to the principal, which the array return alone cannot
-    // show: its elements are equal, so an off-by-one in the fold would be invisible there.
-    let mut total = 0i32;
-    for month in 0..7 {
-        let mut v = 0i32;
-        assert_eq!(unsafe { one(100_000, 7, month, &mut v) }, 0);
-        total += v;
-    }
-    assert_eq!(total, 100_000, "the parts sum to the principal exactly");
+    // show: its elements are equal, so an off-by-one in the spread would be invisible there.
+    assert_eq!(
+        months.iter().sum::<i32>(),
+        100_000,
+        "the parts sum to the principal exactly"
+    );
 
     // The domain error is untouched by this slice, and a failed call writes no out-param.
     let mut canary = 0x5A5A_5A5Ai32;

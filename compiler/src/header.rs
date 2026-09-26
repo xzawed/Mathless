@@ -109,6 +109,26 @@ fn error_macro(dll_name: &str, error_name: &str) -> String {
     format!("ML_{}_ERR_{}", macro_stem(dll_name), error_name)
 }
 
+/// Name of an `export const` in both bindings — `ML_<MODULE>_CONST_<NAME>` (SPEC-constants
+/// DP-K3). The infix is what keeps a constant called `IFACE_HASH` off the fingerprint macro
+/// above, the way `_ERR_` keeps error codes off it.
+fn const_macro(dll_name: &str, const_name: &str) -> String {
+    format!("ML_{}_CONST_{}", macro_stem(dll_name), const_name)
+}
+
+/// An i32 as a C expression of type `int`. A negative is parenthesised so it survives any
+/// neighbour, and `i32::MIN` cannot be written as `-2147483648`: that is the negation of
+/// `2147483648`, which does not fit an `int` and so is a `long long` — a different type.
+fn c_int_literal(v: i32) -> String {
+    if v == i32::MIN {
+        format!("({} - 1)", i32::MIN + 1)
+    } else if v < 0 {
+        format!("({v})")
+    } else {
+        v.to_string()
+    }
+}
+
 /// Can any function in this module answer `ML_ST_INDEX_OUT_OF_RANGE`?
 ///
 /// One predicate, read by BOTH bindings, so the C header and the Delphi unit cannot promise
@@ -325,6 +345,20 @@ pub fn emit_c_header(module: &IrModule, dll_name: &str) -> String {
     if !module.errors.is_empty() {
         for e in &module.errors {
             let _ = writeln!(s, "#define {} {}", error_macro(dll_name, &e.name), e.code);
+        }
+        s.push('\n');
+    }
+    // `export const`s (SPEC-constants). Values the host compiles in by name — not symbols —
+    // and covered by the fingerprint above, so a renumbered one is refused at load rather
+    // than misread. No `#ifndef` guard, for Q14's reason: a clash must be loud.
+    if !module.consts.is_empty() {
+        for c in &module.consts {
+            let _ = writeln!(
+                s,
+                "#define {} {}",
+                const_macro(dll_name, &c.name),
+                c_int_literal(c.value)
+            );
         }
         s.push('\n');
     }
@@ -710,6 +744,11 @@ pub fn emit_delphi_unit(module: &IrModule, dll_name: &str) -> String {
     // D17 error codes (module-defined, positive i32).
     for e in &module.errors {
         let _ = writeln!(s, "  {} = {};", error_macro(dll_name, &e.name), e.code);
+    }
+    // `export const`s, under the header's names (SPEC-constants). Pascal reads
+    // `-2147483648` as a constant expression, so no C-style spelling is needed here.
+    for c in &module.consts {
+        let _ = writeln!(s, "  {} = {};", const_macro(dll_name, &c.name), c.value);
     }
     // The Q12 truncation status, on the same terms the C header gives it (DP-T6): a
     // runtime-wide band, OUTSIDE the module's error namespace, and emitted only for a module

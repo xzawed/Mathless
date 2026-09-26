@@ -150,6 +150,13 @@ pub const FIXED_MAX_PLACES: i32 = 9;
 pub const RESULT: &str = "result";
 
 pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
+    // SPEC-constants DP-K5: every constant becomes its literal BEFORE anything is checked, so
+    // each check below sees exactly what it would have seen had the author written the
+    // literal — `x / ZERO` meets the literal-zero rule on the AST, `xs[NEG]` meets the
+    // negative-index rule on the IR. Folding in only one of those layers would leave the
+    // other open to a named constant.
+    let (folded, consts) = fold_constants(module)?;
+    let module = &folded;
     // Module-scoped error table (D17). Codes are positive i32 (parser-validated).
     let mut error_table: Scope2 = HashMap::new();
     let mut errors = Vec::with_capacity(module.errors.len());
@@ -334,7 +341,179 @@ pub fn check(module: &ast::Module) -> Result<IrModule, TypeError> {
     Ok(IrModule {
         functions: checked,
         errors,
+        consts,
     })
+}
+
+/// Validate the constant declarations and fold every use into its literal (SPEC-constants).
+///
+/// Returns the module with no constant left in any body, plus the `export const`s for the
+/// bindings and the fingerprint. A plain `const` leaves no trace after this: it is body, so
+/// changing it ships by replacing the file (DP-K1).
+fn fold_constants(module: &ast::Module) -> Result<(ast::Module, Vec<IrConstDecl>), TypeError> {
+    let mut literal: HashMap<&str, Expr> = HashMap::new();
+    let mut by_name: HashMap<String, &str> = HashMap::new();
+    let errors: HashMap<String, &str> = module
+        .errors
+        .iter()
+        .map(|e| (e.name.to_ascii_lowercase(), e.name.as_str()))
+        .collect();
+    let mut exported = Vec::new();
+    for c in &module.consts {
+        let name = c.name.as_str();
+        // In an array-returning function `result` is the host's buffer, so a constant of
+        // that name would mean two things in one body.
+        if name == RESULT {
+            return Err(TypeError::new(format!(
+                "a constant cannot be named `{RESULT}` — in a function that returns an array, \
+                 that name is the host's output buffer"
+            )));
+        }
+        let lower = name.to_ascii_lowercase();
+        // Case-insensitively, for the reason error names are: an exported one is a constant
+        // in the generated Delphi unit, and Pascal does not distinguish case.
+        if let Some(first) = by_name.insert(lower.clone(), name) {
+            return Err(TypeError::new(format!(
+                "duplicate constant '{name}' — it collides with '{first}'. Constant names must \
+                 be unique case-insensitively, because an exported one becomes a constant in \
+                 the generated Delphi unit and Pascal does not distinguish case"
+            )));
+        }
+        if let Some(err) = errors.get(&lower) {
+            return Err(TypeError::new(format!(
+                "constant '{name}' has the name of error '{err}' — one name, one meaning \
+                 (SPEC-constants DP-K6). Rename one"
+            )));
+        }
+        let (expr, i32_value) = match c.value {
+            ast::ConstValue::Int(v) => {
+                let Ok(v) = i32::try_from(v) else {
+                    return Err(TypeError::new(format!(
+                        "constant '{name}' = {v} does not fit in i32 ({}..={})",
+                        i32::MIN,
+                        i32::MAX
+                    )));
+                };
+                (Expr::Int(i64::from(v)), Some(v))
+            }
+            ast::ConstValue::Float(x) => (Expr::Number(x), None),
+            ast::ConstValue::Bool(b) => (Expr::Bool(b), None),
+        };
+        if c.exported {
+            let Some(value) = i32_value else {
+                return Err(TypeError::new(format!(
+                    "export const '{name}' must be an i32 — an exported constant becomes a C \
+                     `#define` and a Pascal `const`, and i32 is the type both carry exactly. \
+                     A plain `const` may be f64 or bool (SPEC-constants DP-K2)"
+                )));
+            };
+            exported.push(IrConstDecl {
+                name: c.name.clone(),
+                value,
+            });
+        }
+        literal.insert(name, expr);
+    }
+
+    let mut folded = module.clone();
+    if literal.is_empty() {
+        return Ok((folded, exported));
+    }
+    for f in &mut folded.functions {
+        for p in &f.params {
+            if literal.contains_key(p.name.as_str()) {
+                return Err(TypeError::new(format!(
+                    "function '{}': parameter '{}' hides the constant of the same name — a name \
+                     that could mean two values is refused (SPEC-constants DP-K6). Rename it",
+                    f.name, p.name
+                )));
+            }
+        }
+        fold_block(&mut f.body, &literal, &f.name)?;
+    }
+    Ok((folded, exported))
+}
+
+fn fold_block(
+    body: &mut [Stmt],
+    literal: &HashMap<&str, Expr>,
+    fname: &str,
+) -> Result<(), TypeError> {
+    let hides = |name: &str| -> Result<(), TypeError> {
+        if literal.contains_key(name) {
+            return Err(TypeError::new(format!(
+                "function '{fname}': local '{name}' hides the constant of the same name — a \
+                 name that could mean two values is refused (SPEC-constants DP-K6). Rename it"
+            )));
+        }
+        Ok(())
+    };
+    let assigns = |name: &str| -> Result<(), TypeError> {
+        if literal.contains_key(name) {
+            return Err(TypeError::new(format!(
+                "function '{fname}': '{name}' is a constant and cannot be assigned — use \
+                 `let mut` for a value that changes"
+            )));
+        }
+        Ok(())
+    };
+    for s in body {
+        match s {
+            Stmt::If { cond, body } | Stmt::While { cond, body } => {
+                fold_expr(cond, literal);
+                fold_block(body, literal, fname)?;
+            }
+            Stmt::Return(e) | Stmt::ResultLen(e) => fold_expr(e, literal),
+            Stmt::Fail(_) => {}
+            Stmt::Let { name, value, .. } => {
+                hides(name)?;
+                fold_expr(value, literal);
+            }
+            Stmt::Assign { name, value } => {
+                assigns(name)?;
+                fold_expr(value, literal);
+            }
+            Stmt::ResultSet { index, value } => {
+                fold_expr(index, literal);
+                fold_expr(value, literal);
+            }
+            Stmt::TryCall { dest, args, .. } => {
+                match dest {
+                    ast::TryDest::Let { name, .. } => hides(name)?,
+                    ast::TryDest::Assign(name) => assigns(name)?,
+                    ast::TryDest::Return => {}
+                }
+                for a in args {
+                    fold_expr(a, literal);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Replace every constant reference with its literal. Only `Var` can name a constant: calls
+/// and array bases are other namespaces, and a local of the same name was refused above.
+fn fold_expr(e: &mut Expr, literal: &HashMap<&str, Expr>) {
+    match e {
+        Expr::Var(name) => {
+            if let Some(lit) = literal.get(name.as_str()) {
+                *e = lit.clone();
+            }
+        }
+        Expr::Number(_) | Expr::Str(_) | Expr::Int(_) | Expr::Bool(_) => {}
+        Expr::Call { args, .. } => {
+            for a in args {
+                fold_expr(a, literal);
+            }
+        }
+        Expr::Unary { operand, .. } | Expr::Cast { operand, .. } => fold_expr(operand, literal),
+        Expr::Binary { lhs, rhs, .. } => {
+            fold_expr(lhs, literal);
+            fold_expr(rhs, literal);
+        }
+        Expr::Index { index, .. } => fold_expr(index, literal),
+    }
 }
 
 /// Error-code name → resolved positive code.
@@ -2150,6 +2329,8 @@ fn check_expr(e: &Expr, scope: &Scope, fname: &str, sigs: &Sigs) -> Result<IrExp
             // statically decidable and certainly a mistake. Deliberately SYNTACTIC, not
             // constant folding: `let z = 0  a / z` still compiles, because the runtime rule
             // covers it. `f64 / 0.0` also still compiles — that is `inf`, a defined value.
+            // A `const` is different: it was folded into its literal before this ran
+            // (`fold_constants`, SPEC-constants DP-K5), so `a / ZERO` is caught here.
             if matches!(op, BinOp::Div | BinOp::Rem) && matches!(**rhs, Expr::Int(0)) {
                 return Err(TypeError::new(format!(
                     "function '{fname}': dividing by the literal 0 is rejected — `{}` by zero is \

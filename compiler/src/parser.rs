@@ -263,7 +263,7 @@ impl Parser {
                     if let Some(gap) = Self::unsupported_declaration(name) {
                         let msg = format!(
                             "{gap} are not in Mathless yet — the top level takes `export fn`, \
-                             `fn` or `error`"
+                             `fn`, `error` or `const`"
                         );
                         return self.err(msg);
                     }
@@ -294,9 +294,12 @@ impl Parser {
     fn parse_module(&mut self) -> Result<Module, ParseError> {
         let mut functions = Vec::new();
         let mut errors = Vec::new();
+        let mut consts = Vec::new();
         while *self.peek() != Token::Eof {
             if *self.peek() == Token::Error {
                 errors.push(self.parse_error_decl()?);
+            } else if self.at_const_decl() {
+                consts.push(self.parse_const_decl()?);
             } else {
                 let f = self.parse_function()?;
                 // Checked here, per function, because this is the last moment the parser can
@@ -317,7 +320,75 @@ impl Parser {
                 functions.push(f);
             }
         }
-        Ok(Module { functions, errors })
+        Ok(Module {
+            functions,
+            errors,
+            consts,
+        })
+    }
+
+    /// Is the cursor at `const NAME` or `export const NAME`?
+    ///
+    /// `const` is not a keyword: `fn const()` compiled before this slice and still does
+    /// (SPEC-constants §2.1). It means a declaration only where a top-level item starts, and
+    /// only when a name follows — which is never true of a function, whose next token is `fn`.
+    fn at_const_decl(&self) -> bool {
+        let at = |n: usize| matches!(self.peek_at(n), Token::Ident(s) if s == "const");
+        let named = |n: usize| matches!(self.peek_at(n), Token::Ident(_));
+        (at(0) && named(1)) || (*self.peek() == Token::Export && at(1) && named(2))
+    }
+
+    /// `const NAME = <literal>` / `export const NAME = <literal>` (SPEC-constants DP-K4).
+    ///
+    /// The value is ONE literal, optionally negated. Anything else — an operator after it,
+    /// another constant's name, `-true` — is refused here with the rule, because the
+    /// alternative is a confusing "expected 'fn'" at whatever token comes next.
+    fn parse_const_decl(&mut self) -> Result<ConstDecl, ParseError> {
+        let exported = if *self.peek() == Token::Export {
+            self.pos += 1;
+            true
+        } else {
+            false
+        };
+        self.pos += 1; // `const`, checked by `at_const_decl`
+        let name = self.ident("constant name")?;
+        self.eat(&Token::Assign, "'='")?;
+        let negated = if *self.peek() == Token::Minus {
+            self.pos += 1;
+            true
+        } else {
+            false
+        };
+        let value = match (self.peek().clone(), negated) {
+            (Token::Int(i), _) => ConstValue::Int(if negated { -i } else { i }),
+            (Token::Number(x), _) => ConstValue::Float(if negated { -x } else { x }),
+            (Token::True, false) => ConstValue::Bool(true),
+            (Token::False, false) => ConstValue::Bool(false),
+            _ => return self.single_literal_err(&name),
+        };
+        self.pos += 1;
+        // What follows must start the next top-level item. `const A = 1 + 1` and
+        // `const B = A` stop here rather than one token later.
+        let next_is_item = matches!(
+            self.peek(),
+            Token::Eof | Token::Export | Token::Fn | Token::Error
+        ) || matches!(self.peek(), Token::Ident(s) if s == "const");
+        if !next_is_item {
+            return self.single_literal_err(&name);
+        }
+        Ok(ConstDecl {
+            name,
+            value,
+            exported,
+        })
+    }
+
+    fn single_literal_err<T>(&self, name: &str) -> Result<T, ParseError> {
+        self.err(format!(
+            "constant '{name}' must be a single literal — an integer, a number or `true`/`false`, \
+             optionally negated with `-`. Expressions and other constants' names are not \
+             constant values (SPEC-constants DP-K4)"
+        ))
     }
 
     /// The plural noun for a declaration keyword the language does not have, or `None`.
@@ -331,7 +402,6 @@ impl Parser {
             "struct" | "record" => Some("struct declarations"),
             "class" | "interface" => Some("classes"),
             "enum" => Some("enums"),
-            "const" => Some("constant declarations"),
             "import" | "uses" => Some("imports"),
             "type" => Some("type aliases"),
             _ => None,

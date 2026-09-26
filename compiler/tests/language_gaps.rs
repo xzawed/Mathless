@@ -231,10 +231,6 @@ fn data_shapes_that_do_not_exist_yet() {
         "struct P { x: i32 }\nexport fn f(a: i32) -> i32 { return a }",
     );
     rejected(
-        "const declaration",
-        "const K = 3\nexport fn f(a: i32) -> i32 { return a }",
-    );
-    rejected(
         "host fn import",
         "import fn host_log(x: i32)\nexport fn f(a: i32) -> i32 { return a }",
     );
@@ -276,7 +272,6 @@ const GAPS: &[(&str, &str)] = &[
     ("break", "break"),
     ("복합 대입", "compound assign"),
     ("비트", "bitwise &"),
-    ("상수 선언", "const declaration"),
     ("import", "host fn import"),
     ("재귀", "recursion"),
     ("나머지", "f64 %"),

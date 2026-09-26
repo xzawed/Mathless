@@ -134,6 +134,22 @@ pub fn manifest(module: &IrModule) -> String {
         s.push_str(&line);
     }
 
+    // `export const`s are compiled into the host by name for the same reason error codes are,
+    // and renumbering one was measured passing the load gate silently (SPEC-constants §0.1).
+    // Emitted only when present, like everything above, so a module without one keeps its
+    // fingerprint. Sorted by NAME for the reason given for `err`; the value is plain signed
+    // decimal, never the header's parenthesised spelling — a binding change must not move
+    // the fingerprint (DP-K7).
+    let mut consts: Vec<(&str, String)> = module
+        .consts
+        .iter()
+        .map(|c| (c.name.as_str(), format!("const {}={}\n", c.name, c.value)))
+        .collect();
+    consts.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    for (_, line) in consts {
+        s.push_str(&line);
+    }
+
     s
 }
 

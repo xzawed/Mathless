@@ -69,6 +69,7 @@ fn compile_error_display_reports_codegen_errors() {
             body: vec![], // falls off the end
         }],
         errors: vec![],
+        consts: vec![],
     };
     let err = CompileError::Codegen(codegen::emit(&ir, "diag").unwrap_err());
     let shown = err.to_string();

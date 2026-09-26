@@ -10,6 +10,7 @@ fn parses_discount_example() {
 
     let expected = Module {
         errors: vec![],
+        consts: vec![],
         functions: vec![Function {
             name: "discount".into(),
             params: vec![

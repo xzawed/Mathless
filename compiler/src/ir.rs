@@ -64,12 +64,23 @@ pub struct IrModule {
     /// Module-defined error codes (D17), used by the header/unit generators and resolved
     /// into [`IrStmt::Fail`] by the typechecker.
     pub errors: Vec<IrErrorDecl>,
+    /// `export const` declarations, in declaration order (SPEC-constants). Only these: a plain
+    /// `const` is folded away before IR exists and must never reach a binding or the
+    /// fingerprint (DP-K1), so it has no place here to leak from.
+    pub consts: Vec<IrConstDecl>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct IrErrorDecl {
     pub name: String,
     pub code: i32,
+}
+
+/// An `export const` — an i32 the host compiles in by name (SPEC-constants DP-K2).
+#[derive(Debug, PartialEq)]
+pub struct IrConstDecl {
+    pub name: String,
+    pub value: i32,
 }
 
 #[derive(Debug, PartialEq)]

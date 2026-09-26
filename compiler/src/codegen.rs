@@ -2308,6 +2308,7 @@ mod tests {
         // Only statement is an `if` (no trailing return) → some path returns no value.
         let module = IrModule {
             errors: vec![],
+            consts: vec![],
             functions: vec![IrFunction {
                 name: "f".into(),
                 params: vec![IrParam {

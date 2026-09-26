@@ -81,7 +81,9 @@ Windows x64에 툴체인을 고정한 상태입니다.
 `len`, 문자열의 `byte_len`·`byte_slice`, 소수 포맷의 `fixed`입니다. 함수는 실패
 가능하게 선언할 수 있습니다. `-> T!`에 `error NAME = N`과 `fail NAME`을 쓰면 정수 status와
 out-param으로 내려가며, 값을 여러 개 돌려주려면 `out` 파라미터를 더 선언할 수 있습니다. 내부
-`fn`끼리 서로 호출할 수 있지만, 재귀는 컴파일 타임에 거부합니다. 정본 목록은
+`fn`끼리 서로 호출할 수 있지만, 재귀는 컴파일 타임에 거부합니다. 상수는 이름 붙은 리터럴입니다.
+`const`는 모듈 안에만 있고, `export const`는 헤더가 `ML_<MODULE>_CONST_<NAME>`으로 이름을 붙이고
+인터페이스 지문이 덮는 `i32`라서 번호를 바꾸면 지문이 바뀝니다. 정본 목록은
 [docs/LANGUAGE.md](docs/LANGUAGE.md)에 있습니다.
 
 **CLI.** `mlc build <file.mls> -o <dir>`가 네 파일을 나란히 만듭니다. `.dll` 모듈, `.h` C 헤더,

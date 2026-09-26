@@ -755,6 +755,19 @@ fn emit_stmt(s: &IrStmt, indent: usize, abi: RetAbi, out: &mut String) {
     }
 }
 
+/// How a FALLIBLE body leaves when an i32 operation or `f64 as i32` has no value
+/// (`SPEC-checked-arithmetic`), or `None` for an infallible body — which has no status channel
+/// and keeps wrapping and saturating (DP-O1). The same per-shape choice the `Index` arm makes.
+fn overflow_bail(abi: RetAbi) -> Option<String> {
+    match abi {
+        RetAbi::Fallible => Some(format!("return Err({});", crate::abi::ML_ST_OVERFLOW)),
+        RetAbi::StringOut | RetAbi::ArrayOut(_) => {
+            Some(format!("return {};", crate::abi::ML_ST_OVERFLOW))
+        }
+        RetAbi::Plain => None,
+    }
+}
+
 fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
     match &e.kind {
         // `xs[i]`, bounds-checked (SPEC-array-input 2.3).
@@ -874,6 +887,18 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             // exactly the semantics the SPEC pins. That agreement is why this lowering is one
             // line; it is NOT the reason the semantics were chosen, and a C backend must
             // implement them by hand (C casts are UB out of range).
+            // In a fallible body `f64 as i32` fails where there is no i32 value: NaN, or a value
+            // that truncates outside i32 (SPEC-checked-arithmetic §2.1). The open interval
+            // (-2147483649, 2147483648) is exactly what truncation toward zero keeps in range,
+            // and NaN fails both comparisons.
+            if *to == IrType::I32 && operand.ty == IrType::F64 {
+                if let Some(bail) = overflow_bail(abi) {
+                    return format!(
+                        "{{ let __c = {}; if !(__c > -2147483649.0f64 && __c < 2147483648.0f64) {{ {bail} }} __c as i32 }}",
+                        emit_expr(operand, abi)
+                    );
+                }
+            }
             format!("({} as {})", emit_expr(operand, abi), rust_type(*to))
         }
         IrExprKind::Unary { op, operand } => {
@@ -893,6 +918,13 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             // i32::MIN`"), and Rust's plain `-` only wraps while `overflow-checks` is off.
             // Same reasoning as the `wrapping_*` arms below: put the rule in the code.
             if matches!(op, IrUnOp::Neg) && operand.ty == IrType::I32 {
+                // Checked in a fallible body: `-i32::MIN` has no value (SPEC-checked-arithmetic).
+                if let Some(bail) = overflow_bail(abi) {
+                    return format!(
+                        "(match ({}).checked_neg() {{ Some(__o) => __o, None => {{ {bail} }} }})",
+                        emit_expr(operand, abi)
+                    );
+                }
                 return format!("({}).wrapping_neg()", emit_expr(operand, abi));
             }
             let sym = match op {
@@ -940,6 +972,19 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
             //
             // DP-N4 is untouched: a zero divisor still yields the defined `0i32`.
             if matches!(op, IrBinOp::Div | IrBinOp::Rem) && lhs.ty == IrType::I32 {
+                // In a fallible body the one quotient with no value — `i32::MIN / -1`, 2^31 —
+                // fails (SPEC-checked-arithmetic). `%` does not: `i32::MIN % -1` is 0, which
+                // exists (DP-O5), so the remainder keeps the template below. Operands are still
+                // bound left to right before anything is tested.
+                if matches!(op, IrBinOp::Div) {
+                    if let Some(bail) = overflow_bail(abi) {
+                        return format!(
+                            "{{ let __l = {}; let __d = {}; if __d == 0 {{ 0i32 }} else if __d == -1 && __l == i32::MIN {{ {bail} }} else {{ __l.wrapping_div(__d) }} }}",
+                            emit_expr(lhs, abi),
+                            emit_expr(rhs, abi)
+                        );
+                    }
+                }
                 let method = if matches!(op, IrBinOp::Div) {
                     "wrapping_div"
                 } else {
@@ -986,6 +1031,17 @@ fn emit_expr(e: &IrExpr, abi: RetAbi) -> String {
                     | IrBinOp::And
                     | IrBinOp::Or => None,
                 } {
+                    // Checked in a fallible body (SPEC-checked-arithmetic): the same receiver-
+                    // first evaluation, and no value becomes the reserved status instead of a
+                    // wrapped number.
+                    if let Some(bail) = overflow_bail(abi) {
+                        let checked = method.replace("wrapping_", "checked_");
+                        return format!(
+                            "(match ({}).{checked}({}) {{ Some(__o) => __o, None => {{ {bail} }} }})",
+                            emit_expr(lhs, abi),
+                            emit_expr(rhs, abi)
+                        );
+                    }
                     return format!(
                         "({}).{method}({})",
                         emit_expr(lhs, abi),

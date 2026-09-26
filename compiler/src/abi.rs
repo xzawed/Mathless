@@ -28,6 +28,13 @@ pub const ML_ST_INSUFFICIENT_BUFFER: i32 = -1;
 
 pub const ML_ST_INDEX_OUT_OF_RANGE: i32 = -2;
 
+/// An i32 result — or an `f64 as i32` value — does not exist: the operation overflowed, or the
+/// f64 was NaN or truncates outside i32. Returned only from FALLIBLE bodies
+/// (`SPEC-checked-arithmetic`); an infallible body has no status channel and keeps wrapping.
+/// Its own value rather than `-2`, so a host can tell "outside an array" from "no such value"
+/// (DP-O3).
+pub const ML_ST_OVERFLOW: i32 = -3;
+
 /// Longest module name the compiler accepts, in ASCII characters.
 ///
 /// The module name is not just a file stem: it becomes the crate name, the C header guard,

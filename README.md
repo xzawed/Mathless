@@ -64,7 +64,9 @@ backend emits `no_std`, `extern "C"` Rust and builds it as a `cargo` cdylib.
 
 **The language today.** Four types: `f64`, `bool`, `i32` and `string`. The numeric ones come
 with arithmetic (`+`, `-`, `*`, `/`, and `%` on `i32`), comparisons, and an explicit `as`
-conversion between them; `i32` division is total, so `x / 0` is `0` rather than a trap.
+conversion between them; `i32` division by zero gives `0` rather than a trap, and inside a
+fallible (`-> T!`) function an `i32` result that overflows fails with a reserved status instead
+of wrapping.
 A `string` can be a parameter or a `-> string!` return; it compares with `==` and `!=` on
 bytes, and concatenates with `+` — which only a `return` may hold, since the module has no
 allocator. `i32 as string` renders a number. Returning a string uses a caller-allocated

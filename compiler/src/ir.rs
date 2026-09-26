@@ -557,6 +557,66 @@ pub fn can_fail_out_of_range(body: &[IrStmt]) -> bool {
     })
 }
 
+/// Can this body return `ML_ST_OVERFLOW` — does it hold a checked operation?
+///
+/// `SPEC-checked-arithmetic` §2.1: i32 `+ - * /` and unary `-`, and `f64 as i32`. `%` is not
+/// here (DP-O5 — `i32::MIN % -1` is 0, which exists). The caller asks only about FALLIBLE
+/// bodies: an infallible one lowers the same operators wrapping. Exhaustive over the IR for
+/// the reason [`can_fail_out_of_range`] is — a gate that asks a narrower question lets a
+/// module return a status its bindings never name (#238).
+pub fn can_fail_overflow(body: &[IrStmt]) -> bool {
+    fn in_expr(e: &IrExpr) -> bool {
+        match &e.kind {
+            IrExprKind::Binary { op, lhs, rhs } => {
+                let checked = lhs.ty == IrType::I32
+                    && match op {
+                        IrBinOp::Add | IrBinOp::Sub | IrBinOp::Mul | IrBinOp::Div => true,
+                        IrBinOp::Rem
+                        | IrBinOp::Lt
+                        | IrBinOp::Gt
+                        | IrBinOp::Le
+                        | IrBinOp::Ge
+                        | IrBinOp::Eq
+                        | IrBinOp::Ne
+                        | IrBinOp::And
+                        | IrBinOp::Or => false,
+                    };
+                checked || in_expr(lhs) || in_expr(rhs)
+            }
+            IrExprKind::Unary { op, operand } => {
+                (matches!(op, IrUnOp::Neg) && operand.ty == IrType::I32) || in_expr(operand)
+            }
+            IrExprKind::Cast { to, operand } => {
+                (*to == IrType::I32 && operand.ty == IrType::F64) || in_expr(operand)
+            }
+            IrExprKind::ByteLen(operand) => in_expr(operand),
+            IrExprKind::Index { index, .. } => in_expr(index),
+            IrExprKind::ByteSlice { s, from, to } => in_expr(s) || in_expr(from) || in_expr(to),
+            IrExprKind::Fixed { x, places } => in_expr(x) || in_expr(places),
+            IrExprKind::Call { args, .. } | IrExprKind::Concat(args) => args.iter().any(in_expr),
+            IrExprKind::Len { .. }
+            | IrExprKind::ConstF64(_)
+            | IrExprKind::ConstStr(_)
+            | IrExprKind::ConstI32(_)
+            | IrExprKind::ConstBool(_)
+            | IrExprKind::Var(_) => false,
+        }
+    }
+    body.iter().any(|s| match s {
+        IrStmt::If { cond, body } | IrStmt::While { cond, body } => {
+            in_expr(cond) || can_fail_overflow(body)
+        }
+        IrStmt::ResultSet { index, value } => in_expr(index) || in_expr(value),
+        IrStmt::ResultLen(e)
+        | IrStmt::Return(e)
+        | IrStmt::Let { value: e, .. }
+        | IrStmt::Assign { value: e, .. }
+        | IrStmt::AssignOut { value: e, .. } => in_expr(e),
+        IrStmt::TryCall { args, .. } => args.iter().any(in_expr),
+        IrStmt::Fail(_) => false,
+    })
+}
+
 /// Does this body compare a span anywhere? — `SPEC-string-slice-compare` DP-C2.
 ///
 /// The companion to [`first_index`], and it exists for the same stated reason: `check_expr`

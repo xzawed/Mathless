@@ -62,7 +62,7 @@ TDD 구현 → Grok 검증 → PR** 순서를 따른다(`CLAUDE.md` "개발 방�
 | [고정 소수 포맷 `fixed(x, places)`](SPEC-fixed-decimals.md) | ✅ **구현 완료** (2026-09-15) | `fixed(x, places)` — 고정 소수 십진 표기. 모듈 안 우회가 조용히 틀리던 것(`1234.05` → `"1234.5"`)을 막는다 | §7 §9-53 / #243 |
 | [나눗셈 가드가 왼쪽 피연산자를 건너뛴다](SPEC-division-guard-operands.md) | ✅ **구현 완료** (2026-09-23) | 제수가 0이면 `/`·`%`의 왼쪽 피연산자(배열 경계 검사)가 실행되지 않던 결함 — 왼쪽을 먼저 묶어 평가한다 | #287 / #291 |
 | [상수 선언 `const` · `export const`](SPEC-constants.md) | ✅ **구현 완료** (2026-09-26) | 이름 붙은 리터럴 — `export const`만 헤더(`ML_<MODULE>_CONST_<NAME>`)와 지문에 나가, 번호를 바꾼 모듈을 게이트가 거부한다 | #325 / #326·#327 |
-| [체크드 정수 산술](SPEC-checked-arithmetic.md) | 🔨 **SPEC 초안 · 확인 대기** (2026-09-26) | `!` 본문의 i32 오버플로와 `f64 as i32`가 `-3`으로 실패한다 — 방향(A+as)은 확인받았고 하위 결정 DP-O3~O8이 남았다 | §9-69 / — |
+| [체크드 정수 산술](SPEC-checked-arithmetic.md) | 🔨 **SPEC 초안 · 확인 대기** (2026-09-26) | `!` 본문의 i32 오버플로와 `f64 as i32`가 `-3`으로 실패한다 — 방향(A+as)은 확인받았고 하위 결정 DP-O3~O9가 남았다 | §9-69 / — |
 
 > **2026-09-25에 행을 한 줄로 접었다.** 접기 전의 서술은 [`../history/slices-index.md`](../history/slices-index.md)에
 > 바이트 그대로 있다. **새 행도 한 줄로 쓴다** — 행당 400 B(`every_slice_index_row_is_one_line`)이고, 경위는 그
